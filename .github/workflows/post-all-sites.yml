@@ -1,0 +1,42 @@
+name: Auto-post to all sites
+
+on:
+  schedule:
+    # Every 29 minutes — about 50 posts per site per 24h.
+    - cron: "*/29 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install aiohttp
+
+      - name: Decode sites.json from secret
+        env:
+          SITES_JSON_B64: ${{ secrets.SITES_JSON_B64 }}
+        run: |
+          if [ -z "$SITES_JSON_B64" ]; then
+            echo "::error::SITES_JSON_B64 secret is not set"
+            exit 1
+          fi
+          echo "$SITES_JSON_B64" | base64 -d > sites.json
+
+      - name: Run posting script
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          SITES_JSON: sites.json
+        run: python automation/post_all_sites.py
+
+      - name: Cleanup
+        if: always()
+        run: rm -f sites.json
