@@ -17,7 +17,7 @@ import { networkRoutes } from "./routes/network/sites"
 import { publicApiRoutes } from "./routes/public"
 
 import { loginRoute } from "./routes/admin/login"
-import { dashboardRoute } from "./routes/admin/dashboard"
+import { dashboardHandler } from "./routes/admin/dashboard"
 import { postsAdminRoute } from "./routes/admin/posts"
 import { pagesAdminRoute } from "./routes/admin/pages"
 import { categoriesAdminRoute } from "./routes/admin/categories"
@@ -59,7 +59,7 @@ app.route("/api/public", publicApiRoutes)
 const adminApp = new Hono<AppEnv>()
 adminApp.use("*", adminAuthMiddleware)
 adminApp.route("/login", loginRoute)              // login + logout (auth-bypassed)
-adminApp.route("/", dashboardRoute)
+adminApp.get("/", dashboardHandler)               // direct mount avoids Hono sub-app root-path edge case
 adminApp.route("/posts", postsAdminRoute)
 adminApp.route("/pages", pagesAdminRoute)
 adminApp.route("/categories", categoriesAdminRoute)

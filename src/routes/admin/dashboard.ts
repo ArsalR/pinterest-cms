@@ -2,6 +2,7 @@
 // /admin/  — overview cards, recent posts, recent API activity.
 
 import { Hono } from "hono"
+import type { Context } from "hono"
 import type { AppEnv } from "../../lib/types"
 import { renderAdminLayout } from "../../views/admin/Layout"
 import { escapeHtml, escapeAttr, formatDate } from "../../lib/utils"
@@ -10,7 +11,7 @@ import { buildPostPath } from "../../lib/seo"
 
 export const dashboardRoute = new Hono<AppEnv>()
 
-dashboardRoute.get("/", async (c) => {
+export const dashboardHandler = async (c: Context<AppEnv>): Promise<Response> => {
   const siteDb = c.get("siteDb")
   const hostname = c.get("hostname")
   const user = c.get("user")
@@ -156,4 +157,6 @@ dashboardRoute.get("/", async (c) => {
     200,
     { "Cache-Control": "no-store, private" }
   )
-})
+}
+
+dashboardRoute.get("/", dashboardHandler)
