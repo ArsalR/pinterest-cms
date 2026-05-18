@@ -10,6 +10,7 @@ import { escapeHtml, escapeAttr, formatDate, slugify, cuid, nowIso, plainExcerpt
 import { loadSettings } from "../../lib/defaults"
 import { buildPostPath } from "../../lib/seo"
 import { purgePostCache } from "../../lib/revalidate"
+import { ensureUniqueSlug } from "../../lib/slugs"
 
 export const postsAdminRoute = new Hono<AppEnv>()
 
@@ -323,22 +324,19 @@ async function replaceImages(
   postId: string,
   form: FormData
 ): Promise<void> {
-  // images[] is a repeated JSON-encoded field per image: {url, alt, caption}
   const all = form.getAll("image_data[]")
   await siteDb.execute({ sql: "DELETE FROM post_images WHERE post_id = ?", args: [postId] })
+  const stmts: Array<{ sql: string; args: (string | number | null)[] }> = []
   for (let i = 0; i < all.length; i++) {
     let parsed: { url?: string; alt?: string; caption?: string } | null = null
-    try {
-      parsed = JSON.parse(String(all[i]))
-    } catch {
-      continue
-    }
+    try { parsed = JSON.parse(String(all[i])) } catch { continue }
     if (!parsed?.url) continue
-    await siteDb.execute({
+    stmts.push({
       sql: "INSERT INTO post_images (id, post_id, url, alt, caption, ord) VALUES (?, ?, ?, ?, ?, ?)",
       args: [cuid(), postId, parsed.url, parsed.alt ?? "", parsed.caption ?? null, i],
     })
   }
+  if (stmts.length) await siteDb.batch(stmts, "write")
 }
 
 async function deletePost(
@@ -358,24 +356,6 @@ async function deletePost(
   return c.redirect(`/admin/${type}`)
 }
 
-async function ensureUniqueSlug(
-  siteDb: AppEnv["Variables"]["siteDb"],
-  base: string,
-  excludeId?: string
-): Promise<string> {
-  let slug = base
-  let i = 2
-  while (true) {
-    const sql = excludeId
-      ? "SELECT id FROM posts WHERE slug = ? AND id != ? LIMIT 1"
-      : "SELECT id FROM posts WHERE slug = ? LIMIT 1"
-    const args = excludeId ? [slug, excludeId] : [slug]
-    const r = await siteDb.execute({ sql, args })
-    if (!r.rows.length) return slug
-    slug = `${base}-${i++}`
-    if (i > 1000) throw new Error("Could not generate unique slug")
-  }
-}
 
 function notFound(hostname: string, user: AppEnv["Variables"]["user"] | undefined): string {
   return renderAdminLayout({

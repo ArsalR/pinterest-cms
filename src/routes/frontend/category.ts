@@ -50,6 +50,15 @@ export async function renderCategoryPage(
   const canonical = `https://${hostname}${catPath}`
   const head = buildPageHead({ type: "category", category, url: canonical }, settings)
 
+  // Append page number to title on page 2+ so Google doesn't see duplicate titles.
+  if (page > 1) {
+    const sep = settings.seo_title_separator || "|"
+    const siteName = settings.seo_site_name || settings.site_name || ""
+    const base = category.seo_title || category.name
+    head.title = siteName ? `${base} — Page ${page} ${sep} ${siteName}` : `${base} — Page ${page}`
+    head.ogTitle = head.title
+  }
+
   const breadcrumbItems = [
     { name: "Home", url: `https://${hostname}/` },
     { name: category.name, url: canonical },

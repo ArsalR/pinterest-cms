@@ -8,6 +8,7 @@ import { cuid, slugify, nowIso, plainExcerpt } from "../../../lib/utils"
 import { loadSettings } from "../../../lib/defaults"
 import { buildPostPath } from "../../../lib/seo"
 import { purgePostCache } from "../../../lib/revalidate"
+import { ensureUniqueSlug } from "../../../lib/slugs"
 
 interface CreatePostBody {
   title?: string
@@ -403,22 +404,3 @@ postRoutes.delete("/:id", async (c) => {
   return c.json({ success: true, deleted: id })
 })
 
-// ─────────────── Helper: unique slug ───────────────
-async function ensureUniqueSlug(
-  siteDb: AppEnv["Variables"]["siteDb"],
-  base: string,
-  excludeId?: string
-): Promise<string> {
-  let slug = base
-  let i = 2
-  while (true) {
-    const sql = excludeId
-      ? "SELECT id FROM posts WHERE slug = ? AND id != ? LIMIT 1"
-      : "SELECT id FROM posts WHERE slug = ? LIMIT 1"
-    const args = excludeId ? [slug, excludeId] : [slug]
-    const r = await siteDb.execute({ sql, args })
-    if (!r.rows.length) return slug
-    slug = `${base}-${i++}`
-    if (i > 1000) throw new Error("Could not generate unique slug")
-  }
-}

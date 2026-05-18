@@ -17,21 +17,35 @@ mediaAdminRoute.get("/", async (c) => {
   const user = c.get("user")
   const url = new URL(c.req.url)
   const page = Math.max(1, parseInt(url.searchParams.get("page") || "1", 10))
+  const q = (url.searchParams.get("q") || "").trim()
   const perPage = 48
   const offset = (page - 1) * perPage
 
   const [items, totalRow] = await Promise.all([
-    siteDb.execute({
-      sql: "SELECT * FROM media ORDER BY created_at DESC LIMIT ? OFFSET ?",
-      args: [perPage, offset],
-    }),
-    siteDb.execute("SELECT COUNT(*) AS n FROM media"),
+    q
+      ? siteDb.execute({
+          sql: "SELECT * FROM media WHERE filename LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+          args: [`%${q}%`, perPage, offset],
+        })
+      : siteDb.execute({
+          sql: "SELECT * FROM media ORDER BY created_at DESC LIMIT ? OFFSET ?",
+          args: [perPage, offset],
+        }),
+    q
+      ? siteDb.execute({ sql: "SELECT COUNT(*) AS n FROM media WHERE filename LIKE ?", args: [`%${q}%`] })
+      : siteDb.execute("SELECT COUNT(*) AS n FROM media"),
   ])
   const total = Number(totalRow.rows[0]?.n ?? 0)
   const totalPages = Math.max(1, Math.ceil(total / perPage))
 
+  const searchBox = `<form method="GET" style="margin-bottom:16px;display:flex;gap:8px">
+    <input type="search" name="q" value="${escapeAttr(q)}" placeholder="Search by filename…" style="flex:1;background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-sm);padding:8px 11px;color:var(--text)">
+    <button class="btn" type="submit">Search</button>
+    ${q ? `<a class="btn ghost" href="/admin/media">Clear</a>` : ""}
+  </form>`
+
   const grid = items.rows.length
-    ? `<form method="POST" action="/admin/media/bulk-delete" id="bulk-form" onsubmit="return confirm('Delete the selected items? Files will be removed from storage.')">
+    ? `${searchBox}<form method="POST" action="/admin/media/bulk-delete" id="bulk-form" onsubmit="return confirm('Delete the selected items? Files will be removed from storage.')">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
         <label><input type="checkbox" id="select-all"> Select all</label>
         <button class="btn danger sm" type="submit">Delete selected</button>
@@ -65,7 +79,7 @@ mediaAdminRoute.get("/", async (c) => {
     });
     </script>
     `
-    : `<div class="empty-state"><h2>No media yet</h2><p>Upload images via the post editor or the upload zone above.</p></div>`
+    : `${searchBox}<div class="empty-state"><h2>${q ? `No results for &ldquo;${escapeHtml(q)}&rdquo;` : "No media yet"}</h2><p>${q ? "Try a different search term." : "Upload images via the post editor or the upload zone above."}</p></div>`
 
   const pagination = totalPages > 1
     ? `<nav style="display:flex;justify-content:center;gap:6px;margin:24px 0">
