@@ -71,9 +71,18 @@ export function readingTime(text: string): number {
   return Math.max(1, Math.ceil(words / 200))
 }
 
-/** Strip HTML tags, collapse whitespace, truncate. Used for excerpts. */
+/** Strip HTML tags, decode common entities, collapse whitespace, truncate. Used for excerpts. */
 export function plainExcerpt(html: string, max = 160): string {
-  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  const txt = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
   if (txt.length <= max) return txt
   return txt.slice(0, max - 1).replace(/\s+\S*$/, "") + "…"
 }

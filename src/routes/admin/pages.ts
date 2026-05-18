@@ -8,6 +8,7 @@ import {
   renderEditorPage,
   savePost,
   deletePost,
+  bulkAction,
 } from "./posts"
 
 export const pagesAdminRoute = new Hono<AppEnv>()
@@ -16,4 +17,5 @@ pagesAdminRoute.get("/", (c) => renderPostsList(c, "page"))
 pagesAdminRoute.get("/new", (c) => renderEditorPage(c, null, "page"))
 pagesAdminRoute.get("/:id", (c) => renderEditorPage(c, c.req.param("id") ?? null, "page"))
 pagesAdminRoute.post("/save", (c) => savePost(c, "page"))
+pagesAdminRoute.post("/bulk-action", (c) => bulkAction(c, "page"))
 pagesAdminRoute.post("/:id/delete", (c) => deletePost(c))

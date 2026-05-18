@@ -50,8 +50,9 @@ export async function renderCategoryPage(
   const canonical = `https://${hostname}${catPath}`
   const head = buildPageHead({ type: "category", category, url: canonical }, settings)
 
-  // Append page number to title on page 2+ so Google doesn't see duplicate titles.
+  // Paginated pages: update canonical, title, and OG title.
   if (page > 1) {
+    head.canonical = `${canonical}?page=${page}`
     const sep = settings.seo_title_separator || "|"
     const siteName = settings.seo_site_name || settings.site_name || ""
     const base = category.seo_title || category.name
@@ -63,9 +64,16 @@ export async function renderCategoryPage(
     { name: "Home", url: `https://${hostname}/` },
     { name: category.name, url: canonical },
   ]
-  const extraHead = `<script type="application/ld+json">${JSON.stringify(
-    buildBreadcrumbJsonLd(breadcrumbItems)
-  ).replace(/</g, "\\u003c")}</script>`
+
+  const prevHref = page > 1 ? `${canonical}${page - 1 > 1 ? `?page=${page - 1}` : ""}` : null
+  const nextHref = page < totalPages ? `${canonical}?page=${page + 1}` : null
+  const extraHead = [
+    prevHref ? `<link rel="prev" href="${escapeAttr(prevHref)}" />` : "",
+    nextHref ? `<link rel="next" href="${escapeAttr(nextHref)}" />` : "",
+    `<script type="application/ld+json">${JSON.stringify(
+      buildBreadcrumbJsonLd(breadcrumbItems)
+    ).replace(/</g, "\\u003c")}</script>`,
+  ].filter(Boolean).join("\n  ")
 
   const heroBg = category.cover_image
     ? `style="--bg-image:url('${escapeAttr(category.cover_image)}')"`

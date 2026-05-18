@@ -33,6 +33,10 @@ postsAdminRoute.post("/save", async (c) => {
   return savePost(c, "post")
 })
 
+postsAdminRoute.post("/bulk-action", async (c) => {
+  return bulkAction(c, "post")
+})
+
 postsAdminRoute.post("/:id/delete", async (c) => {
   return deletePost(c)
 })
@@ -63,7 +67,7 @@ postsAdminRoute.post("/:id/toggle-publish", async (c) => {
 })
 
 // ──────────────── Helpers exposed for /admin/pages ────────────────
-export { renderPostsList, renderEditorPage, savePost, deletePost }
+export { renderPostsList, renderEditorPage, savePost, deletePost, bulkAction }
 
 async function renderPostsList(
   c: Context<AppEnv>,
@@ -99,6 +103,7 @@ async function renderPostsList(
     args,
   })
 
+  const section = type === "page" ? "pages" : "posts"
   const tableRows = rows.rows.map((r) => {
     const path =
       type === "page"
@@ -113,7 +118,8 @@ async function renderPostsList(
             settings
           )
     return `<tr>
-      <td><a href="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(r.id as string)}"><strong>${escapeHtml(r.title as string)}</strong></a><br><span style="color:var(--muted-2);font-size:12px;font-family:var(--mono)">${escapeHtml(r.slug as string)}</span></td>
+      <td style="width:32px;padding:8px 4px"><input type="checkbox" class="bulk-check" data-id="${escapeAttr(r.id as string)}" style="width:16px;height:16px"></td>
+      <td><a href="/admin/${section}/${escapeAttr(r.id as string)}"><strong>${escapeHtml(r.title as string)}</strong></a><br><span style="color:var(--muted-2);font-size:12px;font-family:var(--mono)">${escapeHtml(r.slug as string)}</span></td>
       <td>${r.cat_name ? escapeHtml(r.cat_name as string) : "—"}</td>
       <td><span class="pill ${r.published ? "published" : "draft"}">${r.published ? "Published" : "Draft"}</span></td>
       <td><span class="pill ${r.source === "api" ? "api" : "manual"}">${escapeHtml((r.source as string) ?? "manual")}</span></td>
@@ -123,8 +129,8 @@ async function renderPostsList(
         <form method="POST" action="/admin/posts/${escapeAttr(r.id as string)}/toggle-publish" style="display:inline">
           <button class="btn sm" type="submit">${r.published ? "Unpublish" : "Publish"}</button>
         </form>
-        <a class="btn sm primary" href="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(r.id as string)}">Edit</a>
-        <form method="POST" action="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(r.id as string)}/delete" style="display:inline" onsubmit="return confirm('Delete &quot;${escapeAttr((r.title as string).replace(/"/g, ""))}&quot;? This cannot be undone.')">
+        <a class="btn sm primary" href="/admin/${section}/${escapeAttr(r.id as string)}">Edit</a>
+        <form method="POST" action="/admin/${section}/${escapeAttr(r.id as string)}/delete" style="display:inline" onsubmit="return confirm('Delete &quot;${escapeAttr((r.title as string).replace(/"/g, ""))}&quot;? This cannot be undone.')">
           <button class="btn sm danger" type="submit">Delete</button>
         </form>
       </td>
@@ -133,6 +139,7 @@ async function renderPostsList(
 
   const heading = type === "page" ? "Pages" : "Posts"
   const newHref = type === "page" ? "/admin/pages/new" : "/admin/posts/new"
+  const bulkUrl = `/admin/${section}/bulk-action`
 
   const body = `
     <form method="GET" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -144,10 +151,66 @@ async function renderPostsList(
       </select>
       <button class="btn" type="submit">Filter</button>
     </form>
-    ${rows.rows.length ? `<table>
-      <thead><tr><th>${heading.replace(/s$/, "")}</th><th>Category</th><th>Status</th><th>Source</th><th>Created</th><th></th></tr></thead>
+    ${rows.rows.length ? `
+    <div id="bulk-toolbar" style="display:none;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px">
+      <span id="bulk-count" style="font-size:13px;color:var(--muted)">0 selected</span>
+      <select id="bulk-action-sel" style="background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-size:13px">
+        <option value="">— Action —</option>
+        <option value="publish">Publish</option>
+        <option value="unpublish">Unpublish</option>
+        <option value="delete">Delete</option>
+      </select>
+      <button type="button" id="bulk-apply" class="btn sm">Apply</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:32px"><input type="checkbox" id="bulk-select-all" style="width:16px;height:16px"></th>
+        <th>${heading.replace(/s$/, "")}</th><th>Category</th><th>Status</th><th>Source</th><th>Created</th><th></th>
+      </tr></thead>
       <tbody>${tableRows}</tbody>
-    </table>` : `<div class="empty-state"><p>No ${heading.toLowerCase()} yet.</p><a class="btn primary" href="${newHref}">+ New ${type}</a></div>`}
+    </table>
+    <script>
+    (function(){
+      var checks = document.querySelectorAll('.bulk-check');
+      var selectAll = document.getElementById('bulk-select-all');
+      var toolbar = document.getElementById('bulk-toolbar');
+      var countEl = document.getElementById('bulk-count');
+      var actionSel = document.getElementById('bulk-action-sel');
+      var applyBtn = document.getElementById('bulk-apply');
+      function updateToolbar(){
+        var n = document.querySelectorAll('.bulk-check:checked').length;
+        toolbar.style.display = n ? 'flex' : 'none';
+        countEl.textContent = n + ' selected';
+      }
+      checks.forEach(function(cb){ cb.addEventListener('change', updateToolbar); });
+      selectAll.addEventListener('change', function(){
+        checks.forEach(function(cb){ cb.checked = selectAll.checked; });
+        updateToolbar();
+      });
+      applyBtn.addEventListener('click', function(){
+        var action = actionSel.value;
+        if (!action) { alert('Choose an action first.'); return; }
+        var checked = Array.from(document.querySelectorAll('.bulk-check:checked'));
+        if (!checked.length) return;
+        if (action === 'delete' && !confirm('Delete ' + checked.length + ' item(s)? This cannot be undone.')) return;
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '${bulkUrl}';
+        [['type','${type}'],['bulk_action',action]].forEach(function(pair){
+          var inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
+          form.appendChild(inp);
+        });
+        checked.forEach(function(cb){
+          var inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = 'post_ids[]'; inp.value = cb.dataset.id;
+          form.appendChild(inp);
+        });
+        document.body.appendChild(form);
+        form.submit();
+      });
+    })();
+    </script>` : `<div class="empty-state"><p>No ${heading.toLowerCase()} yet.</p><a class="btn primary" href="${newHref}">+ New ${type}</a></div>`}
   `
 
   return c.html(
@@ -337,6 +400,51 @@ async function replaceImages(
     })
   }
   if (stmts.length) await siteDb.batch(stmts, "write")
+}
+
+async function bulkAction(
+  c: Context<AppEnv>,
+  type: "post" | "page"
+): Promise<Response> {
+  const siteDb = c.get("siteDb")
+  const form = await c.req.formData()
+  const action = String(form.get("bulk_action") || "")
+  const ids = form.getAll("post_ids[]").map(String).filter(Boolean)
+  const backUrl = type === "page" ? "/admin/pages" : "/admin/posts"
+
+  if (!ids.length || !action) return c.redirect(backUrl)
+
+  const placeholders = ids.map(() => "?").join(",")
+
+  if (action === "publish") {
+    await siteDb.execute({
+      sql: `UPDATE posts SET published = 1,
+              published_at = COALESCE(published_at, datetime('now')),
+              updated_at = datetime('now')
+            WHERE id IN (${placeholders}) AND type = ?`,
+      args: [...ids, type],
+    })
+  } else if (action === "unpublish") {
+    await siteDb.execute({
+      sql: `UPDATE posts SET published = 0, updated_at = datetime('now')
+            WHERE id IN (${placeholders}) AND type = ?`,
+      args: [...ids, type],
+    })
+  } else if (action === "delete") {
+    await siteDb.execute({
+      sql: `DELETE FROM post_images WHERE post_id IN (${placeholders})`,
+      args: ids,
+    })
+    await siteDb.execute({
+      sql: `DELETE FROM posts WHERE id IN (${placeholders}) AND type = ?`,
+      args: [...ids, type],
+    })
+  }
+
+  c.executionCtx.waitUntil(
+    purgePostCache(c.env, c.get("hostname"), ["/", "/sitemap.xml", "/feed.xml"])
+  )
+  return c.redirect(backUrl)
 }
 
 async function deletePost(
