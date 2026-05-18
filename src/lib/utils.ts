@@ -48,14 +48,15 @@ export function escapeAttr(input: string | null | undefined): string {
 }
 
 /** Human-readable date for blog posts. */
-export function formatDate(input: string | null | undefined): string {
+export function formatDate(input: string | null | undefined, timeZone?: string): string {
   if (!input) return ""
-  const d = new Date(input)
+  const d = new Date(input.replace(" ", "T").replace(/(\d{2}:\d{2}:\d{2})$/, "$1Z"))
   if (isNaN(d.getTime())) return ""
   return d.toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: timeZone || "UTC",
   })
 }
 

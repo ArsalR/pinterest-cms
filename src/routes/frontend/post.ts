@@ -180,7 +180,7 @@ function renderPostBody(input: PostBodyInput): string {
     )
   }
   if (showDate && post.published_at) {
-    metaParts.push(`<time datetime="${escapeAttr(post.published_at)}">${escapeHtml(formatDate(post.published_at))}</time>`)
+    metaParts.push(`<time datetime="${escapeAttr(post.published_at)}">${escapeHtml(formatDate(post.published_at, settings.timezone || undefined))}</time>`)
   }
   if (showAuthor && settings.site_name) {
     metaParts.push(`<span>By ${escapeHtml(settings.site_name)}</span>`)
