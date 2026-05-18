@@ -353,6 +353,16 @@ window.__GALLERY = ${imagesJson};
 
   function escAttr(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function escHtml(s){return String(s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+  // Warn before navigating away if the form has unsaved changes.
+  var dirty = false;
+  var titleInput = document.querySelector('#post-form [name="title"]');
+  if (ed) ed.addEventListener('input', function(){ dirty = true; });
+  if (titleInput) titleInput.addEventListener('input', function(){ dirty = true; });
+  document.getElementById('post-form').addEventListener('submit', function(){ dirty = false; });
+  window.addEventListener('beforeunload', function(e){
+    if (dirty){ e.preventDefault(); e.returnValue = ''; }
+  });
 })();
 </script>
 `

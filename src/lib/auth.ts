@@ -164,8 +164,3 @@ export function generateApiKey(): string {
   return `cms_live_${hex}`
 }
 
-/** Verify a CSRF-style cookie/header pair (constant time). */
-export function csrfMatch(cookie: string | undefined, header: string | undefined): boolean {
-  if (!cookie || !header) return false
-  return timingSafeEqual(cookie, header)
-}

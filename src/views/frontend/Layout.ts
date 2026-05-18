@@ -465,7 +465,7 @@ function renderFooter(
     </div>
     <div class="site-footer-bottom">
       <span>© ${new Date().getFullYear()} ${escapeHtml(settings.site_name || "")}. All rights reserved.</span>
-      <span>Built on Cloudflare · Powered by Pinterest CMS</span>
+      ${settings.footer_show_built_with !== "false" ? `<span>Built on Cloudflare · Powered by Pinterest CMS</span>` : ""}
     </div>
   </footer>`
 }

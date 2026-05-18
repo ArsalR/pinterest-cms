@@ -72,6 +72,9 @@ export function buildDefaultSettings(input: DefaultSettingsInput): Record<string
     // THEME — custom
     theme_custom_css: "",
 
+    // FOOTER
+    footer_show_built_with: "true",
+
     // SEO
     seo_site_name: input.siteName,
     seo_default_title: input.siteName,
@@ -85,18 +88,17 @@ export function buildDefaultSettings(input: DefaultSettingsInput): Record<string
   }
 }
 
-/** Insert default settings, skipping any keys that already exist. */
+/** Insert default settings in a single batch — one round-trip instead of one per key. */
 export async function insertDefaultSettings(
   siteDb: Client,
   input: DefaultSettingsInput
 ): Promise<void> {
   const settings = buildDefaultSettings(input)
-  for (const [key, value] of Object.entries(settings)) {
-    await siteDb.execute({
-      sql: "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-      args: [key, value],
-    })
-  }
+  const stmts = Object.entries(settings).map(([key, value]) => ({
+    sql: "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
+    args: [key, value] as [string, string],
+  }))
+  await siteDb.batch(stmts, "write")
 }
 
 /** Fetch all settings as a plain object. */
