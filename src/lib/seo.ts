@@ -283,13 +283,21 @@ export function buildBreadcrumbJsonLd(
  * Build a path for a post given the site's permalink_structure setting.
  * Tokens supported: %slug% %category% %year% %month%
  */
+/** Parse a date string as UTC regardless of whether it uses a space or T separator. */
+function parseUtcDate(s: string): Date {
+  // SQLite stores "YYYY-MM-DD HH:MM:SS" — replace space with T and append Z so
+  // V8 always treats the value as UTC instead of local time.
+  return new Date(s.replace(" ", "T").replace(/(\d{2}:\d{2}:\d{2})$/, "$1Z"))
+}
+
 export function buildPostPath(
   post: { slug: string; published_at: string | null; created_at: string },
   category: Category | null,
   settings: Settings
 ): string {
   const struct = settings.permalink_structure || "/%slug%/"
-  const date = new Date(post.published_at || post.created_at || Date.now())
+  const dateStr = post.published_at || post.created_at
+  const date = dateStr ? parseUtcDate(dateStr) : new Date()
   const year = String(date.getUTCFullYear())
   const month = String(date.getUTCMonth() + 1).padStart(2, "0")
 
