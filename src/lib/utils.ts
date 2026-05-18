@@ -84,7 +84,9 @@ export function plainExcerpt(html: string, max = 160): string {
     .replace(/\s+/g, " ")
     .trim()
   if (txt.length <= max) return txt
-  return txt.slice(0, max - 1).replace(/\s+\S*$/, "") + "…"
+  const cut = txt.slice(0, max)
+  const lastSpace = cut.lastIndexOf(" ")
+  return (lastSpace > 0 ? cut.slice(0, lastSpace) : cut) + "…"
 }
 
 /** Constant-time string comparison. */
