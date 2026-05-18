@@ -157,26 +157,27 @@ mediaAdminRoute.post("/upload", async (c) => {
   if (!files.length) return c.json({ error: "No files provided" }, 400)
   if (files.length > 20) return c.json({ error: "Max 20 files per upload" }, 400)
 
-  const out: Array<{ id: string; url: string; filename: string; size: number }> = []
   for (const f of files) {
-    if (f.size > MAX_BYTES) {
-      return c.json({ error: `${f.name} exceeds 10MB` }, 413)
-    }
-    if (!f.type.startsWith("image/")) {
-      return c.json({ error: `${f.name} is not an image` }, 415)
-    }
-    const buf = await f.arrayBuffer()
-    const safeName = sanitizeFilename(f.name)
-    const { url, key } = await uploadToR2(c.env, hostname, safeName, buf, f.type)
-    const id = cuid()
-    await siteDb.execute({
-      sql: `INSERT INTO media (id, url, filename, size, source, r2_key)
-            VALUES (?, ?, ?, ?, 'manual', ?)`,
-      args: [id, url, safeName, f.size, key],
-    })
-    out.push({ id, url, filename: safeName, size: f.size })
+    if (f.size > MAX_BYTES) return c.json({ error: `${f.name} exceeds 10MB` }, 413)
+    if (!f.type.startsWith("image/")) return c.json({ error: `${f.name} is not an image` }, 415)
   }
 
+  const results = await Promise.all(
+    files.map(async (f) => {
+      const buf = await f.arrayBuffer()
+      const safeName = sanitizeFilename(f.name)
+      const { url, key } = await uploadToR2(c.env, hostname, safeName, buf, f.type)
+      return { id: cuid(), url, key, filename: safeName, size: f.size }
+    })
+  )
+
+  const stmts = results.map((r) => ({
+    sql: `INSERT INTO media (id, url, filename, size, source, r2_key) VALUES (?, ?, ?, ?, 'manual', ?)`,
+    args: [r.id, r.url, r.filename, r.size, r.key] as (string | number | null)[],
+  }))
+  if (stmts.length) await siteDb.batch(stmts, "write")
+
+  const out = results.map(({ id, url, filename, size }) => ({ id, url, filename, size }))
   return c.json({ success: true, files: out })
 })
 
