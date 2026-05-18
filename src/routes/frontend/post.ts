@@ -24,6 +24,7 @@ import {
   escapeAttr,
   formatDate,
   readingTime,
+  sanitizePostHtml,
 } from "../../lib/utils"
 
 export {}
@@ -37,13 +38,14 @@ export async function renderPostPage(
   const hostname = c.get("hostname")
   const settings = await loadSettings(siteDb)
 
-  const [menus, categories, images, related] = await Promise.all([
+  const [menus, categories, images, related, safeContent] = await Promise.all([
     fetchMenus(siteDb, settings),
     fetchCategories(siteDb),
     fetchPostImages(siteDb, post.id),
     settings.theme_show_related_posts === "true"
       ? fetchRelatedPosts(siteDb, settings, post, 6)
       : Promise.resolve<PinPost[]>([]),
+    sanitizePostHtml(post.content || ""),
   ])
 
   const path = buildPostPath(post, post.category ?? null, settings)
@@ -84,6 +86,7 @@ export async function renderPostPage(
 
   const bodyHtml = renderPostBody({
     post,
+    safeContent,
     images,
     related,
     settings,
@@ -121,6 +124,7 @@ export async function renderPostPage(
 
 interface PostBodyInput {
   post: Post & { category?: Category | null }
+  safeContent: string
   images: Array<{ url: string; alt: string; caption: string | null }>
   related: PinPost[]
   settings: Record<string, string>
@@ -137,6 +141,7 @@ interface PostBodyInput {
 function renderPostBody(input: PostBodyInput): string {
   const {
     post,
+    safeContent,
     images,
     related,
     settings,
@@ -192,7 +197,7 @@ function renderPostBody(input: PostBodyInput): string {
       ${heroHtml}
       <h1>${escapeHtml(post.title)}</h1>
       <div class="post-meta">${metaParts.join("<span>·</span>")}</div>
-      <div class="post-content">${post.content}</div>
+      <div class="post-content">${safeContent}</div>
       ${galleryHtml}
       ${shareHtml}
     </article>

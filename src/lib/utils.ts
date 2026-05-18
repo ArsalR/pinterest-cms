@@ -88,6 +88,25 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return mismatch === 0
 }
 
+/**
+ * Strip dangerous tags and attributes from admin/API-authored post HTML.
+ * Uses HTMLRewriter (available in Cloudflare Workers) to remove script/style/
+ * iframe/object/embed/form elements, then a regex pass removes on* event
+ * handlers and javascript: URLs from any surviving attributes.
+ */
+export async function sanitizePostHtml(html: string): Promise<string> {
+  let rewriter = new HTMLRewriter()
+  for (const tag of ["script", "style", "iframe", "object", "embed", "form"]) {
+    rewriter = rewriter.on(tag, { element(el) { el.remove() } })
+  }
+  const clean = await rewriter
+    .transform(new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } }))
+    .text()
+  return clean
+    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|\S*)/gi, "")
+    .replace(/(href|src|action)\s*=\s*["']?\s*javascript\s*:/gi, '$1="#"')
+}
+
 /** Read a JSON body with error handling. */
 export async function readJson<T = unknown>(req: Request): Promise<T | null> {
   try {
