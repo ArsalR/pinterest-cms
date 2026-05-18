@@ -20,22 +20,40 @@ export const adminAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) =>
   if (!token) {
     return redirectToLogin(c.req.url)
   }
-  const payload = await verifyJwt(token, c.env.JWT_SECRET)
+  if (!c.env.JWT_SECRET) {
+    console.error("authMiddleware: JWT_SECRET env var is not set")
+    return redirectToLogin(c.req.url)
+  }
+  let payload: Awaited<ReturnType<typeof verifyJwt>>
+  try {
+    payload = await verifyJwt(token, c.env.JWT_SECRET)
+  } catch (err) {
+    console.error("authMiddleware: JWT verify threw:", err)
+    return redirectToLogin(c.req.url)
+  }
   if (!payload || !payload.sub) {
     return redirectToLogin(c.req.url)
   }
 
-  // Verify user still exists (cheap — a single indexed lookup).
+  // Verify user still exists. On DB error, trust the valid JWT so a transient
+  // connectivity failure doesn't lock the user out (fail-open on infra errors,
+  // fail-closed on bad credentials).
   const siteDb = c.get("siteDb")
-  const userRow = await siteDb.execute({
-    sql: "SELECT id, email, role FROM users WHERE id = ? LIMIT 1",
-    args: [payload.sub],
-  })
-  if (!userRow.rows.length) {
-    return redirectToLogin(c.req.url)
+  let userData = { id: payload.sub, email: payload.email ?? "", role: payload.role ?? "admin" }
+  try {
+    const userRow = await siteDb.execute({
+      sql: "SELECT id, email, role FROM users WHERE id = ? LIMIT 1",
+      args: [payload.sub],
+    })
+    if (!userRow.rows.length) {
+      return redirectToLogin(c.req.url)
+    }
+    const u = userRow.rows[0]
+    userData = { id: u.id as string, email: u.email as string, role: u.role as string }
+  } catch (err) {
+    console.error("authMiddleware: DB lookup failed, trusting JWT:", err)
   }
-  const u = userRow.rows[0]
-  c.set("user", { id: u.id as string, email: u.email as string, role: u.role as string })
+  c.set("user", userData)
 
   return next()
 }

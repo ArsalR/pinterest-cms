@@ -22,8 +22,20 @@ loginRoute.get("/", async (c) => {
 })
 
 loginRoute.post("/", async (c) => {
+  if (!c.env.JWT_SECRET) {
+    console.error("login: JWT_SECRET env var is not set — cannot issue sessions")
+    return redirectWithError("/admin/", "Server configuration error — contact admin")
+  }
+
   const siteDb = c.get("siteDb")
-  const form = await c.req.formData()
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return redirectWithError("/admin/", "Could not read form data")
+  }
+
   const email = String(form.get("email") || "").toLowerCase().trim()
   const password = String(form.get("password") || "")
   const next = String(form.get("next") || "/admin/")
@@ -32,31 +44,55 @@ loginRoute.post("/", async (c) => {
     return redirectWithError(next, "Email and password required")
   }
 
-  const r = await siteDb.execute({
-    sql: "SELECT id, email, password, role FROM users WHERE email = ? LIMIT 1",
-    args: [email],
-  })
+  let r: Awaited<ReturnType<typeof siteDb.execute>>
+  try {
+    r = await siteDb.execute({
+      sql: "SELECT id, email, password, role FROM users WHERE email = ? LIMIT 1",
+      args: [email],
+    })
+  } catch (err) {
+    console.error("login: DB query failed:", err)
+    return redirectWithError(next, "Sign-in temporarily unavailable — please retry")
+  }
+
   if (!r.rows.length) {
     return redirectWithError(next, "Invalid email or password")
   }
   const user = r.rows[0]
-  const ok = await verifyPassword(password, user.password as string)
+
+  let ok: boolean
+  try {
+    ok = await verifyPassword(password, user.password as string)
+  } catch (err) {
+    console.error("login: password verify failed:", err)
+    return redirectWithError(next, "Sign-in temporarily unavailable — please retry")
+  }
+
   if (!ok) {
     return redirectWithError(next, "Invalid email or password")
   }
 
-  const token = await signJwt(
-    {
-      sub: user.id as string,
-      email: user.email as string,
-      role: (user.role as string) ?? "admin",
-    },
-    c.env.JWT_SECRET
-  )
+  let token: string
+  try {
+    token = await signJwt(
+      {
+        sub: user.id as string,
+        email: user.email as string,
+        role: (user.role as string) ?? "admin",
+      },
+      c.env.JWT_SECRET
+    )
+  } catch (err) {
+    console.error("login: JWT sign failed:", err)
+    return redirectWithError(next, "Sign-in temporarily unavailable — please retry")
+  }
+
   const cookieName = c.env.SESSION_COOKIE_NAME || "cms_session"
   const setCookie = buildSetCookie(cookieName, token, {
     maxAge: 60 * 60 * 24 * 7,
     sameSite: "Lax",
+    httpOnly: true,
+    secure: true,
   })
   // Sanitize next: only allow same-origin paths.
   const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/admin/"
