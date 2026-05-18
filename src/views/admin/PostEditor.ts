@@ -165,7 +165,7 @@ details[open] summary{margin-bottom:12px}
       }
       <div style="display:flex;gap:6px;margin-top:10px">
         <button type="submit" class="btn primary" style="flex:1;justify-content:center;padding:10px">Save ${type}</button>
-        ${post?.id ? `<a href="/admin/posts/${escapeAttr(post.id)}/preview" target="_blank" class="btn" style="padding:10px 14px" title="Preview">👁</a>` : ""}
+        ${post?.id ? `<a href="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(post.id)}/preview" target="_blank" class="btn" style="padding:10px 14px" title="Preview">👁</a>` : ""}
       </div>
     </div>
 

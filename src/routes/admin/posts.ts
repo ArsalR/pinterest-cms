@@ -74,8 +74,12 @@ postsAdminRoute.post("/:id/delete", async (c) => {
   return deletePost(c)
 })
 
-// Quick toggle publish — used from list page.
-postsAdminRoute.post("/:id/toggle-publish", async (c) => {
+postsAdminRoute.post("/:id/toggle-publish", (c) => togglePublish(c))
+
+// ──────────────── Helpers exposed for /admin/pages ────────────────
+export { renderPostsList, renderEditorPage, savePost, deletePost, bulkAction, togglePublish }
+
+async function togglePublish(c: Context<AppEnv>): Promise<Response> {
   const siteDb = c.get("siteDb")
   const id = c.req.param("id")
   if (!id) return c.json({ error: "id required" }, 400)
@@ -98,10 +102,7 @@ postsAdminRoute.post("/:id/toggle-publish", async (c) => {
     purgePostCache(c.env, c.get("hostname"), ["/", "/sitemap.xml", "/feed.xml"])
   )
   return c.redirect(postType === "page" ? "/admin/pages" : "/admin/posts")
-})
-
-// ──────────────── Helpers exposed for /admin/pages ────────────────
-export { renderPostsList, renderEditorPage, savePost, deletePost, bulkAction }
+}
 
 async function renderPostsList(
   c: Context<AppEnv>,
@@ -160,7 +161,7 @@ async function renderPostsList(
       <td>${escapeHtml(formatDate(r.created_at as string))}</td>
       <td class="row-actions">
         ${r.published ? `<a class="btn sm ghost" href="${escapeAttr(path)}" target="_blank">View ↗</a>` : ""}
-        <form method="POST" action="/admin/posts/${escapeAttr(r.id as string)}/toggle-publish" style="display:inline">
+        <form method="POST" action="/admin/${section}/${escapeAttr(r.id as string)}/toggle-publish" style="display:inline">
           <button class="btn sm" type="submit">${r.published ? "Unpublish" : "Publish"}</button>
         </form>
         <a class="btn sm primary" href="/admin/${section}/${escapeAttr(r.id as string)}">Edit</a>

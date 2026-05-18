@@ -27,8 +27,6 @@ import {
   sanitizePostHtml,
 } from "../../lib/utils"
 
-export {}
-
 /** Render a single post — hit by the slug router in routes/frontend/index.ts. */
 export async function renderPostPage(
   c: Context<AppEnv>,
