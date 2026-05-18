@@ -394,6 +394,7 @@ window.__GALLERY = ${imagesJson};
     });
   }
 
+
   // Warn before navigating away if the form has unsaved changes.
   var dirty = false;
   var titleInput = document.querySelector('#post-form [name="title"]');
