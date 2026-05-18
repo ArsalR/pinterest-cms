@@ -71,9 +71,18 @@ export function readingTime(text: string): number {
   return Math.max(1, Math.ceil(words / 200))
 }
 
-/** Strip HTML tags, collapse whitespace, truncate. Used for excerpts. */
+/** Strip HTML tags, decode common entities, collapse whitespace, truncate. Used for excerpts. */
 export function plainExcerpt(html: string, max = 160): string {
-  const txt = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+  const txt = html
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
   if (txt.length <= max) return txt
   return txt.slice(0, max - 1).replace(/\s+\S*$/, "") + "…"
 }
@@ -86,6 +95,25 @@ export function timingSafeEqual(a: string, b: string): boolean {
     mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i)
   }
   return mismatch === 0
+}
+
+/**
+ * Strip dangerous tags and attributes from admin/API-authored post HTML.
+ * Uses HTMLRewriter (available in Cloudflare Workers) to remove script/style/
+ * iframe/object/embed/form elements, then a regex pass removes on* event
+ * handlers and javascript: URLs from any surviving attributes.
+ */
+export async function sanitizePostHtml(html: string): Promise<string> {
+  let rewriter = new HTMLRewriter()
+  for (const tag of ["script", "style", "iframe", "object", "embed", "form"]) {
+    rewriter = rewriter.on(tag, { element(el) { el.remove() } })
+  }
+  const clean = await rewriter
+    .transform(new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } }))
+    .text()
+  return clean
+    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|\S*)/gi, "")
+    .replace(/(href|src|action)\s*=\s*["']?\s*javascript\s*:/gi, '$1="#"')
 }
 
 /** Read a JSON body with error handling. */

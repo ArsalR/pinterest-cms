@@ -7,6 +7,7 @@ import type { AppEnv } from "../../lib/types"
 import { renderAdminLayout } from "../../views/admin/Layout"
 import { escapeHtml, escapeAttr, formatDate, cuid } from "../../lib/utils"
 import { generateApiKey, hashPassword } from "../../lib/auth"
+import { parseCookies, buildSetCookie } from "../../lib/cookies"
 
 export const apiKeysAdminRoute = new Hono<AppEnv>()
 
@@ -14,9 +15,18 @@ apiKeysAdminRoute.get("/", async (c) => {
   const siteDb = c.get("siteDb")
   const hostname = c.get("hostname")
   const user = c.get("user")
-  const url = new URL(c.req.url)
-  const revealed = url.searchParams.get("revealed")          // raw key (one-time only)
-  const revealedName = url.searchParams.get("name") || ""
+
+  // Read the one-time flash cookie set by the create POST, then clear it immediately.
+  const cookies = parseCookies(c.req.header("cookie"))
+  let revealed: string | null = null
+  let revealedName = ""
+  try {
+    if (cookies["cms_key_flash"]) {
+      const flash = JSON.parse(cookies["cms_key_flash"])
+      revealed = flash.raw ?? null
+      revealedName = flash.name ?? ""
+    }
+  } catch { /* malformed cookie — ignore */ }
 
   const keys = await siteDb.execute(`
     SELECT k.*,
@@ -99,7 +109,7 @@ apiKeysAdminRoute.get("/", async (c) => {
     </div>
   `
 
-  return c.html(
+  const response = c.html(
     renderAdminLayout({
       title: `API Keys — ${hostname}`,
       hostname,
@@ -111,6 +121,14 @@ apiKeysAdminRoute.get("/", async (c) => {
     200,
     { "Cache-Control": "no-store, private" }
   )
+  // Clear the flash cookie after reading it so it can never be replayed.
+  if (revealed) {
+    response.headers.append(
+      "Set-Cookie",
+      buildSetCookie("cms_key_flash", "", { maxAge: 0, path: "/admin/api-keys", sameSite: "Strict" })
+    )
+  }
+  return response
 })
 
 apiKeysAdminRoute.post("/create", async (c) => {
@@ -131,9 +149,17 @@ apiKeysAdminRoute.post("/create", async (c) => {
     args: [id, name, hash, preview, permissions],
   })
 
-  // One-time reveal via redirect query (won't be in logs since admin pages are no-store).
-  const params = new URLSearchParams({ revealed: raw, name })
-  return c.redirect(`/admin/api-keys?${params}`)
+  // One-time reveal via a short-lived HttpOnly flash cookie so the key never
+  // appears in the URL, browser history, or server access logs.
+  const flashCookie = buildSetCookie(
+    "cms_key_flash",
+    JSON.stringify({ raw, name }),
+    { maxAge: 120, path: "/admin/api-keys", sameSite: "Strict" }
+  )
+  return new Response(null, {
+    status: 302,
+    headers: { "Location": "/admin/api-keys", "Set-Cookie": flashCookie },
+  })
 })
 
 apiKeysAdminRoute.post("/:id/revoke", async (c) => {

@@ -10,6 +10,8 @@ import { escapeHtml, escapeAttr, formatDate, slugify, cuid, nowIso, plainExcerpt
 import { loadSettings } from "../../lib/defaults"
 import { buildPostPath } from "../../lib/seo"
 import { purgePostCache } from "../../lib/revalidate"
+import { ensureUniqueSlug } from "../../lib/slugs"
+import { renderPostPage } from "../frontend/post"
 
 export const postsAdminRoute = new Hono<AppEnv>()
 
@@ -32,21 +34,62 @@ postsAdminRoute.post("/save", async (c) => {
   return savePost(c, "post")
 })
 
+postsAdminRoute.post("/bulk-action", async (c) => {
+  return bulkAction(c, "post")
+})
+
+// Preview — renders the frontend post view for any post (published or draft).
+postsAdminRoute.get("/:id/preview", async (c) => {
+  const siteDb = c.get("siteDb")
+  const id = c.req.param("id")
+  const r = await siteDb.execute({
+    sql: `SELECT p.*, c.id AS cat_id, c.name AS cat_name, c.slug AS cat_slug
+          FROM posts p LEFT JOIN categories c ON c.id = p.category_id
+          WHERE p.id = ? LIMIT 1`,
+    args: [id],
+  })
+  if (!r.rows.length) return c.html("Post not found", 404)
+  const row = r.rows[0]
+  const post = {
+    ...(row as unknown as Post),
+    category: row.cat_id
+      ? { id: row.cat_id as string, name: row.cat_name as string, slug: row.cat_slug as string } as Category
+      : null,
+  }
+  const backHref = escapeAttr(`/admin/${post.type === "page" ? "pages" : "posts"}/${id}`)
+  const banner = `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#e60023;color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;line-height:1.4">PREVIEW${post.published ? "" : " — not published"} · <a href="${backHref}" style="color:#fff;text-decoration:underline">← Back to editor</a></div><div style="height:40px"></div>`
+  const response = await renderPostPage(c, post as Post & { category?: Category | null })
+  const html = await response.text()
+  const withBanner = html.replace(/(<body[^>]*>)/i, `$1${banner}`)
+  return new Response(withBanner, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, private",
+      "X-Robots-Tag": "noindex",
+    },
+  })
+})
+
 postsAdminRoute.post("/:id/delete", async (c) => {
   return deletePost(c)
 })
 
-// Quick toggle publish — used from list page.
-postsAdminRoute.post("/:id/toggle-publish", async (c) => {
+postsAdminRoute.post("/:id/toggle-publish", (c) => togglePublish(c))
+
+// ──────────────── Helpers exposed for /admin/pages ────────────────
+export { renderPostsList, renderEditorPage, savePost, deletePost, bulkAction, togglePublish }
+
+async function togglePublish(c: Context<AppEnv>): Promise<Response> {
   const siteDb = c.get("siteDb")
   const id = c.req.param("id")
   if (!id) return c.json({ error: "id required" }, 400)
   const r = await siteDb.execute({
-    sql: "SELECT published, published_at FROM posts WHERE id = ?",
+    sql: "SELECT published, published_at, type FROM posts WHERE id = ?",
     args: [id],
   })
   if (!r.rows.length) return c.json({ error: "Not found" }, 404)
   const cur = r.rows[0].published as number
+  const postType = r.rows[0].type as string
   const next = cur ? 0 : 1
   await siteDb.execute({
     sql: `UPDATE posts SET published = ?,
@@ -58,11 +101,8 @@ postsAdminRoute.post("/:id/toggle-publish", async (c) => {
   c.executionCtx.waitUntil(
     purgePostCache(c.env, c.get("hostname"), ["/", "/sitemap.xml", "/feed.xml"])
   )
-  return c.redirect("/admin/posts")
-})
-
-// ──────────────── Helpers exposed for /admin/pages ────────────────
-export { renderPostsList, renderEditorPage, savePost, deletePost }
+  return c.redirect(postType === "page" ? "/admin/pages" : "/admin/posts")
+}
 
 async function renderPostsList(
   c: Context<AppEnv>,
@@ -98,6 +138,7 @@ async function renderPostsList(
     args,
   })
 
+  const section = type === "page" ? "pages" : "posts"
   const tableRows = rows.rows.map((r) => {
     const path =
       type === "page"
@@ -112,18 +153,19 @@ async function renderPostsList(
             settings
           )
     return `<tr>
-      <td><a href="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(r.id as string)}"><strong>${escapeHtml(r.title as string)}</strong></a><br><span style="color:var(--muted-2);font-size:12px;font-family:var(--mono)">${escapeHtml(r.slug as string)}</span></td>
+      <td style="width:32px;padding:8px 4px"><input type="checkbox" class="bulk-check" data-id="${escapeAttr(r.id as string)}" style="width:16px;height:16px"></td>
+      <td><a href="/admin/${section}/${escapeAttr(r.id as string)}"><strong>${escapeHtml(r.title as string)}</strong></a><br><span style="color:var(--muted-2);font-size:12px;font-family:var(--mono)">${escapeHtml(r.slug as string)}</span></td>
       <td>${r.cat_name ? escapeHtml(r.cat_name as string) : "—"}</td>
       <td><span class="pill ${r.published ? "published" : "draft"}">${r.published ? "Published" : "Draft"}</span></td>
       <td><span class="pill ${r.source === "api" ? "api" : "manual"}">${escapeHtml((r.source as string) ?? "manual")}</span></td>
       <td>${escapeHtml(formatDate(r.created_at as string))}</td>
       <td class="row-actions">
         ${r.published ? `<a class="btn sm ghost" href="${escapeAttr(path)}" target="_blank">View ↗</a>` : ""}
-        <form method="POST" action="/admin/posts/${escapeAttr(r.id as string)}/toggle-publish" style="display:inline">
+        <form method="POST" action="/admin/${section}/${escapeAttr(r.id as string)}/toggle-publish" style="display:inline">
           <button class="btn sm" type="submit">${r.published ? "Unpublish" : "Publish"}</button>
         </form>
-        <a class="btn sm primary" href="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(r.id as string)}">Edit</a>
-        <form method="POST" action="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(r.id as string)}/delete" style="display:inline" onsubmit="return confirm('Delete &quot;${escapeAttr((r.title as string).replace(/"/g, ""))}&quot;? This cannot be undone.')">
+        <a class="btn sm primary" href="/admin/${section}/${escapeAttr(r.id as string)}">Edit</a>
+        <form method="POST" action="/admin/${section}/${escapeAttr(r.id as string)}/delete" style="display:inline" onsubmit="return confirm('Delete &quot;${escapeAttr((r.title as string).replace(/"/g, ""))}&quot;? This cannot be undone.')">
           <button class="btn sm danger" type="submit">Delete</button>
         </form>
       </td>
@@ -132,6 +174,7 @@ async function renderPostsList(
 
   const heading = type === "page" ? "Pages" : "Posts"
   const newHref = type === "page" ? "/admin/pages/new" : "/admin/posts/new"
+  const bulkUrl = `/admin/${section}/bulk-action`
 
   const body = `
     <form method="GET" style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
@@ -143,10 +186,66 @@ async function renderPostsList(
       </select>
       <button class="btn" type="submit">Filter</button>
     </form>
-    ${rows.rows.length ? `<table>
-      <thead><tr><th>${heading.replace(/s$/, "")}</th><th>Category</th><th>Status</th><th>Source</th><th>Created</th><th></th></tr></thead>
+    ${rows.rows.length ? `
+    <div id="bulk-toolbar" style="display:none;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px">
+      <span id="bulk-count" style="font-size:13px;color:var(--muted)">0 selected</span>
+      <select id="bulk-action-sel" style="background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-sm);padding:6px 10px;color:var(--text);font-size:13px">
+        <option value="">— Action —</option>
+        <option value="publish">Publish</option>
+        <option value="unpublish">Unpublish</option>
+        <option value="delete">Delete</option>
+      </select>
+      <button type="button" id="bulk-apply" class="btn sm">Apply</button>
+    </div>
+    <table>
+      <thead><tr>
+        <th style="width:32px"><input type="checkbox" id="bulk-select-all" style="width:16px;height:16px"></th>
+        <th>${heading.replace(/s$/, "")}</th><th>Category</th><th>Status</th><th>Source</th><th>Created</th><th></th>
+      </tr></thead>
       <tbody>${tableRows}</tbody>
-    </table>` : `<div class="empty-state"><p>No ${heading.toLowerCase()} yet.</p><a class="btn primary" href="${newHref}">+ New ${type}</a></div>`}
+    </table>
+    <script>
+    (function(){
+      var checks = document.querySelectorAll('.bulk-check');
+      var selectAll = document.getElementById('bulk-select-all');
+      var toolbar = document.getElementById('bulk-toolbar');
+      var countEl = document.getElementById('bulk-count');
+      var actionSel = document.getElementById('bulk-action-sel');
+      var applyBtn = document.getElementById('bulk-apply');
+      function updateToolbar(){
+        var n = document.querySelectorAll('.bulk-check:checked').length;
+        toolbar.style.display = n ? 'flex' : 'none';
+        countEl.textContent = n + ' selected';
+      }
+      checks.forEach(function(cb){ cb.addEventListener('change', updateToolbar); });
+      selectAll.addEventListener('change', function(){
+        checks.forEach(function(cb){ cb.checked = selectAll.checked; });
+        updateToolbar();
+      });
+      applyBtn.addEventListener('click', function(){
+        var action = actionSel.value;
+        if (!action) { alert('Choose an action first.'); return; }
+        var checked = Array.from(document.querySelectorAll('.bulk-check:checked'));
+        if (!checked.length) return;
+        if (action === 'delete' && !confirm('Delete ' + checked.length + ' item(s)? This cannot be undone.')) return;
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '${bulkUrl}';
+        [['type','${type}'],['bulk_action',action]].forEach(function(pair){
+          var inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = pair[0]; inp.value = pair[1];
+          form.appendChild(inp);
+        });
+        checked.forEach(function(cb){
+          var inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = 'post_ids[]'; inp.value = cb.dataset.id;
+          form.appendChild(inp);
+        });
+        document.body.appendChild(form);
+        form.submit();
+      });
+    })();
+    </script>` : `<div class="empty-state"><p>No ${heading.toLowerCase()} yet.</p><a class="btn primary" href="${newHref}">+ New ${type}</a></div>`}
   `
 
   return c.html(
@@ -323,22 +422,64 @@ async function replaceImages(
   postId: string,
   form: FormData
 ): Promise<void> {
-  // images[] is a repeated JSON-encoded field per image: {url, alt, caption}
   const all = form.getAll("image_data[]")
   await siteDb.execute({ sql: "DELETE FROM post_images WHERE post_id = ?", args: [postId] })
+  const stmts: Array<{ sql: string; args: (string | number | null)[] }> = []
   for (let i = 0; i < all.length; i++) {
     let parsed: { url?: string; alt?: string; caption?: string } | null = null
-    try {
-      parsed = JSON.parse(String(all[i]))
-    } catch {
-      continue
-    }
+    try { parsed = JSON.parse(String(all[i])) } catch { continue }
     if (!parsed?.url) continue
-    await siteDb.execute({
+    stmts.push({
       sql: "INSERT INTO post_images (id, post_id, url, alt, caption, ord) VALUES (?, ?, ?, ?, ?, ?)",
       args: [cuid(), postId, parsed.url, parsed.alt ?? "", parsed.caption ?? null, i],
     })
   }
+  if (stmts.length) await siteDb.batch(stmts, "write")
+}
+
+async function bulkAction(
+  c: Context<AppEnv>,
+  type: "post" | "page"
+): Promise<Response> {
+  const siteDb = c.get("siteDb")
+  const form = await c.req.formData()
+  const action = String(form.get("bulk_action") || "")
+  const ids = form.getAll("post_ids[]").map(String).filter(Boolean)
+  const backUrl = type === "page" ? "/admin/pages" : "/admin/posts"
+
+  if (!ids.length || !action) return c.redirect(backUrl)
+
+  const placeholders = ids.map(() => "?").join(",")
+
+  if (action === "publish") {
+    await siteDb.execute({
+      sql: `UPDATE posts SET published = 1,
+              published_at = COALESCE(published_at, datetime('now')),
+              updated_at = datetime('now')
+            WHERE id IN (${placeholders}) AND type = ?`,
+      args: [...ids, type],
+    })
+  } else if (action === "unpublish") {
+    await siteDb.execute({
+      sql: `UPDATE posts SET published = 0, updated_at = datetime('now')
+            WHERE id IN (${placeholders}) AND type = ?`,
+      args: [...ids, type],
+    })
+  } else if (action === "delete") {
+    await siteDb.execute({
+      sql: `DELETE FROM post_images WHERE post_id IN (${placeholders})`,
+      args: ids,
+    })
+    await siteDb.execute({
+      sql: `DELETE FROM posts WHERE id IN (${placeholders}) AND type = ?`,
+      args: [...ids, type],
+    })
+  }
+
+  c.executionCtx.waitUntil(
+    purgePostCache(c.env, c.get("hostname"), ["/", "/sitemap.xml", "/feed.xml"])
+  )
+  return c.redirect(backUrl)
 }
 
 async function deletePost(
@@ -358,24 +499,6 @@ async function deletePost(
   return c.redirect(`/admin/${type}`)
 }
 
-async function ensureUniqueSlug(
-  siteDb: AppEnv["Variables"]["siteDb"],
-  base: string,
-  excludeId?: string
-): Promise<string> {
-  let slug = base
-  let i = 2
-  while (true) {
-    const sql = excludeId
-      ? "SELECT id FROM posts WHERE slug = ? AND id != ? LIMIT 1"
-      : "SELECT id FROM posts WHERE slug = ? LIMIT 1"
-    const args = excludeId ? [slug, excludeId] : [slug]
-    const r = await siteDb.execute({ sql, args })
-    if (!r.rows.length) return slug
-    slug = `${base}-${i++}`
-    if (i > 1000) throw new Error("Could not generate unique slug")
-  }
-}
 
 function notFound(hostname: string, user: AppEnv["Variables"]["user"] | undefined): string {
   return renderAdminLayout({

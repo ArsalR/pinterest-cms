@@ -86,6 +86,25 @@ categoriesAdminRoute.get("/", async (c) => {
   )
 })
 
+// JSON endpoint for quick-create from post editor (returns { id, name, slug }).
+categoriesAdminRoute.post("/create-quick", async (c) => {
+  const siteDb = c.get("siteDb")
+  let body: { name?: string } = {}
+  try { body = await c.req.json() } catch { return c.json({ error: "Invalid JSON" }, 400) }
+  const name = (body.name ?? "").trim()
+  if (!name) return c.json({ error: "name required" }, 400)
+  const slug = slugify(name)
+  const dup = await siteDb.execute({ sql: "SELECT id FROM categories WHERE slug = ?", args: [slug] })
+  if (dup.rows.length) return c.json({ error: `Slug "${slug}" already exists` }, 409)
+  const id = cuid()
+  await siteDb.execute({
+    sql: "INSERT INTO categories (id, name, slug) VALUES (?, ?, ?)",
+    args: [id, name, slug],
+  })
+  c.executionCtx.waitUntil(purgeEverything(c.env, c.get("hostname")))
+  return c.json({ id, name, slug })
+})
+
 categoriesAdminRoute.post("/create", async (c) => {
   const siteDb = c.get("siteDb")
   const form = await c.req.formData()

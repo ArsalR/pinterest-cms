@@ -152,14 +152,21 @@ details[open] summary{margin-bottom:12px}
         type === "post"
           ? `<div class="form-row" style="margin-top:14px">
         <label>Category</label>
-        <select name="category_id">
+        <select name="category_id" id="cat-select">
           <option value="">— Uncategorized —</option>
           ${optsHtml}
         </select>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input type="text" id="new-cat-input" placeholder="New category name…" style="flex:1;background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-sm);padding:6px 9px;color:var(--text);font-size:13px">
+          <button type="button" id="new-cat-btn" class="btn sm">+ Add</button>
+        </div>
       </div>`
           : ""
       }
-      <button type="submit" class="btn primary" style="width:100%;margin-top:10px;justify-content:center;padding:10px">Save ${type}</button>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button type="submit" class="btn primary" style="flex:1;justify-content:center;padding:10px">Save ${type}</button>
+        ${post?.id ? `<a href="/admin/${type === "page" ? "pages" : "posts"}/${escapeAttr(post.id)}/preview" target="_blank" class="btn" style="padding:10px 14px" title="Preview">👁</a>` : ""}
+      </div>
     </div>
 
     <div class="card">
@@ -353,6 +360,99 @@ window.__GALLERY = ${imagesJson};
 
   function escAttr(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function escHtml(s){return String(s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+  // ── Quick-create category ──
+  var catSelect = document.getElementById('cat-select');
+  var newCatInput = document.getElementById('new-cat-input');
+  var newCatBtn = document.getElementById('new-cat-btn');
+  if (catSelect && newCatInput && newCatBtn) {
+    async function createCategory(){
+      var name = newCatInput.value.trim();
+      if (!name) return;
+      newCatBtn.disabled = true; newCatBtn.textContent = '…';
+      try {
+        var resp = await fetch('/admin/categories/create-quick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name })
+        });
+        var data = await resp.json();
+        if (data.id) {
+          var opt = document.createElement('option');
+          opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+          catSelect.appendChild(opt);
+          newCatInput.value = '';
+        } else {
+          alert(data.error || 'Failed to create category');
+        }
+      } catch(e){ alert(e.message); }
+      finally { newCatBtn.disabled = false; newCatBtn.textContent = '+ Add'; }
+    }
+    newCatBtn.addEventListener('click', createCategory);
+    newCatInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter'){ e.preventDefault(); createCategory(); }
+    });
+  }
+
+  // Warn before navigating away if the form has unsaved changes.
+  var dirty = false;
+  var titleInput = document.querySelector('#post-form [name="title"]');
+  if (ed) ed.addEventListener('input', function(){ dirty = true; });
+  if (titleInput) titleInput.addEventListener('input', function(){ dirty = true; });
+  window.addEventListener('beforeunload', function(e){
+    if (dirty){ e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // ── Autosave to localStorage ──
+  var draftKey = 'cms_draft_${type}_${post?.id ?? "new"}';
+  function saveDraft(){
+    try {
+      sync();
+      var t = document.querySelector('#post-form [name="title"]');
+      var ex = document.querySelector('#post-form [name="excerpt"]');
+      localStorage.setItem(draftKey, JSON.stringify({
+        title: t ? t.value : '',
+        content: ci.value,
+        excerpt: ex ? ex.value : '',
+        ts: Date.now()
+      }));
+    } catch(e){}
+  }
+  try {
+    var _raw = localStorage.getItem(draftKey);
+    if (_raw) {
+      var _draft = JSON.parse(_raw);
+      if (_draft && _draft.ts) {
+        var _age = Math.round((Date.now() - _draft.ts) / 60000);
+        var _banner = document.createElement('div');
+        _banner.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;display:flex;gap:12px;align-items:center;box-shadow:0 4px 12px rgba(0,0,0,0.3)';
+        _banner.innerHTML = '<span>Unsaved draft found (' + (_age < 1 ? 'just now' : _age + ' min ago') + ')</span>'
+          + '<button type="button" style="background:#e60023;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px" id="restore-draft">Restore</button>'
+          + '<button type="button" style="background:transparent;color:#94a3b8;border:none;cursor:pointer;font-size:18px;line-height:1" id="dismiss-draft">&times;</button>';
+        document.body.appendChild(_banner);
+        (function(draft, banner){
+          document.getElementById('restore-draft').addEventListener('click', function(){
+            var t = document.querySelector('#post-form [name="title"]');
+            var ex = document.querySelector('#post-form [name="excerpt"]');
+            if (t && draft.title !== undefined) t.value = draft.title;
+            if (draft.content !== undefined){ ed.innerHTML = draft.content; sync(); }
+            if (ex && draft.excerpt !== undefined) ex.value = draft.excerpt;
+            dirty = true;
+            banner.remove();
+          });
+          document.getElementById('dismiss-draft').addEventListener('click', function(){
+            try { localStorage.removeItem(draftKey); } catch(e){}
+            banner.remove();
+          });
+        })(_draft, _banner);
+      }
+    }
+  } catch(e){}
+  setInterval(saveDraft, 30000);
+  document.getElementById('post-form').addEventListener('submit', function(){
+    dirty = false;
+    try { localStorage.removeItem(draftKey); } catch(e){}
+  });
 })();
 </script>
 `

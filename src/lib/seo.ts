@@ -110,6 +110,10 @@ export function renderHeadHtml(head: PageHead, settings?: Settings, post?: Post)
   out.push(`<meta name="description" content="${escapeAttr(head.description)}" />`)
   out.push(`<link rel="canonical" href="${escapeAttr(head.canonical)}" />`)
   out.push(`<meta name="robots" content="${escapeAttr(head.robots)}" />`)
+  if (head.ogType === "article") {
+    const authorName = settings?.seo_site_name || settings?.site_name || ""
+    if (authorName) out.push(`<meta name="author" content="${escapeAttr(authorName)}" />`)
+  }
 
   // theme-color for mobile browser chrome (uses primary color if available).
   const themeColor = settings?.theme_primary_color || "#e60023"

@@ -11,7 +11,7 @@ import {
   fetchCategories,
   fetchPostsForGrid,
 } from "../../views/frontend/helpers"
-import { buildPageHead, buildBreadcrumbJsonLd } from "../../lib/seo"
+import { buildPageHead, buildBreadcrumbJsonLd, buildCategoryPath } from "../../lib/seo"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 
 /** Render a category archive — hit by the slug router in routes/frontend/index.ts. */
@@ -46,16 +46,34 @@ export async function renderCategoryPage(
   const total = Number(totalRow.rows[0]?.n ?? 0)
   const totalPages = Math.max(1, Math.ceil(total / perPage))
 
-  const canonical = `https://${hostname}/${category.slug}/`
+  const catPath = buildCategoryPath(category.slug, settings)
+  const canonical = `https://${hostname}${catPath}`
   const head = buildPageHead({ type: "category", category, url: canonical }, settings)
+
+  // Paginated pages: update canonical, title, and OG title.
+  if (page > 1) {
+    head.canonical = `${canonical}?page=${page}`
+    const sep = settings.seo_title_separator || "|"
+    const siteName = settings.seo_site_name || settings.site_name || ""
+    const base = category.seo_title || category.name
+    head.title = siteName ? `${base} — Page ${page} ${sep} ${siteName}` : `${base} — Page ${page}`
+    head.ogTitle = head.title
+  }
 
   const breadcrumbItems = [
     { name: "Home", url: `https://${hostname}/` },
     { name: category.name, url: canonical },
   ]
-  const extraHead = `<script type="application/ld+json">${JSON.stringify(
-    buildBreadcrumbJsonLd(breadcrumbItems)
-  ).replace(/</g, "\\u003c")}</script>`
+
+  const prevHref = page > 1 ? `${canonical}${page - 1 > 1 ? `?page=${page - 1}` : ""}` : null
+  const nextHref = page < totalPages ? `${canonical}?page=${page + 1}` : null
+  const extraHead = [
+    prevHref ? `<link rel="prev" href="${escapeAttr(prevHref)}" />` : "",
+    nextHref ? `<link rel="next" href="${escapeAttr(nextHref)}" />` : "",
+    `<script type="application/ld+json">${JSON.stringify(
+      buildBreadcrumbJsonLd(breadcrumbItems)
+    ).replace(/</g, "\\u003c")}</script>`,
+  ].filter(Boolean).join("\n  ")
 
   const heroBg = category.cover_image
     ? `style="--bg-image:url('${escapeAttr(category.cover_image)}')"`
@@ -68,7 +86,7 @@ export async function renderCategoryPage(
     ${category.description ? `<p>${escapeHtml(category.description)}</p>` : ""}
   </section>`
 
-  const paginationHtml = renderPagination(page, totalPages, `/${category.slug}/`)
+  const paginationHtml = renderPagination(page, totalPages, catPath)
 
   const bodyHtml = `${heroHtml}
     ${renderPinterestGrid(posts, settings)}

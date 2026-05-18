@@ -119,18 +119,28 @@ export async function fetchRelatedPosts(
   post: Post,
   limit = 6
 ): Promise<PinPost[]> {
-  if (!post.category_id) return []
-  const rows = await siteDb.execute({
-    sql: `SELECT p.id, p.title, p.slug, p.cover_image, p.excerpt, p.content, p.published_at, p.created_at,
-                 c.id AS cat_id, c.name AS cat_name, c.slug AS cat_slug,
-                 (SELECT COUNT(*) FROM post_images pi WHERE pi.post_id = p.id) AS image_count
-          FROM posts p
-          LEFT JOIN categories c ON c.id = p.category_id
-          WHERE p.category_id = ? AND p.id != ? AND p.published = 1 AND p.no_index = 0
-                AND p.type = 'post'
-          ORDER BY p.published_at DESC LIMIT ?`,
-    args: [post.category_id, post.id, limit],
-  })
+  // Same-category posts preferred; fall back to recent posts for uncategorised content.
+  const rows = await siteDb.execute(
+    post.category_id
+      ? {
+          sql: `SELECT p.id, p.title, p.slug, p.cover_image, p.excerpt, p.content, p.published_at, p.created_at,
+                       c.id AS cat_id, c.name AS cat_name, c.slug AS cat_slug,
+                       (SELECT COUNT(*) FROM post_images pi WHERE pi.post_id = p.id) AS image_count
+                FROM posts p LEFT JOIN categories c ON c.id = p.category_id
+                WHERE p.category_id = ? AND p.id != ? AND p.published = 1 AND p.no_index = 0 AND p.type = 'post'
+                ORDER BY p.published_at DESC LIMIT ?`,
+          args: [post.category_id, post.id, limit],
+        }
+      : {
+          sql: `SELECT p.id, p.title, p.slug, p.cover_image, p.excerpt, p.content, p.published_at, p.created_at,
+                       c.id AS cat_id, c.name AS cat_name, c.slug AS cat_slug,
+                       (SELECT COUNT(*) FROM post_images pi WHERE pi.post_id = p.id) AS image_count
+                FROM posts p LEFT JOIN categories c ON c.id = p.category_id
+                WHERE p.id != ? AND p.published = 1 AND p.no_index = 0 AND p.type = 'post'
+                ORDER BY p.published_at DESC LIMIT ?`,
+          args: [post.id, limit],
+        }
+  )
   return rows.rows.map((r) => ({
     id: r.id as string,
     title: r.title as string,
