@@ -48,6 +48,7 @@ export interface HonoVariables {
   site: SiteConfig
   siteDb: LibSQLClient
   hostname: string
+  settings?: Record<string, string>
   user?: { id: string; email: string; role: string }
   apiKeyId?: string
 }

@@ -102,12 +102,20 @@ export async function insertDefaultSettings(
 }
 
 /** Fetch all settings as a plain object. */
+// Per-request cache: the tenant middleware loads settings once and stores the
+// result here keyed on the Client instance. Subsequent calls within the same
+// request (same Client object) return the cached value without a DB round-trip.
+const _settingsCache = new WeakMap<Client, Record<string, string>>()
+
 export async function loadSettings(siteDb: Client): Promise<Record<string, string>> {
+  const cached = _settingsCache.get(siteDb)
+  if (cached) return cached
   const out: Record<string, string> = {}
   const rows = await siteDb.execute("SELECT key, value FROM settings")
   for (const r of rows.rows) {
     out[r.key as string] = (r.value as string) ?? ""
   }
+  _settingsCache.set(siteDb, out)
   return out
 }
 
