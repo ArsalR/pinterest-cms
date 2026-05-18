@@ -3,6 +3,7 @@
 
 import type { MiddlewareHandler } from "hono"
 import { resolveSite, getSiteDb } from "../lib/turso"
+import { loadSettings } from "../lib/defaults"
 import type { AppEnv } from "../lib/types"
 
 export const tenantMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
@@ -26,9 +27,11 @@ export const tenantMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   }
 
   const siteDb = getSiteDb(site.turso_url, site.turso_token)
+  const settings = await loadSettings(siteDb)
   c.set("site", site)
   c.set("siteDb", siteDb)
   c.set("hostname", hostname)
+  c.set("settings", settings)
 
   return next()
 }
