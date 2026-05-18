@@ -11,6 +11,7 @@ import { loadSettings } from "../../lib/defaults"
 import { buildPostPath } from "../../lib/seo"
 import { purgePostCache } from "../../lib/revalidate"
 import { ensureUniqueSlug } from "../../lib/slugs"
+import { renderPostPage } from "../frontend/post"
 
 export const postsAdminRoute = new Hono<AppEnv>()
 
@@ -37,6 +38,38 @@ postsAdminRoute.post("/bulk-action", async (c) => {
   return bulkAction(c, "post")
 })
 
+// Preview — renders the frontend post view for any post (published or draft).
+postsAdminRoute.get("/:id/preview", async (c) => {
+  const siteDb = c.get("siteDb")
+  const id = c.req.param("id")
+  const r = await siteDb.execute({
+    sql: `SELECT p.*, c.id AS cat_id, c.name AS cat_name, c.slug AS cat_slug
+          FROM posts p LEFT JOIN categories c ON c.id = p.category_id
+          WHERE p.id = ? LIMIT 1`,
+    args: [id],
+  })
+  if (!r.rows.length) return c.html("Post not found", 404)
+  const row = r.rows[0]
+  const post = {
+    ...(row as unknown as Post),
+    category: row.cat_id
+      ? { id: row.cat_id as string, name: row.cat_name as string, slug: row.cat_slug as string } as Category
+      : null,
+  }
+  const backHref = escapeAttr(`/admin/${post.type === "page" ? "pages" : "posts"}/${id}`)
+  const banner = `<div style="position:fixed;top:0;left:0;right:0;z-index:9999;background:#e60023;color:#fff;text-align:center;padding:9px 16px;font-size:13px;font-weight:600;line-height:1.4">PREVIEW${post.published ? "" : " — not published"} · <a href="${backHref}" style="color:#fff;text-decoration:underline">← Back to editor</a></div><div style="height:40px"></div>`
+  const response = await renderPostPage(c, post as Post & { category?: Category | null })
+  const html = await response.text()
+  const withBanner = html.replace(/(<body[^>]*>)/i, `$1${banner}`)
+  return new Response(withBanner, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store, private",
+      "X-Robots-Tag": "noindex",
+    },
+  })
+})
+
 postsAdminRoute.post("/:id/delete", async (c) => {
   return deletePost(c)
 })
@@ -47,11 +80,12 @@ postsAdminRoute.post("/:id/toggle-publish", async (c) => {
   const id = c.req.param("id")
   if (!id) return c.json({ error: "id required" }, 400)
   const r = await siteDb.execute({
-    sql: "SELECT published, published_at FROM posts WHERE id = ?",
+    sql: "SELECT published, published_at, type FROM posts WHERE id = ?",
     args: [id],
   })
   if (!r.rows.length) return c.json({ error: "Not found" }, 404)
   const cur = r.rows[0].published as number
+  const postType = r.rows[0].type as string
   const next = cur ? 0 : 1
   await siteDb.execute({
     sql: `UPDATE posts SET published = ?,
@@ -63,7 +97,7 @@ postsAdminRoute.post("/:id/toggle-publish", async (c) => {
   c.executionCtx.waitUntil(
     purgePostCache(c.env, c.get("hostname"), ["/", "/sitemap.xml", "/feed.xml"])
   )
-  return c.redirect("/admin/posts")
+  return c.redirect(postType === "page" ? "/admin/pages" : "/admin/posts")
 })
 
 // ──────────────── Helpers exposed for /admin/pages ────────────────

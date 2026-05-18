@@ -152,14 +152,21 @@ details[open] summary{margin-bottom:12px}
         type === "post"
           ? `<div class="form-row" style="margin-top:14px">
         <label>Category</label>
-        <select name="category_id">
+        <select name="category_id" id="cat-select">
           <option value="">— Uncategorized —</option>
           ${optsHtml}
         </select>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <input type="text" id="new-cat-input" placeholder="New category name…" style="flex:1;background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-sm);padding:6px 9px;color:var(--text);font-size:13px">
+          <button type="button" id="new-cat-btn" class="btn sm">+ Add</button>
+        </div>
       </div>`
           : ""
       }
-      <button type="submit" class="btn primary" style="width:100%;margin-top:10px;justify-content:center;padding:10px">Save ${type}</button>
+      <div style="display:flex;gap:6px;margin-top:10px">
+        <button type="submit" class="btn primary" style="flex:1;justify-content:center;padding:10px">Save ${type}</button>
+        ${post?.id ? `<a href="/admin/posts/${escapeAttr(post.id)}/preview" target="_blank" class="btn" style="padding:10px 14px" title="Preview">👁</a>` : ""}
+      </div>
     </div>
 
     <div class="card">
@@ -353,6 +360,39 @@ window.__GALLERY = ${imagesJson};
 
   function escAttr(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
   function escHtml(s){return String(s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+  // ── Quick-create category ──
+  var catSelect = document.getElementById('cat-select');
+  var newCatInput = document.getElementById('new-cat-input');
+  var newCatBtn = document.getElementById('new-cat-btn');
+  if (catSelect && newCatInput && newCatBtn) {
+    async function createCategory(){
+      var name = newCatInput.value.trim();
+      if (!name) return;
+      newCatBtn.disabled = true; newCatBtn.textContent = '…';
+      try {
+        var resp = await fetch('/admin/categories/create-quick', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name })
+        });
+        var data = await resp.json();
+        if (data.id) {
+          var opt = document.createElement('option');
+          opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+          catSelect.appendChild(opt);
+          newCatInput.value = '';
+        } else {
+          alert(data.error || 'Failed to create category');
+        }
+      } catch(e){ alert(e.message); }
+      finally { newCatBtn.disabled = false; newCatBtn.textContent = '+ Add'; }
+    }
+    newCatBtn.addEventListener('click', createCategory);
+    newCatInput.addEventListener('keydown', function(e){
+      if (e.key === 'Enter'){ e.preventDefault(); createCategory(); }
+    });
+  }
 
   // Warn before navigating away if the form has unsaved changes.
   var dirty = false;
