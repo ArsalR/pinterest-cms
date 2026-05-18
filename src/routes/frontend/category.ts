@@ -48,7 +48,8 @@ export async function renderCategoryPage(
 
   const catPath = buildCategoryPath(category.slug, settings)
   const canonical = `https://${hostname}${catPath}`
-  const head = buildPageHead({ type: "category", category, url: canonical }, settings)
+  const firstPostImage = (posts[0] as { cover_image?: string | null } | undefined)?.cover_image ?? undefined
+  const head = buildPageHead({ type: "category", category, url: canonical, firstPostImage }, settings)
 
   // Paginated pages: update canonical, title, and OG title.
   if (page > 1) {
