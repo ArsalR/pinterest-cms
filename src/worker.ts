@@ -7,6 +7,7 @@
 //   3. Auth middleware   — admin (JWT cookie) | network (header key) | public (Bearer API key)
 
 import { Hono } from "hono"
+import { csrf } from "hono/csrf"
 import type { AppEnv } from "./lib/types"
 
 import { tenantMiddleware } from "./middleware/tenantMiddleware"
@@ -57,6 +58,10 @@ app.route("/api/public", publicApiRoutes)
 // Admin app — auth middleware applies to everything except /admin/login,
 // which is handled internally by the middleware (it short-circuits on path).
 const adminApp = new Hono<AppEnv>()
+// Reject state-changing requests (POST/PUT/DELETE) from cross-origin form submissions.
+// Hono's csrf() checks Sec-Fetch-Site (same-origin/same-site) and falls back to Origin
+// header matching — no form tokens or body parsing required.
+adminApp.use("*", csrf())
 adminApp.use("*", adminAuthMiddleware)
 adminApp.route("/login", loginRoute)              // login + logout (auth-bypassed)
 adminApp.get("/", dashboardHandler)               // direct mount avoids Hono sub-app root-path edge case

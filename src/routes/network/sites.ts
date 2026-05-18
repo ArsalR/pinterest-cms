@@ -9,19 +9,24 @@ import { getMasterDb } from "../../lib/turso"
 import { createSite, deactivateSite, deleteSiteFromMaster } from "../../lib/provision"
 import { escapeHtml, escapeAttr, formatDate } from "../../lib/utils"
 import { invalidateSiteConfig } from "../../lib/turso"
+import { parseCookies, buildSetCookie } from "../../lib/cookies"
 
 export const networkRoutes = new Hono<AppEnv>()
 
-// Auth check helper. Accepts either header or ?admin_key= query (for the HTML UI).
+const NET_SESSION_COOKIE = "cms_net_key"
+
+// Auth check helper.
+// Accepts: x-network-admin-key header (API) | cms_net_key session cookie (browser UI).
+// Does NOT accept ?admin_key= query param — that sent the key in URLs visible in logs.
 async function checkAuth(c: Context<AppEnv>): Promise<Response | null> {
   const expected = c.env.NETWORK_ADMIN_KEY
   if (!expected) return c.json({ error: "NETWORK_ADMIN_KEY not configured" }, 500)
+  const cookies = parseCookies(c.req.header("cookie"))
   const provided =
     c.req.header("x-network-admin-key") ||
-    new URL(c.req.url).searchParams.get("admin_key") ||
+    cookies[NET_SESSION_COOKIE] ||
     ""
   if (provided !== expected) {
-    // For browser GET, show a small password form; for API, return JSON 401.
     const isBrowser = c.req.header("accept")?.includes("text/html")
     if (isBrowser && c.req.method === "GET") {
       return c.html(authForm(), 401)
@@ -31,6 +36,29 @@ async function checkAuth(c: Context<AppEnv>): Promise<Response | null> {
   return null
 }
 
+// Sets the session cookie used by the browser UI (keeps the key out of URLs).
+function netSessionCookie(key: string): string {
+  return buildSetCookie(NET_SESSION_COOKIE, key, {
+    maxAge: 60 * 60 * 8, // 8 hours
+    path: "/api/network",
+    sameSite: "Strict",
+  })
+}
+
+// ──────────────── Browser login: set session cookie ────────────────
+// The auth form POSTs here so the key goes in the request body, not the URL.
+networkRoutes.post("/login", async (c) => {
+  const expected = c.env.NETWORK_ADMIN_KEY
+  if (!expected) return c.json({ error: "NETWORK_ADMIN_KEY not configured" }, 500)
+  const form = await c.req.formData()
+  const provided = String(form.get("admin_key") || "")
+  if (provided !== expected) return c.html(authForm("Incorrect key."), 401)
+  return new Response(null, {
+    status: 302,
+    headers: { "Location": "/api/network/", "Set-Cookie": netSessionCookie(provided) },
+  })
+})
+
 // ──────────────── HTML UI: list all sites ────────────────
 networkRoutes.get("/", async (c) => {
   const fail = await checkAuth(c)
@@ -38,7 +66,15 @@ networkRoutes.get("/", async (c) => {
 
   const master = getMasterDb(c.env)
   const sites = await master.execute("SELECT * FROM sites ORDER BY created_at DESC")
-  const adminKey = c.env.NETWORK_ADMIN_KEY
+
+  const url = new URL(c.req.url)
+  const provisioned = url.searchParams.get("provisioned")
+  const provisionedBanner = provisioned
+    ? `<div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);color:#86efac;padding:14px 16px;border-radius:10px;margin-bottom:16px;font-size:13px">
+        Site <strong>${escapeHtml(provisioned)}</strong> provisioned successfully.
+        Your site API key has been displayed and will not be shown again.
+      </div>`
+    : ""
 
   const body = `<!doctype html>
 <html><head>
@@ -75,10 +111,11 @@ networkRoutes.get("/", async (c) => {
 <div class="wrap">
   <h1>Network admin</h1>
   <p class="sub">${sites.rows.length} site(s) in the network</p>
+  ${provisionedBanner}
 
   <div class="card">
     <h2>Provision new site</h2>
-    <form method="POST" action="/api/network/sites?admin_key=${encodeURIComponent(adminKey)}">
+    <form method="POST" action="/api/network/sites">
       <div class="row">
         <label>Hostname</label>
         <input type="text" name="hostname" placeholder="example.com" required style="width:240px">
@@ -119,9 +156,9 @@ networkRoutes.get("/", async (c) => {
           <td>${escapeHtml(formatDate(s.created_at as string))}</td>
           <td style="text-align:right">
             ${(s.active as number) === 1
-              ? `<form method="POST" action="/api/network/sites/${escapeAttr(s.id as string)}/deactivate?admin_key=${encodeURIComponent(adminKey)}" style="display:inline" onsubmit="return confirm('Deactivate ${escapeAttr(s.hostname as string)}?')"><button type="submit" class="btn danger">Deactivate</button></form>`
-              : `<form method="POST" action="/api/network/sites/${escapeAttr(s.id as string)}/activate?admin_key=${encodeURIComponent(adminKey)}" style="display:inline"><button type="submit" class="btn">Reactivate</button></form>
-                 <form method="POST" action="/api/network/sites/${escapeAttr(s.id as string)}/delete?admin_key=${encodeURIComponent(adminKey)}" style="display:inline" onsubmit="return confirm('Permanently remove ${escapeAttr(s.hostname as string)} from master DB? (Turso DB is NOT deleted.)')"><button type="submit" class="btn danger">Remove</button></form>`}
+              ? `<form method="POST" action="/api/network/sites/${escapeAttr(s.id as string)}/deactivate" style="display:inline" onsubmit="return confirm('Deactivate ${escapeAttr(s.hostname as string)}?')"><button type="submit" class="btn danger">Deactivate</button></form>`
+              : `<form method="POST" action="/api/network/sites/${escapeAttr(s.id as string)}/activate" style="display:inline"><button type="submit" class="btn">Reactivate</button></form>
+                 <form method="POST" action="/api/network/sites/${escapeAttr(s.id as string)}/delete" style="display:inline" onsubmit="return confirm('Permanently remove ${escapeAttr(s.hostname as string)} from master DB? (Turso DB is NOT deleted.)')"><button type="submit" class="btn danger">Remove</button></form>`}
           </td>
         </tr>`).join("")}</tbody>
     </table>` : `<p style="color:#a3a3a3">No sites yet. Provision one above.</p>`}
@@ -182,15 +219,20 @@ networkRoutes.post("/sites", async (c) => {
       hostname, name, adminEmail, adminPassword, configureDns: createDns,
     })
 
-    // Browser GET → redirect to network admin with one-time key reveal.
+    // Browser form → redirect back to the admin UI.
+    // The new site's API key is shown in the response body via alert before redirecting,
+    // so it never appears in a URL or server log.
     const isBrowser = c.req.header("accept")?.includes("text/html")
     if (isBrowser) {
-      const params = new URLSearchParams({
-        admin_key: c.env.NETWORK_ADMIN_KEY,
-        provisioned: hostname,
-        api_key: result.apiKey,
-      })
-      return c.redirect(`/?${params}`)
+      const safeKey = result.apiKey.replace(/'/g, "\\'")
+      const safeHost = hostname.replace(/'/g, "\\'")
+      return c.html(`<!doctype html><html><head><meta charset="utf-8"></head><body>
+        <script>
+          alert('Site ${safeHost} provisioned!\\n\\nSite API key (save now — shown once):\\n${safeKey}');
+          location.href = '/api/network/?provisioned=${encodeURIComponent(hostname)}';
+        </script>
+        <p>Redirecting…</p>
+      </body></html>`)
     }
 
     return c.json({
@@ -216,7 +258,7 @@ networkRoutes.post("/sites/:id/deactivate", async (c) => {
   await deactivateSite(c.env, id)
   await invalidateSiteConfig(hostname)
   if (c.req.header("accept")?.includes("text/html")) {
-    return c.redirect(`/?admin_key=${encodeURIComponent(c.env.NETWORK_ADMIN_KEY)}`)
+    return c.redirect("/api/network/")
   }
   return c.json({ success: true })
 })
@@ -229,7 +271,7 @@ networkRoutes.post("/sites/:id/activate", async (c) => {
   const r = await master.execute({ sql: "SELECT hostname FROM sites WHERE id = ?", args: [id] })
   if (r.rows.length) await invalidateSiteConfig(r.rows[0].hostname as string)
   if (c.req.header("accept")?.includes("text/html")) {
-    return c.redirect(`/?admin_key=${encodeURIComponent(c.env.NETWORK_ADMIN_KEY)}`)
+    return c.redirect("/api/network/")
   }
   return c.json({ success: true })
 })
@@ -244,12 +286,15 @@ networkRoutes.post("/sites/:id/delete", async (c) => {
   await deleteSiteFromMaster(c.env, id)
   await invalidateSiteConfig(hostname)
   if (c.req.header("accept")?.includes("text/html")) {
-    return c.redirect(`/?admin_key=${encodeURIComponent(c.env.NETWORK_ADMIN_KEY)}`)
+    return c.redirect("/api/network/")
   }
   return c.json({ success: true, note: "Removed from master DB. Turso DB itself was NOT deleted." })
 })
 
-function authForm(): string {
+function authForm(error?: string): string {
+  const errHtml = error
+    ? `<p style="color:#fca5a5;margin:0 0 12px">${escapeHtml(error)}</p>`
+    : ""
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Network admin</title>
 <style>
@@ -261,9 +306,10 @@ input{width:100%;background:#0a0a0a;border:1px solid #404040;border-radius:6px;p
 input:focus{outline:none;border-color:#e60023}
 button{width:100%;margin-top:16px;background:#e60023;color:#fff;border:none;border-radius:6px;padding:10px;font-weight:600;cursor:pointer;font-size:14px}
 </style></head>
-<body><form class="box" method="GET">
+<body><form class="box" method="POST" action="/api/network/login">
   <h1>Network admin</h1>
   <p>Enter the admin key to continue.</p>
+  ${errHtml}
   <input type="password" name="admin_key" placeholder="x-network-admin-key" required autofocus>
   <button type="submit">Continue</button>
 </form></body></html>`
