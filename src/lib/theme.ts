@@ -233,9 +233,11 @@ export const PALETTE_PRESETS: PalettePreset[] = [
 
 /** Render the live <style> tag for a site's theme + custom CSS. */
 export function renderThemeStyleTag(s: Settings): string {
-  // Strip any `</style` sequences so a malicious admin-stored value can't break out.
+  // Strip dangerous CSS patterns: style-tag breakout, IE expressions, JS URLs.
   const customCss = (s.theme_custom_css || "")
     .replace(/<\/\s*style/gi, "<\\/style")
+    .replace(/expression\s*\(/gi, "expression_blocked(")
+    .replace(/url\s*\(\s*(['"]?)javascript:/gi, "url($1blocked:")
     .trim()
   return `<style id="cms-theme">
 :root {
