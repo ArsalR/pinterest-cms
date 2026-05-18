@@ -25,15 +25,17 @@ CREATE TABLE IF NOT EXISTS api_keys (
   created_at   TEXT DEFAULT (datetime('now'))
 );
 
+-- api_key_id is nullable: when a key is deleted, logs are preserved with NULL key_id
+-- so the audit trail is not silently destroyed (ON DELETE SET NULL, not CASCADE).
 CREATE TABLE IF NOT EXISTS api_logs (
   id         TEXT PRIMARY KEY,
-  api_key_id TEXT NOT NULL,
+  api_key_id TEXT,
   endpoint   TEXT NOT NULL,
   method     TEXT NOT NULL,
   status     INTEGER NOT NULL,
   post_id    TEXT,
   created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE CASCADE
+  FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE SET NULL
 );
 
 -- ─────────────── CATEGORIES ──────────────

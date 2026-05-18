@@ -141,7 +141,7 @@ function buildUrlEntry(
   const imgXml = images
     .map(
       (i) => `    <image:image>
-      <image:loc>${escapeXml(i.url)}</image:loc>${i.alt ? `\n      <image:caption>${escapeXml(i.alt)}</image:caption>` : ""}
+      <image:loc>${escapeXml(i.url)}</image:loc>${i.alt ? `\n      <image:title>${escapeXml(i.alt)}</image:title>` : ""}
     </image:image>`
     )
     .join("\n")

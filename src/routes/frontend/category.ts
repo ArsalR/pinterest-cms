@@ -11,7 +11,7 @@ import {
   fetchCategories,
   fetchPostsForGrid,
 } from "../../views/frontend/helpers"
-import { buildPageHead, buildBreadcrumbJsonLd } from "../../lib/seo"
+import { buildPageHead, buildBreadcrumbJsonLd, buildCategoryPath } from "../../lib/seo"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 
 /** Render a category archive — hit by the slug router in routes/frontend/index.ts. */
@@ -46,7 +46,8 @@ export async function renderCategoryPage(
   const total = Number(totalRow.rows[0]?.n ?? 0)
   const totalPages = Math.max(1, Math.ceil(total / perPage))
 
-  const canonical = `https://${hostname}/${category.slug}/`
+  const catPath = buildCategoryPath(category.slug, settings)
+  const canonical = `https://${hostname}${catPath}`
   const head = buildPageHead({ type: "category", category, url: canonical }, settings)
 
   const breadcrumbItems = [
@@ -68,7 +69,7 @@ export async function renderCategoryPage(
     ${category.description ? `<p>${escapeHtml(category.description)}</p>` : ""}
   </section>`
 
-  const paginationHtml = renderPagination(page, totalPages, `/${category.slug}/`)
+  const paginationHtml = renderPagination(page, totalPages, catPath)
 
   const bodyHtml = `${heroHtml}
     ${renderPinterestGrid(posts, settings)}
