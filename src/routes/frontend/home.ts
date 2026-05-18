@@ -9,7 +9,7 @@ import { loadSettings } from "../../lib/defaults"
 import { renderLayout } from "../../views/frontend/Layout"
 import { renderPinterestGrid } from "../../views/frontend/PinterestGrid"
 import { buildPageHead, buildPostPath } from "../../lib/seo"
-import { escapeHtml } from "../../lib/utils"
+import { escapeHtml, escapeAttr } from "../../lib/utils"
 import {
   fetchMenus,
   fetchCategories,
@@ -43,17 +43,54 @@ homeRoute.get("/", async (c) => {
     // If configured slug doesn't resolve, fall through to latest posts.
   }
 
-  // Default: latest posts grid.
+  // Default: latest posts grid with pagination.
   const perPage = Math.max(1, parseInt(settings.posts_per_page || "24", 10))
+  const pageParam = parseInt(url.searchParams.get("page") || "1", 10)
+  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
+  const offset = (page - 1) * perPage
 
-  const [menus, categories, posts] = await Promise.all([
+  const [menus, categories, posts, totalRow] = await Promise.all([
     fetchMenus(siteDb, settings),
     fetchCategories(siteDb),
-    fetchPostsForGrid(siteDb, settings, { limit: perPage, offset: 0 }),
+    fetchPostsForGrid(siteDb, settings, { limit: perPage, offset }),
+    siteDb.execute(
+      "SELECT COUNT(*) AS n FROM posts WHERE type = 'post' AND published = 1 AND no_index = 0"
+    ),
   ])
 
+  const total = Number(totalRow.rows[0]?.n ?? 0)
+  const totalPages = Math.max(1, Math.ceil(total / perPage))
+  const base = `https://${hostname}/`
+
   const firstPostImage = (posts[0] as { cover_image?: string | null } | undefined)?.cover_image ?? undefined
-  const head = buildPageHead({ type: "home", url: `https://${hostname}/`, firstPostImage }, settings)
+  const head = buildPageHead({ type: "home", url: base, firstPostImage }, settings)
+
+  if (page > 1) {
+    head.canonical = `${base}?page=${page}`
+    const sep = settings.seo_title_separator || "|"
+    const siteName = settings.seo_site_name || settings.site_name || ""
+    const baseTitle = settings.seo_default_title || siteName
+    head.title = siteName
+      ? `${baseTitle} — Page ${page} ${sep} ${siteName}`
+      : `${baseTitle} — Page ${page}`
+    head.ogTitle = head.title
+  }
+
+  const prevHref = page > 1 ? `${base}${page - 1 > 1 ? `?page=${page - 1}` : ""}` : null
+  const nextHref = page < totalPages ? `${base}?page=${page + 1}` : null
+  const paginationLinks = [
+    prevHref ? `<link rel="prev" href="${escapeAttr(prevHref)}" />` : "",
+    nextHref ? `<link rel="next" href="${escapeAttr(nextHref)}" />` : "",
+  ].filter(Boolean).join("\n  ")
+
+  const paginationHtml = totalPages > 1 ? `
+    <nav style="display:flex;justify-content:center;gap:6px;padding:32px 24px;" aria-label="Pagination">
+      ${prevHref ? `<a class="pg-btn" href="${escapeAttr(prevHref)}">← Previous</a>` : ""}
+      <span style="color:var(--color-muted);align-self:center;font-size:14px">Page ${page} of ${totalPages}</span>
+      ${nextHref ? `<a class="pg-btn" href="${escapeAttr(nextHref)}">Next →</a>` : ""}
+    </nav>
+    <style>.pg-btn{display:inline-block;padding:10px 18px;border-radius:999px;background:var(--color-surface);color:var(--color-text);border:1px solid var(--color-border);font-weight:500;text-decoration:none}.pg-btn:hover{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}</style>
+  ` : ""
 
   const html = renderLayout({
     head,
@@ -61,7 +98,8 @@ homeRoute.get("/", async (c) => {
     hostname,
     menus,
     categories,
-    bodyHtml: renderPinterestGrid(posts, settings),
+    bodyHtml: renderPinterestGrid(posts, settings) + paginationHtml,
+    extraHead: paginationLinks || undefined,
     bodyClass: "page-home",
   })
 
