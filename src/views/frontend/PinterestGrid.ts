@@ -72,7 +72,7 @@ export function renderPinCard(post: PinPost, settings: Settings, eager = false):
             : ""
         }
         <div class="pin-meta">
-          ${showDate && post.published_at ? `<time>${escapeHtml(formatDate(post.published_at))}</time>` : ""}
+          ${showDate && post.published_at ? `<time>${escapeHtml(formatDate(post.published_at, settings.timezone || undefined))}</time>` : ""}
         </div>
       </div>
     </a>
