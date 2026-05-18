@@ -52,7 +52,8 @@ homeRoute.get("/", async (c) => {
     fetchPostsForGrid(siteDb, settings, { limit: perPage, offset: 0 }),
   ])
 
-  const head = buildPageHead({ type: "home", url: `https://${hostname}/` }, settings)
+  const firstPostImage = (posts[0] as { cover_image?: string | null } | undefined)?.cover_image ?? undefined
+  const head = buildPageHead({ type: "home", url: `https://${hostname}/`, firstPostImage }, settings)
 
   const html = renderLayout({
     head,

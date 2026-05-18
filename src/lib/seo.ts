@@ -27,6 +27,8 @@ export interface PageContext {
   category?: Category
   /** Full URL of the current page */
   url: string
+  /** Cover image of the first post on the page — used as og:image fallback for list pages. */
+  firstPostImage?: string
 }
 
 /** Build the <head> metadata for a frontend page. */
@@ -64,13 +66,14 @@ export function buildPageHead(ctx: PageContext, settings: Settings): PageHead {
     const baseTitle = cat.seo_title || cat.name
     title = siteName ? `${baseTitle} ${sep} ${siteName}` : baseTitle
     description = cat.seo_desc || cat.description || settings.seo_default_description || ""
-    ogImage = cat.cover_image || ogImage
+    ogImage = cat.cover_image || ogImage || ctx.firstPostImage || ""
     structured = buildCollectionPageJsonLd(cat, ctx.url, settings)
   } else {
     // home
     const baseTitle = settings.seo_default_title || siteName
     title = settings.site_tagline ? `${baseTitle} ${sep} ${settings.site_tagline}` : baseTitle
     description = settings.seo_default_description || settings.site_tagline || ""
+    ogImage = ogImage || ctx.firstPostImage || ""
     structured = buildWebSiteJsonLd(siteUrl, siteName)
   }
 
