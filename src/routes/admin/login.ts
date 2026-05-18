@@ -1,16 +1,16 @@
 // src/routes/admin/login.ts
-// Admin login page + POST handler. Sets JWT session cookie on success.
+// Admin login/logout handlers. Exported as plain functions (not a Hono sub-app)
+// to avoid the sub-app root-path edge case where app.route("/login", sub) only
+// matches /login/ (trailing slash), not /login.
 
-import { Hono } from "hono"
+import type { Context } from "hono"
 import type { AppEnv } from "../../lib/types"
 import { verifyPassword, signJwt } from "../../lib/auth"
 import { buildSetCookie } from "../../lib/cookies"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { loadSettings } from "../../lib/defaults"
 
-export const loginRoute = new Hono<AppEnv>()
-
-loginRoute.get("/", async (c) => {
+export async function loginGetHandler(c: Context<AppEnv>): Promise<Response> {
   const url = new URL(c.req.url)
   const next = url.searchParams.get("next") || "/admin/"
   const error = url.searchParams.get("error")
@@ -19,21 +19,21 @@ loginRoute.get("/", async (c) => {
   return c.html(loginHtml(siteName, next, error), 200, {
     "Cache-Control": "no-store, private",
   })
-})
+}
 
-loginRoute.post("/", async (c) => {
+export async function loginPostHandler(c: Context<AppEnv>): Promise<Response> {
+  const siteDb = c.get("siteDb")
+
   if (!c.env.JWT_SECRET) {
     console.error("login: JWT_SECRET env var is not set — cannot issue sessions")
     return redirectWithError("/admin/", "Server configuration error — contact admin")
   }
 
-  const siteDb = c.get("siteDb")
-
   let form: FormData
   try {
     form = await c.req.formData()
   } catch {
-    return redirectWithError("/admin/", "Could not read form data")
+    return redirectWithError("/admin/", "Invalid form submission")
   }
 
   const email = String(form.get("email") || "").toLowerCase().trim()
@@ -44,7 +44,7 @@ loginRoute.post("/", async (c) => {
     return redirectWithError(next, "Email and password required")
   }
 
-  let r: Awaited<ReturnType<typeof siteDb.execute>>
+  let r
   try {
     r = await siteDb.execute({
       sql: "SELECT id, email, password, role FROM users WHERE email = ? LIMIT 1",
@@ -52,7 +52,7 @@ loginRoute.post("/", async (c) => {
     })
   } catch (err) {
     console.error("login: DB query failed:", err)
-    return redirectWithError(next, "Sign-in temporarily unavailable — please retry")
+    return redirectWithError(next, "Login temporarily unavailable — please try again")
   }
 
   if (!r.rows.length) {
@@ -64,8 +64,8 @@ loginRoute.post("/", async (c) => {
   try {
     ok = await verifyPassword(password, user.password as string)
   } catch (err) {
-    console.error("login: password verify failed:", err)
-    return redirectWithError(next, "Sign-in temporarily unavailable — please retry")
+    console.error("login: verifyPassword threw:", err)
+    return redirectWithError(next, "Login temporarily unavailable — please try again")
   }
 
   if (!ok) {
@@ -83,8 +83,8 @@ loginRoute.post("/", async (c) => {
       c.env.JWT_SECRET
     )
   } catch (err) {
-    console.error("login: JWT sign failed:", err)
-    return redirectWithError(next, "Sign-in temporarily unavailable — please retry")
+    console.error("login: signJwt threw:", err)
+    return redirectWithError(next, "Session creation failed — contact admin")
   }
 
   const cookieName = c.env.SESSION_COOKIE_NAME || "cms_session"
@@ -101,19 +101,18 @@ loginRoute.post("/", async (c) => {
     status: 302,
     headers: { Location: safeNext, "Set-Cookie": setCookie },
   })
-})
+}
 
-// POST /admin/logout — clears the cookie.
-loginRoute.post("/logout", async (c) => {
+export async function logoutHandler(c: Context<AppEnv>): Promise<Response> {
   const cookieName = c.env.SESSION_COOKIE_NAME || "cms_session"
   return new Response(null, {
     status: 302,
     headers: {
       Location: "/admin/login",
-      "Set-Cookie": buildSetCookie(cookieName, "", { maxAge: 0 }),
+      "Set-Cookie": buildSetCookie(cookieName, "", { maxAge: 0, httpOnly: true, secure: true }),
     },
   })
-})
+}
 
 function redirectWithError(next: string, msg: string): Response {
   const params = new URLSearchParams({ next, error: msg })

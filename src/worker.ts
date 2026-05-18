@@ -7,16 +7,17 @@
 //   3. Auth middleware   — admin (JWT cookie) | network (header key) | public (Bearer API key)
 
 import { Hono } from "hono"
-import type { AppEnv } from "./lib/types"
+import type { AppEnv, CloudflareEnv } from "./lib/types"
 
 import { tenantMiddleware } from "./middleware/tenantMiddleware"
 import { adminAuthMiddleware } from "./middleware/authMiddleware"
+import { getMasterDb, getSiteDb } from "./lib/turso"
 
 import { networkRoutes } from "./routes/network/sites"
 
 import { publicApiRoutes } from "./routes/public"
 
-import { loginRoute } from "./routes/admin/login"
+import { loginGetHandler, loginPostHandler, logoutHandler } from "./routes/admin/login"
 import { dashboardHandler } from "./routes/admin/dashboard"
 import { postsAdminRoute } from "./routes/admin/posts"
 import { pagesAdminRoute } from "./routes/admin/pages"
@@ -60,7 +61,11 @@ const adminApp = new Hono<AppEnv>()
 // CSRF is handled by the JWT cookie's SameSite=Lax attribute, which prevents
 // browsers from attaching the cookie to cross-origin POST requests.
 adminApp.use("*", adminAuthMiddleware)
-adminApp.route("/login", loginRoute)              // login + logout (auth-bypassed)
+// Login routes mounted directly (not via sub-app) to avoid Hono's root-path
+// edge case — same pattern as dashboardHandler below.
+adminApp.get("/login", loginGetHandler)
+adminApp.post("/login", loginPostHandler)
+adminApp.post("/login/logout", logoutHandler)
 adminApp.get("/", dashboardHandler)               // direct mount avoids Hono sub-app root-path edge case
 adminApp.route("/posts", postsAdminRoute)
 adminApp.route("/pages", pagesAdminRoute)
@@ -94,4 +99,46 @@ app.onError((err, c) => {
   return c.json({ error: "Internal server error", message: err.message }, 500)
 })
 
-export default app
+// ───────────────────────── Cron: post scheduler ──────────────────
+// Runs every 5 minutes (see wrangler.toml [triggers]).
+// Walks every active site and publishes any posts whose scheduled_at has passed.
+async function runScheduler(env: CloudflareEnv): Promise<void> {
+  const master = getMasterDb(env)
+  let sites: Array<{ turso_url: string; turso_token: string; hostname: string }>
+  try {
+    const r = await master.execute(
+      "SELECT hostname, turso_url, turso_token FROM sites WHERE active = 1"
+    )
+    sites = r.rows as unknown as typeof sites
+  } catch (err) {
+    console.error("scheduler: failed to fetch sites from master DB:", err)
+    return
+  }
+
+  for (const site of sites) {
+    const db = getSiteDb(site.turso_url, site.turso_token)
+    try {
+      // Ensure column exists on sites provisioned before the scheduler was added.
+      await db.execute("ALTER TABLE posts ADD COLUMN scheduled_at TEXT").catch(() => {})
+      await db.execute({
+        sql: `UPDATE posts
+              SET published = 1,
+                  published_at = scheduled_at,
+                  updated_at   = datetime('now')
+              WHERE published = 0
+                AND scheduled_at IS NOT NULL
+                AND scheduled_at <= datetime('now')`,
+        args: [],
+      })
+    } catch (err) {
+      console.error(`scheduler: error processing site ${site.hostname}:`, err)
+    }
+  }
+}
+
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledEvent, env: CloudflareEnv): Promise<void> {
+    await runScheduler(env)
+  },
+}
