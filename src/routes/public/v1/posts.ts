@@ -354,7 +354,7 @@ postRoutes.delete("/:id", async (c) => {
   const siteDb = c.get("siteDb")
   const hostname = c.get("hostname")
 
-  const auth = await validateApiKey(siteDb, c.req.raw, "delete")
+  const auth = await validateApiKey(siteDb, c.req.raw, "write")
   if (auth.error) return c.json({ error: auth.error }, auth.status as 401 | 403)
 
   const id = c.req.param("id")

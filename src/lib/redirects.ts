@@ -9,6 +9,7 @@
 //   3. Returns null → caller falls through to normal resolution
 
 import type { Client } from "@libsql/client/web"
+import { escapeHtml } from "./utils"
 
 export interface RedirectRule {
   id: string
@@ -74,7 +75,10 @@ export function applyRedirect(rule: RedirectRule, requestPath: string): Response
     })
   }
   if (rule.kind === "410") {
-    return new Response(rule.message || goneHtml(requestPath), {
+    const body = rule.message
+      ? wrapMessageHtml(escapeHtml(rule.message), 410, "Gone")
+      : goneHtml(requestPath)
+    return new Response(body, {
       status: 410,
       headers: {
         "Content-Type": "text/html; charset=utf-8",
@@ -83,7 +87,10 @@ export function applyRedirect(rule: RedirectRule, requestPath: string): Response
     })
   }
   // 404
-  return new Response(rule.message || notFoundHtml(requestPath), {
+  const body = rule.message
+    ? wrapMessageHtml(escapeHtml(rule.message), 404, "Not found")
+    : notFoundHtml(requestPath)
+  return new Response(body, {
     status: 404,
     headers: {
       "Content-Type": "text/html; charset=utf-8",
@@ -116,6 +123,23 @@ function rowToRule(row: Record<string, unknown>): RedirectRule {
 }
 
 // ─────────────── Default response bodies ───────────────
+
+function wrapMessageHtml(safeMessage: string, status: number, title: string): string {
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>${title}</title>
+<style>body{font-family:ui-sans-serif,system-ui,sans-serif;background:#fafafa;color:#111;
+  min-height:100vh;display:grid;place-items:center;margin:0;padding:24px;}
+  .card{max-width:480px;text-align:center}p{color:#525252;margin:8px 0}
+  a{color:#e60023;font-weight:600;text-decoration:none}</style></head>
+<body><div class="card">
+  <h1>${status}</h1>
+  <p>${safeMessage}</p>
+  <p><a href="/">← Back home</a></p>
+</div></body></html>`
+}
 
 function goneHtml(path: string): string {
   const safe = path.replace(/[<>&]/g, "")
