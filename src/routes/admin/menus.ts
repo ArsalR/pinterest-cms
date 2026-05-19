@@ -122,6 +122,10 @@ menusAdminRoute.post("/create", async (c) => {
   const url = String(form.get("url") || "").trim()
   const location = String(form.get("location") || "header") === "footer" ? "footer" : "header"
   if (!label || !url) return c.html("Label and URL required", 400)
+  const lcUrl = url.toLowerCase().replace(/\s/g, "")
+  if (lcUrl.startsWith("javascript:") || lcUrl.startsWith("data:") || lcUrl.startsWith("vbscript:")) {
+    return c.html("URL scheme not allowed", 400)
+  }
 
   // Order = current max + 1.
   const max = await siteDb.execute({
