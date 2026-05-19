@@ -16,7 +16,7 @@ import { networkRoutes } from "./routes/network/sites"
 
 import { publicApiRoutes } from "./routes/public"
 
-import { loginRoute } from "./routes/admin/login"
+import { loginGetHandler, loginPostHandler, logoutHandler } from "./routes/admin/login"
 import { dashboardHandler } from "./routes/admin/dashboard"
 import { postsAdminRoute } from "./routes/admin/posts"
 import { pagesAdminRoute } from "./routes/admin/pages"
@@ -60,7 +60,11 @@ const adminApp = new Hono<AppEnv>()
 // CSRF is handled by the JWT cookie's SameSite=Lax attribute, which prevents
 // browsers from attaching the cookie to cross-origin POST requests.
 adminApp.use("*", adminAuthMiddleware)
-adminApp.route("/login", loginRoute)              // login + logout (auth-bypassed)
+// Login routes mounted directly (not via sub-app) to avoid Hono's root-path
+// edge case — same pattern as dashboardHandler below.
+adminApp.get("/login", loginGetHandler)
+adminApp.post("/login", loginPostHandler)
+adminApp.post("/login/logout", logoutHandler)
 adminApp.get("/", dashboardHandler)               // direct mount avoids Hono sub-app root-path edge case
 adminApp.route("/posts", postsAdminRoute)
 adminApp.route("/pages", pagesAdminRoute)
