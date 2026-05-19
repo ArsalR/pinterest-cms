@@ -97,9 +97,10 @@ function b64UrlDecode(s: string): Uint8Array {
 }
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
+  const keyBytes = new TextEncoder().encode(secret || "default-insecure-key")
   return crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(secret),
+    keyBytes,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign", "verify"]
