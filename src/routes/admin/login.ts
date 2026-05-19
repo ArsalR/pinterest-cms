@@ -1,16 +1,16 @@
 // src/routes/admin/login.ts
 // Admin login page + POST handler. Sets JWT session cookie on success.
+// Handlers are exported as plain functions and mounted directly in worker.ts
+// to avoid the Hono sub-app root-path edge case (same pattern as dashboardHandler).
 
-import { Hono } from "hono"
+import type { Context } from "hono"
 import type { AppEnv } from "../../lib/types"
 import { verifyPassword, signJwt } from "../../lib/auth"
 import { buildSetCookie } from "../../lib/cookies"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { loadSettings } from "../../lib/defaults"
 
-export const loginRoute = new Hono<AppEnv>()
-
-loginRoute.get("/", async (c) => {
+export async function loginGetHandler(c: Context<AppEnv>): Promise<Response> {
   const url = new URL(c.req.url)
   const next = url.searchParams.get("next") || "/admin/"
   const error = url.searchParams.get("error")
@@ -19,9 +19,9 @@ loginRoute.get("/", async (c) => {
   return c.html(loginHtml(siteName, next, error), 200, {
     "Cache-Control": "no-store, private",
   })
-})
+}
 
-loginRoute.post("/", async (c) => {
+export async function loginPostHandler(c: Context<AppEnv>): Promise<Response> {
   if (!c.env.JWT_SECRET) {
     console.error("login: JWT_SECRET env var is not set — cannot issue sessions")
     return redirectWithError("/admin/", "Server configuration error — contact admin")
@@ -101,10 +101,9 @@ loginRoute.post("/", async (c) => {
     status: 302,
     headers: { Location: safeNext, "Set-Cookie": setCookie },
   })
-})
+}
 
-// POST /admin/logout — clears the cookie.
-loginRoute.post("/logout", async (c) => {
+export async function logoutHandler(c: Context<AppEnv>): Promise<Response> {
   const cookieName = c.env.SESSION_COOKIE_NAME || "cms_session"
   return new Response(null, {
     status: 302,
@@ -113,7 +112,7 @@ loginRoute.post("/logout", async (c) => {
       "Set-Cookie": buildSetCookie(cookieName, "", { maxAge: 0 }),
     },
   })
-})
+}
 
 function redirectWithError(next: string, msg: string): Response {
   const params = new URLSearchParams({ next, error: msg })
