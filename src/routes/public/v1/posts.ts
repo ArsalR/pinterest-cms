@@ -31,6 +31,7 @@ interface CreatePostBody {
   canonicalUrl?: string
   noIndex?: boolean
   publishedAt?: string                      // override timestamp
+  scheduledAt?: string                      // ISO-8601 — publish at this UTC time (published must be false)
 }
 
 export const postRoutes = new Hono<AppEnv>()
@@ -105,16 +106,18 @@ postRoutes.post("/", async (c) => {
   const postId = cuid()
   const published = body.published ? 1 : 0
   const publishedAt = published ? body.publishedAt ?? nowIso() : null
+  // scheduled_at only applies when the post is a draft (published=0)
+  const scheduledAt = !published && body.scheduledAt ? body.scheduledAt : null
 
   await siteDb.execute({
     sql: `INSERT INTO posts (
       id, title, slug, content, excerpt, cover_image,
-      published, published_at, type, category_id, source,
+      published, published_at, scheduled_at, type, category_id, source,
       seo_title, seo_description, seo_keywords,
       og_title, og_description, og_image,
       twitter_card, canonical_url, no_index,
       created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'api', ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'api', ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
     args: [
       postId,
       title,
@@ -124,6 +127,7 @@ postRoutes.post("/", async (c) => {
       body.coverImage ?? null,
       published,
       publishedAt,
+      scheduledAt,
       body.type === "page" ? "page" : "post",
       categoryId,
       body.seoTitle ?? null,
@@ -182,6 +186,8 @@ postRoutes.post("/", async (c) => {
       slug: finalSlug,
       url,
       published: Boolean(published),
+      scheduled: scheduledAt !== null,
+      scheduledAt: scheduledAt,
       type: body.type === "page" ? "page" : "post",
       category: category ? { id: category.id, slug: category.slug, name: category.name } : null,
       createdAt: nowIso(),
@@ -272,10 +278,18 @@ postRoutes.put("/:id", async (c) => {
     set("category_id", catId)
   }
 
+  if (body.scheduledAt !== undefined) {
+    set("scheduled_at", body.scheduledAt || null)
+  }
+
   if (body.published !== undefined) {
     set("published", body.published ? 1 : 0)
     const wasPublished = (existing.rows[0].published as number) === 1
-    if (body.published && !wasPublished) set("published_at", body.publishedAt ?? nowIso())
+    if (body.published && !wasPublished) {
+      set("published_at", body.publishedAt ?? nowIso())
+      // clear scheduled_at when explicitly publishing
+      set("scheduled_at", null)
+    }
   }
 
   if (!updates.length && !body.images) {

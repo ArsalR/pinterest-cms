@@ -168,6 +168,7 @@ table .row-actions{display:flex;gap:4px;justify-content:flex-end}
 .pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em}
 .pill.published{background:rgba(34,197,94,0.15);color:#86efac}
 .pill.draft{background:rgba(115,115,115,0.2);color:#a3a3a3}
+.pill.scheduled{background:rgba(59,130,246,0.15);color:#93c5fd}
 .pill.api{background:rgba(99,102,241,0.15);color:#a5b4fc}
 .pill.manual{background:rgba(245,158,11,0.15);color:#fcd34d}
 

@@ -125,11 +125,12 @@ async function renderPostsList(
     args.push(`%${q}%`, `%${q}%`)
   }
   if (status === "published") filters.push("p.published = 1")
-  if (status === "draft") filters.push("p.published = 0")
+  if (status === "draft") filters.push("p.published = 0 AND p.scheduled_at IS NULL")
+  if (status === "scheduled") filters.push("p.published = 0 AND p.scheduled_at IS NOT NULL")
   args.push(limit)
 
   const rows = await siteDb.execute({
-    sql: `SELECT p.id, p.title, p.slug, p.published, p.published_at, p.created_at,
+    sql: `SELECT p.id, p.title, p.slug, p.published, p.published_at, p.scheduled_at, p.created_at,
                  p.source, c.slug AS cat_slug, c.name AS cat_name
           FROM posts p LEFT JOIN categories c ON c.id = p.category_id
           WHERE ${filters.join(" AND ")}
@@ -156,7 +157,13 @@ async function renderPostsList(
       <td style="width:32px;padding:8px 4px"><input type="checkbox" class="bulk-check" data-id="${escapeAttr(r.id as string)}" style="width:16px;height:16px"></td>
       <td><a href="/admin/${section}/${escapeAttr(r.id as string)}"><strong>${escapeHtml(r.title as string)}</strong></a><br><span style="color:var(--muted-2);font-size:12px;font-family:var(--mono)">${escapeHtml(r.slug as string)}</span></td>
       <td>${r.cat_name ? escapeHtml(r.cat_name as string) : "—"}</td>
-      <td><span class="pill ${r.published ? "published" : "draft"}">${r.published ? "Published" : "Draft"}</span></td>
+      <td>${
+        r.published
+          ? `<span class="pill published">Published</span>`
+          : r.scheduled_at
+          ? `<span class="pill scheduled" title="Scheduled for ${escapeAttr(r.scheduled_at as string)}">Scheduled</span>`
+          : `<span class="pill draft">Draft</span>`
+      }</td>
       <td><span class="pill ${r.source === "api" ? "api" : "manual"}">${escapeHtml((r.source as string) ?? "manual")}</span></td>
       <td>${escapeHtml(formatDate(r.created_at as string))}</td>
       <td class="row-actions">
@@ -183,6 +190,7 @@ async function renderPostsList(
         <option value="">All</option>
         <option value="published" ${status === "published" ? "selected" : ""}>Published</option>
         <option value="draft" ${status === "draft" ? "selected" : ""}>Drafts</option>
+        <option value="scheduled" ${status === "scheduled" ? "selected" : ""}>Scheduled</option>
       </select>
       <button class="btn" type="submit">Filter</button>
     </form>
@@ -346,6 +354,9 @@ async function savePost(
   const categoryId = String(form.get("category_id") || "") || null
   const published = form.get("published") ? 1 : 0
   const noIndex = form.get("no_index") ? 1 : 0
+  // scheduled_at: only kept when saving as draft; cleared when publishing
+  const scheduledAtRaw = String(form.get("scheduled_at") || "").trim()
+  const scheduledAt = !published && scheduledAtRaw ? scheduledAtRaw.replace("T", " ") : null
   const seoTitle = String(form.get("seo_title") || "").trim() || null
   const seoDesc = String(form.get("seo_description") || "").trim() || null
   const seoKeywords = String(form.get("seo_keywords") || "").trim() || null
@@ -376,6 +387,7 @@ async function savePost(
               seo_title=?, seo_description=?, seo_keywords=?,
               og_title=?, og_description=?, og_image=?,
               twitter_card=?, canonical_url=?,
+              scheduled_at=?,
               published_at = CASE WHEN ?=1 AND ?=0 THEN datetime('now')
                                   WHEN ?=0 THEN NULL ELSE published_at END,
               updated_at = datetime('now')
@@ -386,6 +398,7 @@ async function savePost(
         seoTitle, seoDesc, seoKeywords,
         ogTitle, ogDesc, ogImage,
         twitterCard, canonical,
+        scheduledAt,
         published, wasPublished ? 1 : 0, published,
         id,
       ],
@@ -398,14 +411,14 @@ async function savePost(
     const finalSlug = await ensureUniqueSlug(siteDb, slug)
     await siteDb.execute({
       sql: `INSERT INTO posts (id,title,slug,content,excerpt,cover_image,
-              published,published_at,type,category_id,source,no_index,
+              published,published_at,scheduled_at,type,category_id,source,no_index,
               seo_title,seo_description,seo_keywords,
               og_title,og_description,og_image,twitter_card,canonical_url,
               created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,'manual',?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`,
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,'manual',?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`,
       args: [
         newId, title, finalSlug, content, excerpt, cover,
-        published, published ? nowIso() : null,
+        published, published ? nowIso() : null, scheduledAt,
         type, categoryId, noIndex,
         seoTitle, seoDesc, seoKeywords,
         ogTitle, ogDesc, ogImage, twitterCard, canonical,

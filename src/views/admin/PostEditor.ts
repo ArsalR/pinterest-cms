@@ -28,6 +28,9 @@ export function renderPostEditor(input: EditorInput): EditorOutput {
   const categoryId = post?.category_id ?? ""
   const published = post?.published === 1
   const noIndex = post?.no_index === 1
+  // scheduled_at stored as "YYYY-MM-DD HH:MM:SS"; datetime-local input wants "YYYY-MM-DDTHH:MM"
+  const scheduledAtRaw = post?.scheduled_at ?? ""
+  const scheduledAt = scheduledAtRaw ? scheduledAtRaw.slice(0, 16).replace(" ", "T") : ""
 
   const optsHtml = categories
     .map(
@@ -146,7 +149,13 @@ details[open] summary{margin-bottom:12px}
     <div class="card">
       <div class="toggle">
         <input type="checkbox" name="published" id="published" ${published ? "checked" : ""}>
-        <label for="published">Published <div class="toggle-hint">${published ? "Live on the site" : "Save as draft"}</div></label>
+        <label for="published">Published <div class="toggle-hint">${published ? "Live on the site" : scheduledAt ? "Will publish automatically" : "Save as draft"}</div></label>
+      </div>
+      <div id="schedule-row" style="margin-top:10px;${published ? "display:none" : ""}">
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Schedule publish (optional)</label>
+        <input type="datetime-local" name="scheduled_at" id="scheduled_at" value="${escapeAttr(scheduledAt)}"
+          style="width:100%;background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-sm);padding:7px 9px;color:var(--text);font-size:13px">
+        <div style="font-size:11px;color:var(--muted-2);margin-top:4px">Leave blank to keep as draft. Time is UTC.</div>
       </div>
       ${
         type === "post"
@@ -391,6 +400,15 @@ window.__GALLERY = ${imagesJson};
     newCatBtn.addEventListener('click', createCategory);
     newCatInput.addEventListener('keydown', function(e){
       if (e.key === 'Enter'){ e.preventDefault(); createCategory(); }
+    });
+  }
+
+  // Toggle schedule row visibility based on Published checkbox.
+  var pubCheck = document.getElementById('published');
+  var schedRow = document.getElementById('schedule-row');
+  if (pubCheck && schedRow) {
+    pubCheck.addEventListener('change', function(){
+      schedRow.style.display = pubCheck.checked ? 'none' : '';
     });
   }
 

@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS posts (
   canonical_url   TEXT,
   no_index        INTEGER DEFAULT 0,
   structured_data TEXT,
+  scheduled_at    TEXT,
   created_at      TEXT DEFAULT (datetime('now')),
   updated_at      TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
@@ -148,6 +149,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_published  ON posts(published, published_at
 CREATE INDEX IF NOT EXISTS idx_posts_category   ON posts(category_id);
 CREATE INDEX IF NOT EXISTS idx_posts_type       ON posts(type);
 CREATE INDEX IF NOT EXISTS idx_posts_source     ON posts(source);
+CREATE INDEX IF NOT EXISTS idx_posts_scheduled  ON posts(scheduled_at) WHERE scheduled_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_post_images_post ON post_images(post_id);
 CREATE INDEX IF NOT EXISTS idx_media_source     ON media(source);
 CREATE INDEX IF NOT EXISTS idx_api_logs_key     ON api_logs(api_key_id);
