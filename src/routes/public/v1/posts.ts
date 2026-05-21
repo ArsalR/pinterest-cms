@@ -1,5 +1,5 @@
 // src/routes/public/v1/posts.ts
-// Create / update / delete posts via API key.
+// CRUD + read endpoints for posts via API key.
 
 import { Hono } from "hono"
 import type { AppEnv, Category } from "../../../lib/types"
@@ -36,6 +36,176 @@ interface CreatePostBody {
 }
 
 export const postRoutes = new Hono<AppEnv>()
+
+// ─────────────── GET /v1/posts ───────────────
+// Query params: slug, limit (1-100, default 20), offset (default 0),
+//   published ("true"|"false"|"all", default "true"),
+//   type ("post"|"page"), category (category slug)
+postRoutes.get("/", async (c) => {
+  const siteDb = c.get("siteDb")
+  const hostname = c.get("hostname")
+
+  const auth = await validateApiKey(siteDb, c.req.raw, "read")
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+
+  const q = c.req.query()
+  const slug = (q.slug ?? "").trim()
+  const limit = Math.min(100, Math.max(1, parseInt(q.limit ?? "20", 10) || 20))
+  const offset = Math.max(0, parseInt(q.offset ?? "0", 10) || 0)
+  const publishedParam = q.published ?? "true"
+  const typeParam = q.type ?? ""
+  const categorySlug = (q.category ?? "").trim()
+
+  const where: string[] = []
+  const args: Array<string | number | null> = []
+
+  if (slug) {
+    where.push("p.slug = ?")
+    args.push(slug)
+  }
+
+  if (publishedParam === "false") {
+    where.push("p.published = 0")
+  } else if (publishedParam !== "all") {
+    where.push("p.published = 1")
+  }
+
+  if (typeParam === "post" || typeParam === "page") {
+    where.push("p.type = ?")
+    args.push(typeParam)
+  }
+
+  if (categorySlug) {
+    where.push("c.slug = ?")
+    args.push(categorySlug)
+  }
+
+  const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : ""
+
+  const [countResult, rowsResult] = await Promise.all([
+    siteDb.execute({
+      sql: `SELECT COUNT(*) AS n FROM posts p
+            LEFT JOIN categories c ON c.id = p.category_id ${whereClause}`,
+      args,
+    }),
+    siteDb.execute({
+      sql: `SELECT p.*,
+                   c.id AS c_id, c.slug AS c_slug, c.name AS c_name
+            FROM posts p
+            LEFT JOIN categories c ON c.id = p.category_id
+            ${whereClause}
+            ORDER BY p.published_at DESC, p.created_at DESC
+            LIMIT ? OFFSET ?`,
+      args: [...args, limit, offset],
+    }),
+  ])
+
+  const total = Number(countResult.rows[0]?.n ?? 0)
+  const settings = await loadSettings(siteDb)
+
+  const posts = rowsResult.rows.map((r) => {
+    const cat = r.c_id
+      ? { id: r.c_id as string, slug: r.c_slug as string, name: r.c_name as string }
+      : null
+    const path = buildPostPath(
+      { slug: r.slug as string, published_at: r.published_at as string | null, created_at: r.created_at as string },
+      cat ? ({ slug: cat.slug } as Category) : null,
+      settings
+    )
+    return serializePost(r, cat, `https://${hostname}${path}`)
+  })
+
+  await logApiRequest(siteDb, auth.keyId, "/v1/posts", "GET", 200)
+  return c.json({ success: true, posts, total, limit, offset })
+})
+
+// ─────────────── GET /v1/posts/:id ───────────────
+postRoutes.get("/:id", async (c) => {
+  const siteDb = c.get("siteDb")
+  const hostname = c.get("hostname")
+
+  const auth = await validateApiKey(siteDb, c.req.raw, "read")
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+
+  const id = c.req.param("id")
+  const result = await siteDb.execute({
+    sql: `SELECT p.*,
+                 c.id AS c_id, c.slug AS c_slug, c.name AS c_name
+          FROM posts p
+          LEFT JOIN categories c ON c.id = p.category_id
+          WHERE p.id = ? LIMIT 1`,
+    args: [id],
+  })
+  if (!result.rows.length) {
+    await logApiRequest(siteDb, auth.keyId, `/v1/posts/${id}`, "GET", 404)
+    return apiError(c, 404, "not_found", "Post not found", { id })
+  }
+
+  const r = result.rows[0]
+  const cat = r.c_id
+    ? { id: r.c_id as string, slug: r.c_slug as string, name: r.c_name as string }
+    : null
+
+  const imageRows = await siteDb.execute({
+    sql: "SELECT url, alt, caption, ord FROM post_images WHERE post_id = ? ORDER BY ord ASC",
+    args: [id],
+  })
+
+  const settings = await loadSettings(siteDb)
+  const path = buildPostPath(
+    { slug: r.slug as string, published_at: r.published_at as string | null, created_at: r.created_at as string },
+    cat ? ({ slug: cat.slug } as Category) : null,
+    settings
+  )
+
+  const post = {
+    ...serializePost(r, cat, `https://${hostname}${path}`),
+    images: imageRows.rows.map((img) => ({
+      url: img.url,
+      alt: img.alt ?? null,
+      caption: img.caption ?? null,
+      order: img.ord,
+    })),
+  }
+
+  await logApiRequest(siteDb, auth.keyId, `/v1/posts/${id}`, "GET", 200)
+  return c.json({ success: true, post })
+})
+
+// ─────────────── shared serializer ───────────────
+function serializePost(
+  r: Record<string, unknown>,
+  category: { id: string; slug: string; name: string } | null,
+  url: string
+) {
+  return {
+    id: r.id,
+    title: r.title,
+    slug: r.slug,
+    content: r.content,
+    excerpt: r.excerpt ?? null,
+    coverImage: r.cover_image ?? null,
+    published: (r.published as number) === 1,
+    publishedAt: r.published_at ?? null,
+    scheduledAt: r.scheduled_at ?? null,
+    type: r.type,
+    source: r.source,
+    category,
+    seoTitle: r.seo_title ?? null,
+    seoDescription: r.seo_description ?? null,
+    seoKeywords: r.seo_keywords ?? null,
+    ogTitle: r.og_title ?? null,
+    ogDescription: r.og_description ?? null,
+    ogImage: r.og_image ?? null,
+    twitterCard: r.twitter_card ?? null,
+    canonicalUrl: r.canonical_url ?? null,
+    noIndex: (r.no_index as number) === 1,
+    structuredData: r.structured_data ?? null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    url,
+  }
+}
 
 // ─────────────── POST /v1/posts ───────────────
 postRoutes.post("/", async (c) => {
