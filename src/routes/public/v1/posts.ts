@@ -208,6 +208,125 @@ function serializePost(
   }
 }
 
+// ─────────────── POST /v1/posts/batch ───────────────
+// Accepts up to 50 posts in one request. Each item is processed independently —
+// a single item failure does not abort the batch.
+// Behind FEATURE_BATCH_POSTS flag (disabled by default).
+postRoutes.post("/batch", async (c) => {
+  const enabled = c.env.FEATURE_BATCH_POSTS
+  if (!enabled || enabled === "0" || enabled === "false") {
+    return apiError(c, 404, "not_found", "Batch endpoint not enabled. Set FEATURE_BATCH_POSTS=1.")
+  }
+
+  const siteDb = c.get("siteDb")
+  const hostname = c.get("hostname")
+
+  const auth = await validateApiKey(siteDb, c.req.raw, "write")
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+
+  let body: { posts?: unknown[] }
+  try {
+    body = await c.req.json()
+  } catch {
+    return apiError(c, 400, "validation_invalid_value", "Invalid JSON body")
+  }
+
+  if (!Array.isArray(body.posts) || !body.posts.length) {
+    return apiError(c, 400, "validation_required_field", "posts array is required", { field: "posts" })
+  }
+  if (body.posts.length > 50) {
+    return apiError(c, 400, "validation_invalid_value", "Maximum 50 posts per batch", { max: 50, sent: body.posts.length })
+  }
+
+  const settings = await loadSettings(siteDb)
+  const results: Array<{
+    index: number
+    id?: string
+    slug?: string
+    url?: string
+    status: "created" | "error"
+    error?: string
+    code?: string
+  }> = []
+
+  for (let i = 0; i < body.posts.length; i++) {
+    const item = body.posts[i] as CreatePostBody
+    try {
+      const title = (item.title ?? "").trim()
+      const content = (item.content ?? "").trim()
+      if (!title) { results.push({ index: i, status: "error", error: "title is required", code: "validation_required_field" }); continue }
+      if (!content) { results.push({ index: i, status: "error", error: "content is required", code: "validation_required_field" }); continue }
+
+      // Resolve category.
+      let categoryId: string | null = null
+      let category: Category | null = null
+      if (item.category) {
+        const slug = slugify(item.category)
+        const existing = await siteDb.execute({ sql: "SELECT * FROM categories WHERE slug = ? LIMIT 1", args: [slug] })
+        if (existing.rows.length) {
+          category = existing.rows[0] as unknown as Category
+          categoryId = category.id
+        } else {
+          categoryId = cuid()
+          const name = item.category.replace(/-/g, " ").replace(/\b\w/g, (m) => m.toUpperCase())
+          await siteDb.execute({ sql: "INSERT INTO categories (id, name, slug) VALUES (?, ?, ?)", args: [categoryId, name, slug] })
+          category = { id: categoryId, name, slug, description: null, cover_image: null, seo_title: null, seo_desc: null, created_at: nowIso() }
+        }
+      }
+
+      const desiredSlug = item.slug ? slugify(item.slug) : slugify(title)
+      const finalSlug = await ensureUniqueSlug(siteDb, desiredSlug)
+      const excerpt = (item.excerpt ?? "").trim() || plainExcerpt(content, 200)
+      const seoKeywords = item.seoKeywords ?? (Array.isArray(item.tags) ? item.tags.join(", ") : "")
+      const postId = cuid()
+      const published = item.published ? 1 : 0
+      const publishedAt = published ? item.publishedAt ?? nowIso() : null
+      const scheduledAt = !published && item.scheduledAt ? item.scheduledAt : null
+
+      await siteDb.execute({
+        sql: `INSERT INTO posts (
+                id, title, slug, content, excerpt, cover_image,
+                published, published_at, scheduled_at, type, category_id, source,
+                seo_title, seo_description, seo_keywords,
+                og_title, og_description, og_image,
+                twitter_card, canonical_url, no_index,
+                created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'api', ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        args: [
+          postId, title, finalSlug, content, excerpt, item.coverImage ?? null,
+          published, publishedAt, scheduledAt,
+          item.type === "page" ? "page" : "post", categoryId,
+          item.seoTitle ?? null, item.seoDescription ?? null, seoKeywords || null,
+          item.ogTitle ?? null, item.ogDescription ?? null, item.ogImage ?? null,
+          item.twitterCard ?? "summary_large_image", item.canonicalUrl ?? null, item.noIndex ? 1 : 0,
+        ],
+      })
+
+      const path = buildPostPath({ slug: finalSlug, published_at: publishedAt, created_at: nowIso() }, category, settings)
+      const url = `https://${hostname}${path}`
+
+      c.executionCtx.waitUntil(
+        fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, hostname,
+          published ? "post.published" : "post.created",
+          { id: postId, title, slug: finalSlug, url, published: Boolean(published) })
+      )
+
+      results.push({ index: i, id: postId, slug: finalSlug, url, status: "created" })
+    } catch (err) {
+      results.push({ index: i, status: "error", error: err instanceof Error ? err.message : "Unknown error", code: "internal_error" })
+    }
+  }
+
+  // Best-effort cache purge after batch.
+  c.executionCtx.waitUntil(
+    purgePostCache(c.env, hostname, ["/", "/sitemap.xml", "/feed.xml"])
+  )
+
+  await logApiRequest(siteDb, auth.keyId, "/v1/posts/batch", "POST", 200)
+  const created = results.filter((r) => r.status === "created").length
+  return c.json({ success: true, created, total: results.length, results })
+})
+
 // ─────────────── POST /v1/posts ───────────────
 postRoutes.post("/", async (c) => {
   const siteDb = c.get("siteDb")
