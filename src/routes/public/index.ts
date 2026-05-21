@@ -5,6 +5,7 @@ import { Hono } from "hono"
 import type { AppEnv } from "../../lib/types"
 import { corsMiddleware } from "../../middleware/corsMiddleware"
 import { idempotencyMiddleware } from "../../lib/idempotency"
+import { rateLimitMiddleware } from "../../lib/rateLimit"
 import { uploadRoutes } from "./v1/upload"
 import { postRoutes } from "./v1/posts"
 import { categoryRoutes } from "./v1/categories"
@@ -14,8 +15,9 @@ import { webhookRoutes } from "./v1/webhooks"
 export const publicApiRoutes = new Hono<AppEnv>()
 
 publicApiRoutes.use("*", corsMiddleware)
-// Idempotency is a no-op when the Idempotency-Key header is absent or
-// when FEATURE_IDEMPOTENCY is not set to "1".
+// Rate limiting runs first — 429 before auth saves a PBKDF2 verify on hot paths.
+publicApiRoutes.use("/v1/*", rateLimitMiddleware)
+// Idempotency is a no-op when header absent or FEATURE_IDEMPOTENCY != "1".
 publicApiRoutes.use("/v1/*", idempotencyMiddleware)
 
 publicApiRoutes.route("/v1/status", statusRoutes)

@@ -18,6 +18,8 @@ SITE_SCHEMA_URL        = "https://raw.githubusercontent.com/arsalr/pinterest-cms
 SESSION_COOKIE_NAME    = "cms_session"
 FEATURE_IDEMPOTENCY    = ""
 FEATURE_WEBHOOKS       = ""
+FEATURE_RATE_LIMIT     = ""
+RATE_LIMIT_RPM         = "60"
 
 [triggers]
 crons = ["*/5 * * * *"]

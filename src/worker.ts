@@ -15,6 +15,7 @@ import { getMasterDb, getSiteDb } from "./lib/turso"
 import { runMigrations } from "./lib/migrate"
 import { idempotencyGc } from "./lib/idempotency"
 import { fireWebhooks, retryWebhooks } from "./lib/webhooks"
+import { rateLimitGc } from "./lib/rateLimit"
 
 import { networkRoutes } from "./routes/network/sites"
 
@@ -157,6 +158,8 @@ async function runScheduler(env: CloudflareEnv): Promise<void> {
       await idempotencyGc(db)
       // Retry failed webhook deliveries.
       await retryWebhooks(db, env.FEATURE_WEBHOOKS)
+      // GC stale rate-limit windows (older than 5 min).
+      await rateLimitGc(db)
     } catch (err) {
       console.error(`scheduler: error processing site ${site.hostname}:`, err)
     }

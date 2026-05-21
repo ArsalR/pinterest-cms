@@ -135,6 +135,15 @@ CREATE TABLE IF NOT EXISTS idempotency_cache (
   created_at  TEXT DEFAULT (datetime('now'))
 );
 
+-- ─────────────── RATE LIMIT COUNTERS ───────────────
+-- Fixed-window per-minute counters keyed by API key preview. GC cleans up old windows.
+CREATE TABLE IF NOT EXISTS rate_limit_counters (
+  bucket  TEXT NOT NULL,
+  window  TEXT NOT NULL,
+  count   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket, window)
+);
+
 -- ─────────────── WEBHOOKS ───────────────
 CREATE TABLE IF NOT EXISTS webhook_endpoints (
   id             TEXT PRIMARY KEY,
@@ -198,6 +207,7 @@ CREATE INDEX IF NOT EXISTS idx_categories_slug  ON categories(slug);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_redirects_from ON redirects(from_path);
 CREATE INDEX IF NOT EXISTS idx_redirects_active ON redirects(active);
 CREATE INDEX IF NOT EXISTS idx_idempotency_expires       ON idempotency_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_rate_limit_window           ON rate_limit_counters(window);
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint ON webhook_deliveries(endpoint_id);
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry    ON webhook_deliveries(status, next_retry_at)
   WHERE status = 'failed';

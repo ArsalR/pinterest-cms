@@ -36,6 +36,9 @@ export interface CloudflareEnv {
   // Feature flags — set to "1" to enable, unset/empty to disable.
   FEATURE_IDEMPOTENCY?: string
   FEATURE_WEBHOOKS?: string
+  FEATURE_RATE_LIMIT?: string
+  // Optional tuning — defaults applied in code if absent.
+  RATE_LIMIT_RPM?: string   // requests per minute per API key (default 60)
 }
 
 export interface SiteConfig {

@@ -73,6 +73,19 @@ const MIGRATIONS: Migration[] = [
          WHERE status = 'failed'`,
     ],
   },
+  {
+    version: 4,
+    name: "004_rate_limit",
+    statements: [
+      `CREATE TABLE IF NOT EXISTS rate_limit_counters (
+         bucket  TEXT NOT NULL,
+         window  TEXT NOT NULL,
+         count   INTEGER NOT NULL DEFAULT 0,
+         PRIMARY KEY (bucket, window)
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_rate_limit_window ON rate_limit_counters(window)`,
+    ],
+  },
 ]
 
 export async function runMigrations(db: Client): Promise<void> {
