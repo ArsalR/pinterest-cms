@@ -16,6 +16,7 @@ import { runMigrations } from "./lib/migrate"
 import { idempotencyGc } from "./lib/idempotency"
 import { fireWebhooks, retryWebhooks } from "./lib/webhooks"
 import { rateLimitGc } from "./lib/rateLimit"
+import { runR2Gc } from "./lib/gc"
 
 import { networkRoutes } from "./routes/network/sites"
 
@@ -168,7 +169,12 @@ async function runScheduler(env: CloudflareEnv): Promise<void> {
 
 export default {
   fetch: app.fetch,
-  async scheduled(_event: ScheduledEvent, env: CloudflareEnv): Promise<void> {
-    await runScheduler(env)
+  async scheduled(event: ScheduledEvent, env: CloudflareEnv, ctx: ExecutionContext): Promise<void> {
+    if ((event as unknown as { cron?: string }).cron === "0 4 * * *") {
+      // Daily R2 GC — fire-and-forget so the cron tick completes promptly.
+      ctx.waitUntil(runR2Gc(env))
+    } else {
+      await runScheduler(env)
+    }
   },
 }

@@ -24,7 +24,7 @@ GC_ENABLED             = ""
 RATE_LIMIT_RPM         = "60"
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *", "0 4 * * *"]
 
 [observability]
 enabled = true
