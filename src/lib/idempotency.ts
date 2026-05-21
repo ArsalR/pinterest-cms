@@ -83,23 +83,27 @@ export const idempotencyMiddleware: MiddlewareHandler<AppEnv> = async (c, next) 
   await next()
 
   // Cache the response for 24 h (fire-and-forget — never block the response).
+  // Only cache successful responses (2xx) — transient errors (429, 5xx) must
+  // not be replayed; the caller should retry with the same Idempotency-Key.
   const status = c.res.status
-  const responseBody = await c.res.clone().text().catch(() => "")
-  const responseHeaders: Record<string, string> = {}
-  c.res.headers.forEach((v, k) => {
-    responseHeaders[k] = v
-  })
+  if (status >= 200 && status < 300) {
+    const responseBody = await c.res.clone().text().catch(() => "")
+    const responseHeaders: Record<string, string> = {}
+    c.res.headers.forEach((v, k) => {
+      responseHeaders[k] = v
+    })
 
-  c.executionCtx.waitUntil(
-    siteDb
-      .execute({
-        sql: `INSERT OR REPLACE INTO idempotency_cache
-                (cache_key, fingerprint, status, body, headers, expires_at)
-              VALUES (?, ?, ?, ?, ?, datetime('now', '+24 hours'))`,
-        args: [cacheKey, fingerprint, status, responseBody, JSON.stringify(responseHeaders)],
-      })
-      .catch(() => {})
-  )
+    c.executionCtx.waitUntil(
+      siteDb
+        .execute({
+          sql: `INSERT OR REPLACE INTO idempotency_cache
+                  (cache_key, fingerprint, status, body, headers, expires_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now', '+24 hours'))`,
+          args: [cacheKey, fingerprint, status, responseBody, JSON.stringify(responseHeaders)],
+        })
+        .catch(() => {})
+    )
+  }
 }
 
 /** GC: remove expired idempotency rows. Call from scheduled cron per site. */

@@ -26,7 +26,7 @@ export async function loginPostHandler(c: Context<AppEnv>): Promise<Response> {
 
   if (!c.env.JWT_SECRET) {
     console.error("login: JWT_SECRET env var is not set — cannot issue sessions")
-    return redirectWithError("/admin/", "Server configuration error — contact admin")
+    return redirectWithError("/admin/login", "Server configuration error — contact admin")
   }
 
   let form: FormData

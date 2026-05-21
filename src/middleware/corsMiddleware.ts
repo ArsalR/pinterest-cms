@@ -24,7 +24,10 @@ function corsHeaders(): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Requested-With",
+    "Access-Control-Allow-Headers":
+      "Authorization, Content-Type, X-Requested-With, Idempotency-Key, X-Network-Admin-Key",
+    "Access-Control-Expose-Headers":
+      "X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, X-Error-Code, Idempotency-Replayed",
     "Access-Control-Max-Age": "86400",
   }
 }

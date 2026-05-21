@@ -79,10 +79,6 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return mismatch === 0
 }
 
-// Spec uses `bcrypt` / `bcryptVerify` names — keep aliases so call-sites read clean.
-export const bcrypt = hashPassword
-export const bcryptVerify = verifyPassword
-
 // ─────────────────────── JWT (HS256) ───────────────────────
 
 function b64UrlEncode(bytes: Uint8Array | string): string {
@@ -97,7 +93,8 @@ function b64UrlDecode(s: string): Uint8Array {
 }
 
 async function hmacKey(secret: string): Promise<CryptoKey> {
-  const keyBytes = new TextEncoder().encode(secret || "default-insecure-key")
+  if (!secret) throw new Error("JWT_SECRET is not configured")
+  const keyBytes = new TextEncoder().encode(secret)
   return crypto.subtle.importKey(
     "raw",
     keyBytes,

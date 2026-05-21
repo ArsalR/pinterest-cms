@@ -77,7 +77,7 @@ async function attemptDelivery(
         "User-Agent": "pinterest-cms-webhook/1.0",
       },
       body: payloadJson,
-      // Workers default cf fetch timeout is ~30s; keep it.
+      signal: AbortSignal.timeout(10_000),
     })
     responseStatus = res.status
     responseBody = (await res.text().catch(() => "")).slice(0, 1024)
@@ -92,9 +92,9 @@ async function attemptDelivery(
     await db.execute({
       sql: `UPDATE webhook_deliveries
             SET status = 'delivered', response_status = ?, response_body = ?,
-                delivered_at = datetime('now'), next_retry_at = NULL
+                attempt = ?, delivered_at = datetime('now'), next_retry_at = NULL
             WHERE id = ?`,
-      args: [responseStatus, responseBody, deliveryId],
+      args: [responseStatus, responseBody, attempt, deliveryId],
     })
   } else if (attempt >= maxAttempts) {
     await db.execute({
@@ -185,9 +185,11 @@ export async function retryWebhooks(
                    e.id AS ep_id, e.url, e.secret, e.events, e.active
             FROM webhook_deliveries d
             JOIN webhook_endpoints e ON e.id = d.endpoint_id
-            WHERE d.status = 'failed'
-              AND d.next_retry_at IS NOT NULL
-              AND d.next_retry_at <= datetime('now')
+            WHERE (
+              (d.status = 'failed' AND d.next_retry_at IS NOT NULL AND d.next_retry_at <= datetime('now'))
+              OR
+              (d.status = 'pending' AND d.created_at <= datetime('now', '-10 minutes'))
+            )
             LIMIT 50`,
       args: [],
     })

@@ -389,7 +389,7 @@ async function savePost(
               twitter_card=?, canonical_url=?,
               scheduled_at=?,
               published_at = CASE WHEN ?=1 AND ?=0 THEN datetime('now')
-                                  WHEN ?=0 THEN NULL ELSE published_at END,
+                                  ELSE published_at END,
               updated_at = datetime('now')
             WHERE id=?`,
       args: [
@@ -399,7 +399,7 @@ async function savePost(
         ogTitle, ogDesc, ogImage,
         twitterCard, canonical,
         scheduledAt,
-        published, wasPublished ? 1 : 0, published,
+        published, wasPublished ? 1 : 0,
         id,
       ],
     })

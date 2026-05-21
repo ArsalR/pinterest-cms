@@ -101,7 +101,11 @@ app.notFound((c) =>
 // Last-resort error handler so a thrown error never crashes the request.
 app.onError((err, c) => {
   console.error("Unhandled error:", err)
-  return c.json({ error: "Internal server error", message: err.message }, 500)
+  return c.json(
+    { error: "Internal server error", code: "internal_error", message: err.message },
+    500,
+    { "X-Error-Code": "internal_error" }
+  )
 })
 
 // ───────────────────────── Cron: post scheduler ──────────────────
@@ -170,7 +174,7 @@ async function runScheduler(env: CloudflareEnv): Promise<void> {
 export default {
   fetch: app.fetch,
   async scheduled(event: ScheduledEvent, env: CloudflareEnv, ctx: ExecutionContext): Promise<void> {
-    if ((event as unknown as { cron?: string }).cron === "0 4 * * *") {
+    if (event.cron === "0 4 * * *") {
       // Daily R2 GC — fire-and-forget so the cron tick completes promptly.
       ctx.waitUntil(runR2Gc(env))
     } else {

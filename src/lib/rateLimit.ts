@@ -70,7 +70,7 @@ export const rateLimitMiddleware: MiddlewareHandler<AppEnv> = async (c, next) =>
     "X-RateLimit-Reset": String(reset),
   }
 
-  if (count > limit) {
+  if (count >= limit) {
     return new Response(
       JSON.stringify({
         error: "Rate limit exceeded. Try again after the reset window.",
@@ -91,6 +91,7 @@ export const rateLimitMiddleware: MiddlewareHandler<AppEnv> = async (c, next) =>
   await next()
 
   // Attach rate-limit headers to the handler's response without consuming its body.
+  if (!c.res) return
   const orig = c.res
   const h = new Headers(orig.headers)
   for (const [k, v] of Object.entries(rlHeaders)) h.set(k, v)

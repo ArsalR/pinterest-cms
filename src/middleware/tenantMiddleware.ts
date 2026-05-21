@@ -7,8 +7,9 @@ import { loadSettings } from "../lib/defaults"
 import type { AppEnv } from "../lib/types"
 
 export const tenantMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
-  // Extract hostname (strip port).
-  const rawHost = c.req.header("host") ?? c.req.header("x-forwarded-host") ?? ""
+  // Use the canonical Host header only. X-Forwarded-Host is an untrusted
+  // client-supplied header — accepting it would allow hostname spoofing.
+  const rawHost = c.req.header("host") ?? ""
   const hostname = rawHost.replace(/:\d+$/, "").toLowerCase()
 
   // Network admin panel — bypass tenant lookup.

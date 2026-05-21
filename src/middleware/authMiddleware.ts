@@ -11,7 +11,7 @@ const PUBLIC_ADMIN_PATHS = new Set(["/admin/login", "/admin/login/"])
 
 export const adminAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   const path = new URL(c.req.url).pathname
-  if (PUBLIC_ADMIN_PATHS.has(path) || path.startsWith("/admin/login")) {
+  if (PUBLIC_ADMIN_PATHS.has(path)) {
     return next()
   }
 
