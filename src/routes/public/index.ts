@@ -11,6 +11,7 @@ import { postRoutes } from "./v1/posts"
 import { categoryRoutes } from "./v1/categories"
 import { statusRoutes } from "./v1/status"
 import { webhookRoutes } from "./v1/webhooks"
+import { capabilitiesRoutes } from "./v1/capabilities"
 
 export const publicApiRoutes = new Hono<AppEnv>()
 
@@ -20,6 +21,7 @@ publicApiRoutes.use("/v1/*", rateLimitMiddleware)
 // Idempotency is a no-op when header absent or FEATURE_IDEMPOTENCY != "1".
 publicApiRoutes.use("/v1/*", idempotencyMiddleware)
 
+publicApiRoutes.route("/v1/capabilities", capabilitiesRoutes)
 publicApiRoutes.route("/v1/status", statusRoutes)
 publicApiRoutes.route("/v1/upload", uploadRoutes)
 publicApiRoutes.route("/v1/posts", postRoutes)

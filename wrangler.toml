@@ -19,6 +19,8 @@ SESSION_COOKIE_NAME    = "cms_session"
 FEATURE_IDEMPOTENCY    = ""
 FEATURE_WEBHOOKS       = ""
 FEATURE_RATE_LIMIT     = ""
+FEATURE_BATCH_POSTS    = ""
+GC_ENABLED             = ""
 RATE_LIMIT_RPM         = "60"
 
 [triggers]

@@ -37,6 +37,8 @@ export interface CloudflareEnv {
   FEATURE_IDEMPOTENCY?: string
   FEATURE_WEBHOOKS?: string
   FEATURE_RATE_LIMIT?: string
+  FEATURE_BATCH_POSTS?: string
+  GC_ENABLED?: string
   // Optional tuning — defaults applied in code if absent.
   RATE_LIMIT_RPM?: string   // requests per minute per API key (default 60)
 }
