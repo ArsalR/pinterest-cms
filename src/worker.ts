@@ -14,6 +14,7 @@ import { adminAuthMiddleware } from "./middleware/authMiddleware"
 import { getMasterDb, getSiteDb } from "./lib/turso"
 import { runMigrations } from "./lib/migrate"
 import { idempotencyGc } from "./lib/idempotency"
+import { fireWebhooks, retryWebhooks } from "./lib/webhooks"
 
 import { networkRoutes } from "./routes/network/sites"
 
@@ -122,6 +123,14 @@ async function runScheduler(env: CloudflareEnv): Promise<void> {
     try {
       // Ensure column exists on sites provisioned before the scheduler was added.
       await db.execute("ALTER TABLE posts ADD COLUMN scheduled_at TEXT").catch(() => {})
+
+      // Collect posts that are about to be published so we can fire webhooks after.
+      const toPublish = await db.execute({
+        sql: `SELECT id, title, slug FROM posts
+              WHERE published = 0 AND scheduled_at IS NOT NULL AND scheduled_at <= datetime('now')`,
+        args: [],
+      }).catch(() => ({ rows: [] }))
+
       await db.execute({
         sql: `UPDATE posts
               SET published = 1,
@@ -132,10 +141,22 @@ async function runScheduler(env: CloudflareEnv): Promise<void> {
                 AND scheduled_at <= datetime('now')`,
         args: [],
       })
+
+      // Fire post.published webhooks for each newly-published post.
+      for (const row of toPublish.rows) {
+        await fireWebhooks(db, env.FEATURE_WEBHOOKS, site.hostname, "post.published", {
+          id: row.id,
+          title: row.title,
+          slug: row.slug,
+        })
+      }
+
       // Run forward-only schema migrations.
       await runMigrations(db)
       // GC expired idempotency entries.
       await idempotencyGc(db)
+      // Retry failed webhook deliveries.
+      await retryWebhooks(db, env.FEATURE_WEBHOOKS)
     } catch (err) {
       console.error(`scheduler: error processing site ${site.hostname}:`, err)
     }

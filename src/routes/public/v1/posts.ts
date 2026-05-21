@@ -10,6 +10,7 @@ import { loadSettings } from "../../../lib/defaults"
 import { buildPostPath } from "../../../lib/seo"
 import { purgePostCache } from "../../../lib/revalidate"
 import { ensureUniqueSlug } from "../../../lib/slugs"
+import { fireWebhooks } from "../../../lib/webhooks"
 
 interface CreatePostBody {
   title?: string
@@ -342,9 +343,14 @@ postRoutes.post("/", async (c) => {
   )
   const url = `https://${hostname}${path}`
 
-  // Cache invalidation (best-effort, fire-and-forget).
+  // Cache invalidation + webhooks (best-effort, fire-and-forget).
   c.executionCtx.waitUntil(
     purgePostCache(c.env, hostname, [path, "/", "/sitemap.xml", "/feed.xml"])
+  )
+  c.executionCtx.waitUntil(
+    fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, hostname,
+      published ? "post.published" : "post.created",
+      { id: postId, title, slug: finalSlug, url, published: Boolean(published) })
   )
 
   await logApiRequest(siteDb, auth.keyId, "/v1/posts", "POST", 200, postId)
@@ -519,6 +525,13 @@ postRoutes.put("/:id", async (c) => {
   c.executionCtx.waitUntil(
     purgePostCache(c.env, hostname, [path, "/", "/sitemap.xml", "/feed.xml"])
   )
+  const wasPublished = (existing.rows[0].published as number) === 1
+  const isNowPublished = (row.published as number) === 1
+  const whEvent = !wasPublished && isNowPublished ? "post.published" : "post.updated"
+  c.executionCtx.waitUntil(
+    fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, hostname, whEvent,
+      { id, slug: row.slug, title: row.title, published: isNowPublished })
+  )
 
   await logApiRequest(siteDb, auth.keyId, `/v1/posts/${id}`, "PUT", 200, id)
   return c.json({
@@ -583,6 +596,11 @@ postRoutes.delete("/:id", async (c) => {
       // Operators can run a sweeper to GC orphans. We do clean up when deleting from media library.
       void imageUrls
     })()
+  )
+
+  c.executionCtx.waitUntil(
+    fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, hostname, "post.deleted",
+      { id, slug: row.slug as string })
   )
 
   await logApiRequest(siteDb, auth.keyId, `/v1/posts/${id}`, "DELETE", 200, id)

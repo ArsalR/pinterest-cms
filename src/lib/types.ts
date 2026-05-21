@@ -35,6 +35,7 @@ export interface CloudflareEnv {
 
   // Feature flags — set to "1" to enable, unset/empty to disable.
   FEATURE_IDEMPOTENCY?: string
+  FEATURE_WEBHOOKS?: string
 }
 
 export interface SiteConfig {

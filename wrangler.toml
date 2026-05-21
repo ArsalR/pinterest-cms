@@ -17,6 +17,7 @@ R2_PUBLIC_URL          = "https://pub-ed7c257e9365434d921f9a37b122bc23.r2.dev"
 SITE_SCHEMA_URL        = "https://raw.githubusercontent.com/arsalr/pinterest-cms/main/src/schemas/site.sql"
 SESSION_COOKIE_NAME    = "cms_session"
 FEATURE_IDEMPOTENCY    = ""
+FEATURE_WEBHOOKS       = ""
 
 [triggers]
 crons = ["*/5 * * * *"]

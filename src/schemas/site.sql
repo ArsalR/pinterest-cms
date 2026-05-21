@@ -135,6 +135,32 @@ CREATE TABLE IF NOT EXISTS idempotency_cache (
   created_at  TEXT DEFAULT (datetime('now'))
 );
 
+-- ─────────────── WEBHOOKS ───────────────
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+  id             TEXT PRIMARY KEY,
+  url            TEXT NOT NULL,
+  secret         TEXT NOT NULL,
+  secret_preview TEXT NOT NULL,
+  events         TEXT NOT NULL DEFAULT '["post.created","post.updated","post.deleted","post.published"]',
+  active         INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id              TEXT PRIMARY KEY,
+  endpoint_id     TEXT NOT NULL,
+  event           TEXT NOT NULL,
+  payload         TEXT NOT NULL,
+  attempt         INTEGER NOT NULL DEFAULT 1,
+  status          TEXT NOT NULL DEFAULT 'pending',
+  response_status INTEGER,
+  response_body   TEXT,
+  next_retry_at   TEXT,
+  delivered_at    TEXT,
+  created_at      TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints(id) ON DELETE CASCADE
+);
+
 -- ─────────────── REDIRECTS / GONE / NOT FOUND ───────────────
 -- Stores admin-managed responses for non-content URLs. `kind`:
 --   '301' — permanent redirect to `target`
@@ -171,4 +197,7 @@ CREATE INDEX IF NOT EXISTS idx_menu_location    ON menu_items(location, ord);
 CREATE INDEX IF NOT EXISTS idx_categories_slug  ON categories(slug);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_redirects_from ON redirects(from_path);
 CREATE INDEX IF NOT EXISTS idx_redirects_active ON redirects(active);
-CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires       ON idempotency_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint ON webhook_deliveries(endpoint_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry    ON webhook_deliveries(status, next_retry_at)
+  WHERE status = 'failed';
