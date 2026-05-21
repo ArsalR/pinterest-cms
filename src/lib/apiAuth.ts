@@ -6,11 +6,13 @@ import type { Client } from "@libsql/client/web"
 import { verifyPassword } from "./auth"
 import { cuid } from "./utils"
 import type { ApiKey } from "./types"
+import type { ErrorCode } from "./errors"
 
 export interface ValidationResult {
   keyId: string
   permissions: string[]
   error?: string
+  code?: ErrorCode
   status?: number
 }
 
@@ -36,13 +38,14 @@ export async function validateApiKey(
       keyId: "",
       permissions: [],
       error: "Missing or malformed Authorization header. Expected: Bearer <key>",
+      code: "auth_missing",
       status: 401,
     }
   }
 
   const rawKey = authHeader.slice(7).trim()
   if (!rawKey || rawKey.length < 8) {
-    return { keyId: "", permissions: [], error: "Invalid API key format", status: 401 }
+    return { keyId: "", permissions: [], error: "Invalid API key format", code: "auth_invalid_format", status: 401 }
   }
 
   const preview = rawKey.slice(-4)
@@ -62,7 +65,7 @@ export async function validateApiKey(
   }
 
   if (!matched) {
-    return { keyId: "", permissions: [], error: "Invalid API key", status: 401 }
+    return { keyId: "", permissions: [], error: "Invalid API key", code: "auth_key_not_found", status: 401 }
   }
 
   let permissions: string[]
@@ -85,6 +88,7 @@ export async function validateApiKey(
       keyId: matched.id,
       permissions,
       error: `Insufficient permissions: '${requiredPermission}' required`,
+      code: "auth_permission_denied",
       status: 403,
     }
   }

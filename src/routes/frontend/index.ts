@@ -120,6 +120,7 @@ frontendRoutes.get("*", async (c) => {
       canonical_url: (r.canonical_url as string | null) ?? null,
       no_index: r.no_index as number,
       structured_data: (r.structured_data as string | null) ?? null,
+      scheduled_at: (r.scheduled_at as string | null) ?? null,
       created_at: r.created_at as string,
       updated_at: r.updated_at as string,
       category: r.c_id

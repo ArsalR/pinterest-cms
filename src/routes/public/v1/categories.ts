@@ -2,6 +2,7 @@
 import { Hono } from "hono"
 import type { AppEnv } from "../../../lib/types"
 import { validateApiKey, logApiRequest } from "../../../lib/apiAuth"
+import { apiError } from "../../../lib/errors"
 import { cuid, slugify } from "../../../lib/utils"
 
 export const categoryRoutes = new Hono<AppEnv>()
@@ -10,7 +11,7 @@ export const categoryRoutes = new Hono<AppEnv>()
 categoryRoutes.get("/", async (c) => {
   const siteDb = c.get("siteDb")
   const auth = await validateApiKey(siteDb, c.req.raw, "read")
-  if (auth.error) return c.json({ error: auth.error }, auth.status as 401 | 403)
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
 
   const rows = await siteDb.execute(`
     SELECT c.*, COUNT(p.id) AS post_count
@@ -38,17 +39,17 @@ categoryRoutes.get("/", async (c) => {
 categoryRoutes.post("/", async (c) => {
   const siteDb = c.get("siteDb")
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return c.json({ error: auth.error }, auth.status as 401 | 403)
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
 
   let body: { name?: string; slug?: string; description?: string; coverImage?: string }
   try {
     body = await c.req.json()
   } catch {
-    return c.json({ error: "Invalid JSON body" }, 400)
+    return apiError(c, 400, "validation_invalid_value", "Invalid JSON body")
   }
   const name = (body.name ?? "").trim()
   if (!name) {
-    return c.json({ error: "name is required" }, 400)
+    return apiError(c, 400, "validation_required_field", "name is required", { field: "name" })
   }
   const slug = slugify(body.slug || name)
 
@@ -57,7 +58,7 @@ categoryRoutes.post("/", async (c) => {
     args: [slug],
   })
   if (existing.rows.length) {
-    return c.json({ error: "Category slug already exists" }, 409)
+    return apiError(c, 409, "slug_conflict", "Category slug already exists", { slug })
   }
 
   const id = cuid()

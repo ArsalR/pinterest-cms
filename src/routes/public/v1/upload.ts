@@ -12,6 +12,7 @@
 import { Hono } from "hono"
 import type { AppEnv } from "../../../lib/types"
 import { validateApiKey, logApiRequest } from "../../../lib/apiAuth"
+import { apiError } from "../../../lib/errors"
 import { uploadToR2 } from "../../../lib/r2"
 import { cuid } from "../../../lib/utils"
 
@@ -25,26 +26,24 @@ uploadRoutes.post("/", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) {
-    return c.json({ error: auth.error }, auth.status as 401 | 403)
-  }
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
 
   let formData: FormData
   try {
     formData = await c.req.formData()
   } catch {
     await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
-    return c.json({ error: "Invalid multipart body" }, 400)
+    return apiError(c, 400, "validation_invalid_value", "Invalid multipart body")
   }
 
   const files = formData.getAll("files").filter((f): f is File => f instanceof File)
   if (!files.length) {
     await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
-    return c.json({ error: "No files provided. Send one or more `files` fields." }, 400)
+    return apiError(c, 400, "validation_required_field", "No files provided. Send one or more `files` fields.", { field: "files" })
   }
   if (files.length > MAX_FILES_PER_REQUEST) {
     await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
-    return c.json({ error: `Maximum ${MAX_FILES_PER_REQUEST} files per request` }, 400)
+    return apiError(c, 400, "upload_too_many_files", `Maximum ${MAX_FILES_PER_REQUEST} files per request`, { max: MAX_FILES_PER_REQUEST, sent: files.length })
   }
 
   const uploaded: Array<{
@@ -61,14 +60,11 @@ uploadRoutes.post("/", async (c) => {
     const file = files[i]
     if (!file.type.startsWith("image/")) {
       await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
-      return c.json({ error: `File '${file.name}' is not an image (got ${file.type})` }, 400)
+      return apiError(c, 400, "upload_invalid_mime", `File '${file.name}' is not an image (got ${file.type})`, { filename: file.name, mime: file.type })
     }
     if (file.size > MAX_BYTES_PER_FILE) {
       await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
-      return c.json(
-        { error: `File '${file.name}' exceeds ${MAX_BYTES_PER_FILE / 1024 / 1024}MB limit` },
-        400
-      )
+      return apiError(c, 400, "upload_file_too_large", `File '${file.name}' exceeds ${MAX_BYTES_PER_FILE / 1024 / 1024}MB limit`, { filename: file.name, maxBytes: MAX_BYTES_PER_FILE, size: file.size })
     }
 
     const alt = String(formData.get(`alt[${i}]`) ?? "")

@@ -4,6 +4,7 @@
 import { Hono } from "hono"
 import type { AppEnv, Category } from "../../../lib/types"
 import { validateApiKey, logApiRequest } from "../../../lib/apiAuth"
+import { apiError } from "../../../lib/errors"
 import { cuid, slugify, nowIso, plainExcerpt } from "../../../lib/utils"
 import { loadSettings } from "../../../lib/defaults"
 import { buildPostPath } from "../../../lib/seo"
@@ -42,25 +43,25 @@ postRoutes.post("/", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return c.json({ error: auth.error }, auth.status as 401 | 403)
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
 
   let body: CreatePostBody
   try {
     body = await c.req.json<CreatePostBody>()
   } catch {
     await logApiRequest(siteDb, auth.keyId, "/v1/posts", "POST", 400)
-    return c.json({ error: "Invalid JSON body" }, 400)
+    return apiError(c, 400, "validation_invalid_value", "Invalid JSON body")
   }
 
   const title = (body.title ?? "").trim()
   const content = (body.content ?? "").trim()
   if (!title) {
     await logApiRequest(siteDb, auth.keyId, "/v1/posts", "POST", 400)
-    return c.json({ error: "title is required" }, 400)
+    return apiError(c, 400, "validation_required_field", "title is required", { field: "title" })
   }
   if (!content) {
     await logApiRequest(siteDb, auth.keyId, "/v1/posts", "POST", 400)
-    return c.json({ error: "content is required" }, 400)
+    return apiError(c, 400, "validation_required_field", "content is required", { field: "content" })
   }
 
   // Resolve category (find by slug, else create).
@@ -201,7 +202,7 @@ postRoutes.put("/:id", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return c.json({ error: auth.error }, auth.status as 401 | 403)
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
 
   const id = c.req.param("id")
   const existing = await siteDb.execute({
@@ -210,14 +211,14 @@ postRoutes.put("/:id", async (c) => {
   })
   if (!existing.rows.length) {
     await logApiRequest(siteDb, auth.keyId, `/v1/posts/${id}`, "PUT", 404)
-    return c.json({ error: "Post not found" }, 404)
+    return apiError(c, 404, "not_found", "Post not found", { id })
   }
 
   let body: CreatePostBody
   try {
     body = await c.req.json<CreatePostBody>()
   } catch {
-    return c.json({ error: "Invalid JSON body" }, 400)
+    return apiError(c, 400, "validation_invalid_value", "Invalid JSON body")
   }
 
   const updates: string[] = []
@@ -293,7 +294,7 @@ postRoutes.put("/:id", async (c) => {
   }
 
   if (!updates.length && !body.images) {
-    return c.json({ error: "No fields to update" }, 400)
+    return apiError(c, 400, "validation_required_field", "No fields to update")
   }
 
   if (updates.length) {
@@ -369,7 +370,7 @@ postRoutes.delete("/:id", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return c.json({ error: auth.error }, auth.status as 401 | 403)
+  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
 
   const id = c.req.param("id")
   const existing = await siteDb.execute({
@@ -378,7 +379,7 @@ postRoutes.delete("/:id", async (c) => {
     args: [id],
   })
   if (!existing.rows.length) {
-    return c.json({ error: "Post not found" }, 404)
+    return apiError(c, 404, "not_found", "Post not found", { id })
   }
   const row = existing.rows[0]
 
