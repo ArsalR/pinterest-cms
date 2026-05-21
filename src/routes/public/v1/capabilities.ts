@@ -13,7 +13,7 @@ export const capabilitiesRoutes = new Hono<AppEnv>()
 capabilitiesRoutes.get("/", async (c) => {
   const siteDb = c.get("siteDb")
   const auth = await validateApiKey(siteDb, c.req.raw, "read")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const env = c.env
   const flag = (v: string | undefined) => v === "1" || v === "true"

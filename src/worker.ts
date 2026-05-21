@@ -127,9 +127,6 @@ async function runScheduler(env: CloudflareEnv): Promise<void> {
   for (const site of sites) {
     const db = getSiteDb(site.turso_url, site.turso_token)
     try {
-      // Ensure column exists on sites provisioned before the scheduler was added.
-      await db.execute("ALTER TABLE posts ADD COLUMN scheduled_at TEXT").catch(() => {})
-
       // Collect posts that are about to be published so we can fire webhooks after.
       const toPublish = await db.execute({
         sql: `SELECT id, title, slug FROM posts

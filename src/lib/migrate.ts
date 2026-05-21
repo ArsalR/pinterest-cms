@@ -102,13 +102,18 @@ export async function runMigrations(db: Client): Promise<void> {
 
   for (const migration of MIGRATIONS) {
     if (done.has(migration.version)) continue
-    for (const stmt of migration.statements) {
-      await db.execute(stmt)
-    }
-    await db.execute({
-      sql: "INSERT OR IGNORE INTO _migrations (version, name) VALUES (?, ?)",
-      args: [migration.version, migration.name],
-    })
+    // Execute all DDL statements + record the migration atomically so a partial
+    // failure cannot leave the schema half-applied.
+    await db.batch(
+      [
+        ...migration.statements.map((sql) => ({ sql, args: [] as never[] })),
+        {
+          sql: "INSERT OR IGNORE INTO _migrations (version, name) VALUES (?, ?)",
+          args: [migration.version, migration.name] as [number, string],
+        },
+      ],
+      "write"
+    )
     console.log(`migrate: applied ${migration.name}`)
   }
 }

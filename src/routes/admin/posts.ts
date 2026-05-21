@@ -461,8 +461,9 @@ async function bulkAction(
   const backUrl = type === "page" ? "/admin/pages" : "/admin/posts"
 
   if (!ids.length || !action) return c.redirect(backUrl)
-
-  const placeholders = ids.map(() => "?").join(",")
+  // Cap to prevent excessively large IN clauses.
+  const safeIds = ids.slice(0, 500)
+  const placeholders = safeIds.map(() => "?").join(",")
 
   if (action === "publish") {
     await siteDb.execute({
@@ -470,22 +471,22 @@ async function bulkAction(
               published_at = COALESCE(published_at, datetime('now')),
               updated_at = datetime('now')
             WHERE id IN (${placeholders}) AND type = ?`,
-      args: [...ids, type],
+      args: [...safeIds, type],
     })
   } else if (action === "unpublish") {
     await siteDb.execute({
       sql: `UPDATE posts SET published = 0, updated_at = datetime('now')
             WHERE id IN (${placeholders}) AND type = ?`,
-      args: [...ids, type],
+      args: [...safeIds, type],
     })
   } else if (action === "delete") {
     await siteDb.execute({
       sql: `DELETE FROM post_images WHERE post_id IN (${placeholders})`,
-      args: ids,
+      args: safeIds,
     })
     await siteDb.execute({
       sql: `DELETE FROM posts WHERE id IN (${placeholders}) AND type = ?`,
-      args: [...ids, type],
+      args: [...safeIds, type],
     })
   }
 

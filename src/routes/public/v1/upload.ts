@@ -19,6 +19,17 @@ import { cuid } from "../../../lib/utils"
 const MAX_FILES_PER_REQUEST = 20
 const MAX_BYTES_PER_FILE = 10 * 1024 * 1024 // 10 MB
 
+// Validate by magic bytes — client-supplied MIME in multipart can be spoofed.
+function detectImageMime(bytes: Uint8Array): string | null {
+  const b = bytes
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg"
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png"
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return "image/gif"
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+      b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "image/webp"
+  return null
+}
+
 export const uploadRoutes = new Hono<AppEnv>()
 
 uploadRoutes.post("/", async (c) => {
@@ -26,7 +37,7 @@ uploadRoutes.post("/", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   let formData: FormData
   try {
@@ -58,10 +69,6 @@ uploadRoutes.post("/", async (c) => {
 
   for (let i = 0; i < files.length; i++) {
     const file = files[i]
-    if (!file.type.startsWith("image/")) {
-      await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
-      return apiError(c, 400, "upload_invalid_mime", `File '${file.name}' is not an image (got ${file.type})`, { filename: file.name, mime: file.type })
-    }
     if (file.size > MAX_BYTES_PER_FILE) {
       await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
       return apiError(c, 400, "upload_file_too_large", `File '${file.name}' exceeds ${MAX_BYTES_PER_FILE / 1024 / 1024}MB limit`, { filename: file.name, maxBytes: MAX_BYTES_PER_FILE, size: file.size })
@@ -71,7 +78,15 @@ uploadRoutes.post("/", async (c) => {
     const caption = String(formData.get(`caption[${i}]`) ?? "")
 
     const buffer = await file.arrayBuffer()
-    const { url, key } = await uploadToR2(c.env, hostname, file.name, buffer, file.type)
+
+    // Validate by magic bytes, not the client-supplied MIME type (trivially spoofed).
+    const detectedMime = detectImageMime(new Uint8Array(buffer))
+    if (!detectedMime) {
+      await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
+      return apiError(c, 400, "upload_invalid_mime", `File '${file.name}' is not a supported image (JPEG, PNG, GIF, WebP)`, { filename: file.name })
+    }
+
+    const { url, key } = await uploadToR2(c.env, hostname, file.name, buffer, detectedMime)
 
     const mediaId = cuid()
     await siteDb.execute({

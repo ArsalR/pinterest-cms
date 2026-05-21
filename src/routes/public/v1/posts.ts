@@ -47,7 +47,7 @@ postRoutes.get("/", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "read")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const q = c.req.query()
   const slug = (q.slug ?? "").trim()
@@ -126,7 +126,7 @@ postRoutes.get("/:id", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "read")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const id = c.req.param("id")
   const result = await siteDb.execute({
@@ -222,7 +222,7 @@ postRoutes.post("/batch", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   let body: { posts?: unknown[] }
   try {
@@ -248,6 +248,8 @@ postRoutes.post("/batch", async (c) => {
     error?: string
     code?: string
   }> = []
+
+  const webhookPromises: Promise<void>[] = []
 
   for (let i = 0; i < body.posts.length; i++) {
     const item = body.posts[i] as CreatePostBody
@@ -305,7 +307,7 @@ postRoutes.post("/batch", async (c) => {
       const path = buildPostPath({ slug: finalSlug, published_at: publishedAt, created_at: nowIso() }, category, settings)
       const url = `https://${hostname}${path}`
 
-      c.executionCtx.waitUntil(
+      webhookPromises.push(
         fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, hostname,
           published ? "post.published" : "post.created",
           { id: postId, title, slug: finalSlug, url, published: Boolean(published) })
@@ -317,9 +319,12 @@ postRoutes.post("/batch", async (c) => {
     }
   }
 
-  // Best-effort cache purge after batch.
+  // Register all webhook deliveries + cache purge as a single waitUntil.
   c.executionCtx.waitUntil(
-    purgePostCache(c.env, hostname, ["/", "/sitemap.xml", "/feed.xml"])
+    Promise.all([
+      Promise.all(webhookPromises),
+      purgePostCache(c.env, hostname, ["/", "/sitemap.xml", "/feed.xml"]),
+    ]).then(() => undefined)
   )
 
   await logApiRequest(siteDb, auth.keyId, "/v1/posts/batch", "POST", 200)
@@ -333,7 +338,7 @@ postRoutes.post("/", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   let body: CreatePostBody
   try {
@@ -453,10 +458,14 @@ postRoutes.post("/", async (c) => {
     }
   }
 
+  // Fetch the DB-stored created_at so the permalink URL is always accurate.
+  const createdRow = await siteDb.execute({ sql: "SELECT created_at FROM posts WHERE id = ?", args: [postId] })
+  const createdAt = (createdRow.rows[0]?.created_at as string | null) ?? nowIso()
+
   // Build canonical URL using current settings.
   const settings = await loadSettings(siteDb)
   const path = buildPostPath(
-    { slug: finalSlug, published_at: publishedAt, created_at: nowIso() },
+    { slug: finalSlug, published_at: publishedAt, created_at: createdAt },
     category,
     settings
   )
@@ -464,12 +473,12 @@ postRoutes.post("/", async (c) => {
 
   // Cache invalidation + webhooks (best-effort, fire-and-forget).
   c.executionCtx.waitUntil(
-    purgePostCache(c.env, hostname, [path, "/", "/sitemap.xml", "/feed.xml"])
-  )
-  c.executionCtx.waitUntil(
-    fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, hostname,
-      published ? "post.published" : "post.created",
-      { id: postId, title, slug: finalSlug, url, published: Boolean(published) })
+    Promise.all([
+      purgePostCache(c.env, hostname, [path, "/", "/sitemap.xml", "/feed.xml"]),
+      fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, hostname,
+        published ? "post.published" : "post.created",
+        { id: postId, title, slug: finalSlug, url, published: Boolean(published) }),
+    ]).then(() => undefined)
   )
 
   await logApiRequest(siteDb, auth.keyId, "/v1/posts", "POST", 200, postId)
@@ -486,7 +495,7 @@ postRoutes.post("/", async (c) => {
       scheduledAt: scheduledAt,
       type: body.type === "page" ? "page" : "post",
       category: category ? { id: category.id, slug: category.slug, name: category.name } : null,
-      createdAt: nowIso(),
+      createdAt,
     },
   })
 })
@@ -497,7 +506,7 @@ postRoutes.put("/:id", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const id = c.req.param("id")
   const existing = await siteDb.execute({
@@ -672,7 +681,7 @@ postRoutes.delete("/:id", async (c) => {
   const hostname = c.get("hostname")
 
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const id = c.req.param("id")
   const existing = await siteDb.execute({

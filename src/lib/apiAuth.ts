@@ -8,13 +8,23 @@ import { cuid } from "./utils"
 import type { ApiKey } from "./types"
 import type { ErrorCode } from "./errors"
 
-export interface ValidationResult {
+interface AuthSuccess {
   keyId: string
   permissions: string[]
-  error?: string
-  code?: ErrorCode
-  status?: number
+  error?: undefined
+  code?: undefined
+  status?: undefined
 }
+
+interface AuthFailure {
+  keyId: string
+  permissions: string[]
+  error: string
+  code: ErrorCode
+  status: number
+}
+
+export type ValidationResult = AuthSuccess | AuthFailure
 
 /**
  * Validate an API key from the Authorization header.

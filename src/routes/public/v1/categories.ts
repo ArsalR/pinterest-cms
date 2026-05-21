@@ -11,7 +11,7 @@ export const categoryRoutes = new Hono<AppEnv>()
 categoryRoutes.get("/", async (c) => {
   const siteDb = c.get("siteDb")
   const auth = await validateApiKey(siteDb, c.req.raw, "read")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const rows = await siteDb.execute(`
     SELECT c.*, COUNT(p.id) AS post_count
@@ -39,7 +39,7 @@ categoryRoutes.get("/", async (c) => {
 categoryRoutes.post("/", async (c) => {
   const siteDb = c.get("siteDb")
   const auth = await validateApiKey(siteDb, c.req.raw, "write")
-  if (auth.error) return apiError(c, auth.status!, auth.code!, auth.error)
+  if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   let body: { name?: string; slug?: string; description?: string; coverImage?: string }
   try {
@@ -68,9 +68,9 @@ categoryRoutes.post("/", async (c) => {
     args: [id, name, slug, body.description ?? null, body.coverImage ?? null],
   })
 
-  await logApiRequest(siteDb, auth.keyId, "/v1/categories", "POST", 200)
+  await logApiRequest(siteDb, auth.keyId, "/v1/categories", "POST", 201)
   return c.json({
     success: true,
     category: { id, name, slug, description: body.description ?? null },
-  })
+  }, 201)
 })
