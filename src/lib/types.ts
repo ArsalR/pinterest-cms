@@ -32,6 +32,9 @@ export interface CloudflareEnv {
 
   // Schema bootstrap
   SITE_SCHEMA_URL: string
+
+  // Feature flags — set to "1" to enable, unset/empty to disable.
+  FEATURE_IDEMPOTENCY?: string
 }
 
 export interface SiteConfig {

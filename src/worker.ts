@@ -12,6 +12,8 @@ import type { AppEnv, CloudflareEnv } from "./lib/types"
 import { tenantMiddleware } from "./middleware/tenantMiddleware"
 import { adminAuthMiddleware } from "./middleware/authMiddleware"
 import { getMasterDb, getSiteDb } from "./lib/turso"
+import { runMigrations } from "./lib/migrate"
+import { idempotencyGc } from "./lib/idempotency"
 
 import { networkRoutes } from "./routes/network/sites"
 
@@ -130,6 +132,10 @@ async function runScheduler(env: CloudflareEnv): Promise<void> {
                 AND scheduled_at <= datetime('now')`,
         args: [],
       })
+      // Run forward-only schema migrations.
+      await runMigrations(db)
+      // GC expired idempotency entries.
+      await idempotencyGc(db)
     } catch (err) {
       console.error(`scheduler: error processing site ${site.hostname}:`, err)
     }

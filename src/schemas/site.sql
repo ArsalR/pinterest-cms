@@ -122,6 +122,19 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+-- ─────────────── IDEMPOTENCY CACHE ───────────────
+-- Stores API request/response pairs keyed by sha256(authHeader:Idempotency-Key).
+-- GC cron deletes rows where expires_at <= now (TTL = 24 h).
+CREATE TABLE IF NOT EXISTS idempotency_cache (
+  cache_key   TEXT PRIMARY KEY,
+  fingerprint TEXT NOT NULL,
+  status      INTEGER NOT NULL,
+  body        TEXT NOT NULL,
+  headers     TEXT NOT NULL DEFAULT '{}',
+  expires_at  TEXT NOT NULL,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+
 -- ─────────────── REDIRECTS / GONE / NOT FOUND ───────────────
 -- Stores admin-managed responses for non-content URLs. `kind`:
 --   '301' — permanent redirect to `target`
@@ -158,3 +171,4 @@ CREATE INDEX IF NOT EXISTS idx_menu_location    ON menu_items(location, ord);
 CREATE INDEX IF NOT EXISTS idx_categories_slug  ON categories(slug);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_redirects_from ON redirects(from_path);
 CREATE INDEX IF NOT EXISTS idx_redirects_active ON redirects(active);
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_cache(expires_at);
