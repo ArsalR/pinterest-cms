@@ -14,7 +14,6 @@ TURSO_ORG              = "arsalr"
 TURSO_GROUP            = "default"
 NETWORK_ADMIN_HOSTNAME = "pinterest-cms.arsalriaz34.workers.dev"
 R2_PUBLIC_URL          = "https://pub-ed7c257e9365434d921f9a37b122bc23.r2.dev"
-SITE_SCHEMA_URL        = "https://raw.githubusercontent.com/arsalr/pinterest-cms/main/src/schemas/site.sql"
 SESSION_COOKIE_NAME    = "cms_session"
 FEATURE_IDEMPOTENCY    = ""
 FEATURE_WEBHOOKS       = ""
@@ -25,6 +24,12 @@ RATE_LIMIT_RPM         = "60"
 
 [triggers]
 crons = ["*/5 * * * *", "0 4 * * *"]
+
+# Raise CPU time limit for PBKDF2 password hashing (login + API key validation).
+# Requires Workers Paid plan ($5/month). Free tier is capped at 10ms and will
+# cause login to fail under load — do NOT deploy to production on the free tier.
+[limits]
+cpu_ms = 30000
 
 [observability]
 enabled = true

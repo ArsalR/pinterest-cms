@@ -71,7 +71,6 @@ adminApp.use("*", adminAuthMiddleware)
 adminApp.get("/login", loginGetHandler)
 adminApp.post("/login", loginPostHandler)
 adminApp.post("/login/logout", logoutHandler)
-adminApp.get("/", dashboardHandler)               // direct mount avoids Hono sub-app root-path edge case
 adminApp.route("/posts", postsAdminRoute)
 adminApp.route("/pages", pagesAdminRoute)
 adminApp.route("/categories", categoriesAdminRoute)
@@ -83,8 +82,11 @@ adminApp.route("/permalinks", permalinksAdminRoute)
 adminApp.route("/redirects", redirectsAdminRoute)
 adminApp.route("/api-keys", apiKeysAdminRoute)
 adminApp.route("/settings", settingsAdminRoute)
-// /admin/ (trailing slash) never matches the sub-app in Hono v4 — redirect to canonical.
-app.get("/admin/", (c) => new Response(null, { status: 302, headers: { Location: "/admin" } }))
+// Dashboard is mounted on the main app (not adminApp) to bypass Hono sub-app
+// root-path ambiguity entirely. Both /admin and /admin/ are handled explicitly.
+// Auth middleware is applied inline — same middleware instance as adminApp.use("*").
+app.get("/admin", adminAuthMiddleware, dashboardHandler)
+app.get("/admin/", adminAuthMiddleware, dashboardHandler)
 app.route("/admin", adminApp)
 
 // ───────────────────────── Frontend (catch-all) ──────────────────
@@ -103,6 +105,24 @@ app.notFound((c) =>
 // Last-resort error handler so a thrown error never crashes the request.
 app.onError((err, c) => {
   console.error("Unhandled error:", err)
+  const path = new URL(c.req.url).pathname
+  if (path.startsWith("/admin")) {
+    const safe = err.message.replace(/[<>&"]/g, (ch) =>
+      ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[ch] ?? ch
+    )
+    return c.html(
+      `<!doctype html><html><head><meta charset="utf-8"><title>Error</title>
+      <style>body{font-family:sans-serif;background:#0a0a0a;color:#eee;padding:60px;text-align:center}
+      pre{background:#1a1a1a;padding:16px;border-radius:8px;text-align:left;color:#fca5a5;font-size:13px}
+      a{color:#60a5fa}</style></head>
+      <body><h1 style="font-size:48px;margin:0">500</h1>
+      <p>Something went wrong. Check <code>wrangler tail</code> for details.</p>
+      <pre>${safe}</pre>
+      <p><a href="/admin">← Back to dashboard</a></p></body></html>`,
+      500,
+      { "Cache-Control": "no-store" }
+    )
+  }
   return c.json(
     { error: "Internal server error", code: "internal_error", message: err.message },
     500,

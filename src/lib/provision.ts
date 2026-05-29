@@ -114,7 +114,7 @@ export async function createSite(
 
   // ─── 4. Run schema ───
   const siteDb = getSiteDb(tursoUrl, tursoToken)
-  await runSchema(siteDb, env)
+  await runSchema(siteDb)
 
   // ─── 5. Defaults ───
   await insertDefaultSettings(siteDb, {
@@ -157,24 +157,53 @@ export async function createSite(
 
   return {
     hostname,
-    adminUrl: `https://${hostname}/admin/`,
+    adminUrl: `https://${hostname}/admin`,
     apiKey: rawKey,
     tursoUrl,
     siteId,
   }
 }
 
-/** Fetch site.sql from SITE_SCHEMA_URL and execute each statement. */
-async function runSchema(siteDb: ReturnType<typeof getSiteDb>, env: CloudflareEnv): Promise<void> {
-  const resp = await fetch(env.SITE_SCHEMA_URL)
-  if (!resp.ok) throw new Error(`Failed to fetch schema from ${env.SITE_SCHEMA_URL}`)
-  const sql = await resp.text()
-  // Split on `;` at end of line, ignore comments and empty.
-  const statements = sql
-    .split(/;\s*\n/)
-    .map((s) => s.trim())
-    .filter((s) => s && !s.startsWith("--"))
-  for (const stmt of statements) {
+// Inlined schema — avoids runtime dependency on GitHub availability.
+// Keep in sync with src/schemas/site.sql (source of truth for documentation).
+const SITE_SCHEMA_STATEMENTS: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, name TEXT, role TEXT DEFAULT 'admin', created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_hash TEXT UNIQUE NOT NULL, key_preview TEXT NOT NULL, permissions TEXT DEFAULT '["read","write"]', last_used_at TEXT, usage_count INTEGER DEFAULT 0, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS api_logs (id TEXT PRIMARY KEY, api_key_id TEXT, endpoint TEXT NOT NULL, method TEXT NOT NULL, status INTEGER NOT NULL, post_id TEXT, created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE SET NULL)`,
+  `CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, description TEXT, cover_image TEXT, seo_title TEXT, seo_desc TEXT, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, slug TEXT UNIQUE NOT NULL, content TEXT NOT NULL, excerpt TEXT, cover_image TEXT, published INTEGER DEFAULT 0, published_at TEXT, type TEXT DEFAULT 'post', category_id TEXT, source TEXT DEFAULT 'manual', seo_title TEXT, seo_description TEXT, seo_keywords TEXT, og_title TEXT, og_description TEXT, og_image TEXT, twitter_card TEXT DEFAULT 'summary_large_image', canonical_url TEXT, no_index INTEGER DEFAULT 0, structured_data TEXT, scheduled_at TEXT, created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL)`,
+  `CREATE TABLE IF NOT EXISTS post_images (id TEXT PRIMARY KEY, post_id TEXT NOT NULL, url TEXT NOT NULL, alt TEXT, caption TEXT, ord INTEGER DEFAULT 0, FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE)`,
+  `CREATE TABLE IF NOT EXISTS menu_items (id TEXT PRIMARY KEY, label TEXT NOT NULL, post_id TEXT, url TEXT, ord INTEGER DEFAULT 0, location TEXT NOT NULL, parent_id TEXT, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, url TEXT NOT NULL, filename TEXT NOT NULL, size INTEGER NOT NULL, width INTEGER, height INTEGER, alt TEXT, caption TEXT, source TEXT DEFAULT 'manual', r2_key TEXT, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS idempotency_cache (cache_key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, status INTEGER NOT NULL, body TEXT NOT NULL, headers TEXT NOT NULL DEFAULT '{}', expires_at TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS rate_limit_counters (bucket TEXT NOT NULL, window TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (bucket, window))`,
+  `CREATE TABLE IF NOT EXISTS webhook_endpoints (id TEXT PRIMARY KEY, url TEXT NOT NULL, secret TEXT NOT NULL, secret_preview TEXT NOT NULL, events TEXT NOT NULL DEFAULT '["post.created","post.updated","post.deleted","post.published"]', active INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE TABLE IF NOT EXISTS webhook_deliveries (id TEXT PRIMARY KEY, endpoint_id TEXT NOT NULL, event TEXT NOT NULL, payload TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'pending', response_status INTEGER, response_body TEXT, next_retry_at TEXT, delivered_at TEXT, created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (endpoint_id) REFERENCES webhook_endpoints(id) ON DELETE CASCADE)`,
+  `CREATE TABLE IF NOT EXISTS redirects (id TEXT PRIMARY KEY, from_path TEXT NOT NULL, target TEXT, kind TEXT NOT NULL DEFAULT '301', match_type TEXT NOT NULL DEFAULT 'exact', message TEXT, hit_count INTEGER DEFAULT 0, last_hit_at TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_slug ON posts(slug)`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(published, published_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_type ON posts(type)`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_source ON posts(source)`,
+  `CREATE INDEX IF NOT EXISTS idx_posts_scheduled ON posts(scheduled_at) WHERE scheduled_at IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_post_images_post ON post_images(post_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_media_source ON media(source)`,
+  `CREATE INDEX IF NOT EXISTS idx_api_logs_key ON api_logs(api_key_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_api_logs_created ON api_logs(created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_menu_location ON menu_items(location, ord)`,
+  `CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories(slug)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_redirects_from ON redirects(from_path)`,
+  `CREATE INDEX IF NOT EXISTS idx_redirects_active ON redirects(active)`,
+  `CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_cache(expires_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_rate_limit_window ON rate_limit_counters(window)`,
+  `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint ON webhook_deliveries(endpoint_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(status, next_retry_at) WHERE status = 'failed'`,
+]
+
+/** Apply the site schema to a freshly created Turso database. */
+async function runSchema(siteDb: ReturnType<typeof getSiteDb>): Promise<void> {
+  for (const stmt of SITE_SCHEMA_STATEMENTS) {
     await siteDb.execute(stmt)
   }
 }

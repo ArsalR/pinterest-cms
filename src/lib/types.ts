@@ -30,9 +30,6 @@ export interface CloudflareEnv {
   // Network admin
   NETWORK_ADMIN_HOSTNAME: string
 
-  // Schema bootstrap
-  SITE_SCHEMA_URL: string
-
   // Feature flags — set to "1" to enable, unset/empty to disable.
   FEATURE_IDEMPOTENCY?: string
   FEATURE_WEBHOOKS?: string
