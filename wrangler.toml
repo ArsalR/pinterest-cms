@@ -25,11 +25,5 @@ RATE_LIMIT_RPM         = "60"
 [triggers]
 crons = ["*/5 * * * *", "0 4 * * *"]
 
-# Raise CPU time limit for PBKDF2 password hashing (login + API key validation).
-# Requires Workers Paid plan ($5/month). Free tier is capped at 10ms and will
-# cause login to fail under load — do NOT deploy to production on the free tier.
-[limits]
-cpu_ms = 30000
-
 [observability]
 enabled = true
