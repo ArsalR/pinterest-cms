@@ -83,6 +83,8 @@ adminApp.route("/permalinks", permalinksAdminRoute)
 adminApp.route("/redirects", redirectsAdminRoute)
 adminApp.route("/api-keys", apiKeysAdminRoute)
 adminApp.route("/settings", settingsAdminRoute)
+// /admin/ (trailing slash) never matches the sub-app in Hono v4 — redirect to canonical.
+app.get("/admin/", (c) => new Response(null, { status: 302, headers: { Location: "/admin" } }))
 app.route("/admin", adminApp)
 
 // ───────────────────────── Frontend (catch-all) ──────────────────

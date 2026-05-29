@@ -25,7 +25,7 @@ export interface AdminLayoutInput {
 }
 
 const NAV_ITEMS: Array<{ id: string; label: string; href: string; icon: string }> = [
-  { id: "dashboard", label: "Dashboard", href: "/admin/", icon: iconHome() },
+  { id: "dashboard", label: "Dashboard", href: "/admin", icon: iconHome() },
   { id: "posts", label: "Posts", href: "/admin/posts", icon: iconDoc() },
   { id: "pages", label: "Pages", href: "/admin/pages", icon: iconPage() },
   { id: "categories", label: "Categories", href: "/admin/categories", icon: iconTag() },

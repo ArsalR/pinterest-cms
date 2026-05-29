@@ -12,7 +12,7 @@ import { loadSettings } from "../../lib/defaults"
 
 export async function loginGetHandler(c: Context<AppEnv>): Promise<Response> {
   const url = new URL(c.req.url)
-  const next = url.searchParams.get("next") || "/admin/"
+  const next = url.searchParams.get("next") || "/admin"
   const error = url.searchParams.get("error")
   const settings: Record<string, string> = await loadSettings(c.get("siteDb")).catch(() => ({}))
   const siteName = settings.site_name || c.get("hostname")
@@ -33,12 +33,12 @@ export async function loginPostHandler(c: Context<AppEnv>): Promise<Response> {
   try {
     form = await c.req.formData()
   } catch {
-    return redirectWithError("/admin/", "Invalid form submission")
+    return redirectWithError("/admin/login", "Invalid form submission")
   }
 
   const email = String(form.get("email") || "").toLowerCase().trim()
   const password = String(form.get("password") || "")
-  const next = String(form.get("next") || "/admin/")
+  const next = String(form.get("next") || "/admin")
 
   if (!email || !password) {
     return redirectWithError(next, "Email and password required")
@@ -95,7 +95,7 @@ export async function loginPostHandler(c: Context<AppEnv>): Promise<Response> {
     secure: true,
   })
   // Sanitize next: only allow same-origin paths.
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/admin/"
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/admin"
 
   return new Response(null, {
     status: 302,
