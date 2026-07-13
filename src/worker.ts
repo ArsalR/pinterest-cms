@@ -38,6 +38,9 @@ import { redirectsAdminRoute } from "./routes/admin/redirects"
 
 import { frontendRoutes } from "./routes/frontend"
 
+import { saasAppRoutes, saasRootHandler } from "./routes/saas"
+import { saasApiRoutes } from "./routes/api/saas"
+
 const app = new Hono<AppEnv>()
 
 // ───────────────────────── Health check ─────────────────────────
@@ -58,6 +61,16 @@ app.route("/api/network", networkRoutes)
 // /api/public/v1/* — Bearer-authenticated, CORS-enabled (CORS is applied
 // inside publicApiRoutes itself).
 app.route("/api/public", publicApiRoutes)
+
+// ───────────────────────── SaaS dashboard (saas_mode) ────────────
+// /app/* + /api/saas/* — active ONLY when SAAS_MODE=1 AND the request is on
+// SAAS_APP_HOSTNAME; every handler otherwise defers via next() so these
+// mounts are invisible on tenant hostnames (byte-identical fall-through to
+// the frontend catch-all). Root mounted twice per Hono root-path gotcha #1.
+app.get("/app", saasRootHandler)
+app.get("/app/", saasRootHandler)
+app.route("/app", saasAppRoutes)
+app.route("/api/saas", saasApiRoutes)
 
 // ───────────────────────── Admin ─────────────────────────────────
 // Admin app — auth middleware applies to everything except /admin/login,

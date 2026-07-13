@@ -38,6 +38,12 @@ export interface CloudflareEnv {
   GC_ENABLED?: string
   // Optional tuning — defaults applied in code if absent.
   RATE_LIMIT_RPM?: string   // requests per minute per API key (default 60)
+
+  // SaaS layer (saas_mode) — inert unless SAAS_MODE = "1".
+  SAAS_MODE?: string           // "1" to enable the SaaS dashboard + API
+  SAAS_APP_HOSTNAME?: string   // dashboard hostname (arsal.app); www.<host> 301s to apex
+  SAAS_JWT_SECRET?: string     // secret — customer session JWTs (separate from tenant JWT_SECRET)
+  RESEND_API_KEY?: string      // secret — transactional email; unset = dev logging mode
 }
 
 export interface SiteConfig {
@@ -57,6 +63,8 @@ export interface HonoVariables {
   settings?: Record<string, string>
   user?: { id: string; email: string; role: string }
   apiKeyId?: string
+  // SaaS layer — set by requireCustomer() on SAAS_APP_HOSTNAME requests only.
+  customer?: import("./saas/customers").Customer
 }
 
 export type AppEnv = {
