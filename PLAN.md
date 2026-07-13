@@ -249,6 +249,21 @@ Also resolved earlier: Anthropic auth = customer API key as repo secret (subscri
 
 **rev 3 APPROVED including the K9 deviation (imports → CMS posts). Phase 1 is a go.**
 
+## Spec amendments 2 & 3 — recorded post-hoc (Phase 4 merge review)
+
+**Provenance note (honest record):** these two amendments were referenced at the Phase-4 merge review as if previously communicated, but they appear in no prior message, no PLAN revision, and no commit of `SAAS_BUILD_PROMPT.md` (single commit, 985e4b3 — verified). They are recorded here from the review's summary; **please push the full amendment text into SAAS_BUILD_PROMPT.md** so a line-by-line verification can confirm nothing below is under-specified.
+
+**Amendment 2 — site kinds + ecommerce (K13):** per-site `kind` (content | ecommerce | …) in the content model; a wizard **Stripe step** for ecommerce sites; **kind-aware genesis** (prompt + template behavior branch on kind). *Was slotted for Phase 3; shipped without it — Phase 3 predates this record.*
+
+**Amendment 3 — structure covenant:** modular platform layout with a written `STRUCTURE.md`; **circular-dependency lint** in platform CI; a **deploy-blocking SEO-file-set CI check on generated sites** (robots.txt, sitemap, llms.txt present in every build).
+
+**Catch-up schedule (approved shape: docs now, code before Phase 5 grows the codebase):**
+- **Now (in PR #25):** this record + the amendment-3 **SEO-file-set gate** added to the template CI (cheap, deploy-blocking, no reason to wait) + robots.txt generation.
+- **Phase 4.5 (`phase-4.5-structure-ecommerce`, next branch, BEFORE Phase 5):**
+  1. Structure pass first: `STRUCTURE.md` (platform module map + dependency rules), circular-dep lint (`madge` or equivalent) wired into pr-checks.yml, any module moves it flags.
+  2. `customer_sites.kind` (master migration; default 'content' — existing rows unaffected), wizard Stripe step for ecommerce sites (customer's own Stripe key, vault-encrypted — distinct from the platform's Phase-9 billing), kind-aware genesis prompt + template branch, K13 content model in the CMS workspace (product posts: additive `type`/settings usage, public API untouched).
+- **Phase 5 addendum:** the quality gate hooks the SaaS publish path — **genesis seed articles route through the gate like any other publish** (genesis switches to draft-then-gated-publish once the gate exists; launch-day sites are never exempt).
+
 ## Spec-gap list — what PLAN v1 was missing (now absorbed)
 
 Found by reconciling v1 against the spec content now available:

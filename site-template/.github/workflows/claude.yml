@@ -95,6 +95,17 @@ jobs:
             exit 1
           fi
 
+      - name: Guard — no secrets in the diff
+        # Key hygiene: fail the run if anything shaped like a credential was
+        # written into the working tree (would otherwise become public in the
+        # repo). Patterns: Anthropic keys, CMS keys, CF API tokens in env form.
+        run: |
+          LEAKS=$(git diff --no-color | grep -nE '(sk-ant-[A-Za-z0-9_-]{8,}|cms_live_[0-9a-f]{8,}|CLOUDFLARE_API_TOKEN\s*[:=]\s*["'"'"']?[A-Za-z0-9_-]{20,})' || true)
+          if [ -n "$LEAKS" ]; then
+            echo "::error::A credential-shaped string was found in the changes; the run was rejected. Nothing was committed."
+            exit 1
+          fi
+
       - name: Commit
         id: commit
         run: |

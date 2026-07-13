@@ -91,6 +91,15 @@ export async function dispatchPrompt(
   if (site.status !== "active" || !site.repo_full_name) {
     return { ok: false, code: "not_ready", problem: "The site isn't fully set up yet — finish provisioning first." }
   }
+  // Key hygiene: a pasted credential would otherwise persist in the job
+  // payload and the Actions run input. Refuse instead of storing.
+  if (/(sk-ant-[A-Za-z0-9_-]{8,}|cms_live_[0-9a-f]{8,})/.test(prompt)) {
+    return {
+      ok: false,
+      code: "not_ready",
+      problem: "Your prompt looks like it contains an API key — please remove it. Keys are connected once in Connections and never belong in prompts.",
+    }
+  }
   // Hourly cap per site (cost guardrail — locked in review).
   if (!(await allowRate(db, `prompt:site:${site.id}`, PROMPT_DISPATCH_LIMIT))) {
     return {
