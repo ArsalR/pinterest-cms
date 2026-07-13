@@ -41,8 +41,13 @@ Cron (`wrangler.toml [triggers]`): `*/5 * * * *` → scheduler (publish schedule
 ## Databases
 
 - **Master DB** (`TURSO_MASTER_URL`/`TOKEN` secrets): single `sites` table — `id, hostname, name, turso_url, turso_token, active, created_at`. Schema: `src/schemas/master.sql`.
-- **Per-site DB**: `users`, `api_keys`, `api_logs`, `categories`, `posts`, `post_images`, `menu_items`, `media`, `settings` (key/value), `idempotency_cache`, `rate_limit_counters`, `webhook_endpoints`, `webhook_deliveries`, `redirects`. Schema: `src/schemas/site.sql` (docs) — but the **provisioning source of truth is the inlined `SITE_SCHEMA_STATEMENTS` array in `src/lib/provision.ts`**. Keep both in sync when adding tables.
-- **Migrations**: `src/migrations/*.sql` are documentation; the runtime applies forward-only migrations via `src/lib/migrate.ts` on the 5-minute cron (per site, tracked in-DB). New columns on existing sites go through migrate.ts, not site.sql.
+- **Per-site DB**: `users`, `api_keys`, `api_logs`, `categories`, `posts`, `post_images`, `menu_items`, `media`, `settings` (key/value), `idempotency_cache`, `rate_limit_counters`, `webhook_endpoints`, `webhook_deliveries`, `redirects`, plus `_migrations` (created lazily by the runner).
+- **Schema truth is TRIPLICATED** — the Worker never reads `.sql` files at runtime:
+  1. `SITE_SCHEMA_STATEMENTS` in `src/lib/provision.ts` — applied to **new** sites at provisioning.
+  2. `MIGRATIONS` array in `src/lib/migrate.ts` — forward-only, idempotent DDL applied to **existing** sites by the 5-minute cron (tracked in per-site `_migrations`).
+  3. `src/schemas/site.sql` + `src/migrations/*.sql` — documentation only.
+  A new per-site table/column must be added to **both TS copies** (and ideally the docs). There is **no migration runner for the master DB** — `master.sql` is applied by hand once; new master columns need a new (additive) mechanism.
+- **Tenant-config caching**: `resolveSite` caches the full `sites` row (incl. plaintext turso_token) in the Cache API — 60s positive / 30s negative TTL, per-colo. After changing a site row call `invalidateSiteConfig(hostname)`; expect up to 60s staleness on other PoPs. `loadSettings` caches per libsql `Client` in a WeakMap — this is per-request **only because `getSiteDb` creates a new client each request**; never memoize the client factories without untangling this.
 
 ## Auth (three separate systems)
 
@@ -56,12 +61,16 @@ Cron (`wrangler.toml [triggers]`): `*/5 * * * *` → scheduler (publish schedule
 
 `GET /v1/status` · `GET /v1/capabilities` · `POST /v1/upload` (multipart, ≤20 files, ≤10MB, magic-byte validated) · `POST|PUT|DELETE /v1/posts[/:id]` · `POST /v1/posts/batch` · `GET /v1/posts[/:id]` · `GET|POST /v1/categories` · webhook CRUD.
 
+Middleware order on the sub-app (deliberate): CORS → rate-limit → idempotency → per-handler auth. Rate limiting runs **before** auth (a 429 skips the PBKDF2 verify) and buckets on the Bearer token's last 4 chars. OPTIONS preflights short-circuit inside CORS and never reach later middleware. Auth is per-handler `validateApiKey(...)` — there is no auth middleware.
+
 Contract features external automation depends on (a companion system publishes to this API — **do not change response shapes**):
-- Typed error codes: `slug_conflict`, `rate_limited`, `auth_*`, `validation_*` (`src/lib/errors.ts`).
-- `Idempotency-Key` header → replay-safe POSTs (`src/lib/idempotency.ts`, only 2xx cached, 24h TTL).
-- Fixed-window rate limit + `X-RateLimit-*` headers (`src/lib/rateLimit.ts`, `RATE_LIMIT_RPM` var).
-- Webhooks with `X-CMS-Signature` HMAC, retry with backoff, dead-letter (`src/lib/webhooks.ts`).
-- Feature flags via env vars: `FEATURE_IDEMPOTENCY`, `FEATURE_WEBHOOKS`, `FEATURE_RATE_LIMIT`, `FEATURE_BATCH_POSTS`, `GC_ENABLED` (empty string = on/off semantics — check `src/lib/types.ts` usage before assuming).
+- Typed error codes: 16-member union in `src/lib/errors.ts`, **pinned by `errors.test.ts` — add-only**, never rename/remove. `apiError()` also sets an `X-Error-Code` header.
+- `Idempotency-Key` header → replay-safe POSTs (`src/lib/idempotency.ts`, only 2xx cached, 24h TTL, `Idempotency-Replayed: true` on replay).
+- Fixed-window rate limit + `X-RateLimit-*` headers (`src/lib/rateLimit.ts`, `RATE_LIMIT_RPM` var). Its 429 body is hand-built JSON — leave it.
+- Webhooks with `X-Webhook-Signature: sha256=<hmac>` HMAC, retries at +5min/+30min then dead-letter (`src/lib/webhooks.ts`).
+- Feature-flag pattern: declare `FLAG = ""` in `wrangler.toml [vars]`, type as optional string in `CloudflareEnv`, consumer self-gates on `"1"`. Disabled endpoints return **404 `not_found`** (see `posts/batch`), not 403. Flags are git-managed — dashboard edits are clobbered on every deploy.
+- Discovery lists are hand-maintained in TWO places: the `endpoints` array in `capabilities.ts` and the notFound `available` array in `routes/public/index.ts`. New endpoints must be appended to both.
+- Browser-visible new headers must be whitelisted in `corsMiddleware.ts` (both Allow-Headers and Expose-Headers).
 
 ## Conventions
 
@@ -80,8 +89,14 @@ Contract features external automation depends on (a companion system publishes t
 3. **Schema drift**: three copies of per-site DDL exist — `src/schemas/site.sql` (docs), `SITE_SCHEMA_STATEMENTS` in `provision.ts` (runtime for new sites), `src/lib/migrate.ts` + `src/migrations/*.sql` (upgrades for existing sites). A new table/column must be added to all relevant places.
 4. **Free-plan CPU limit**: PBKDF2 (100k iterations) is CPU-heavy; `wrangler.toml` must NOT contain a `[limits]` block on the free plan (deploy fails). On paid, `cpu_ms` can be raised.
 5. **Host header only**: tenant resolution deliberately ignores `X-Forwarded-Host` (spoofing). Don't re-add it.
-6. **Frontend trailing-slash canonicalization**: public content URLs 301 to trailing-slash form; admin/API paths must never enter that logic.
+6. **Frontend trailing-slash canonicalization**: public content URLs 301 to trailing-slash form; admin/API paths must never enter that logic. Inside `routes/frontend/index.ts` the reserved routes (sitemap/robots/feed/home) are registered before the `GET *` slug catch-all — new reserved paths go before it, and dotted paths (`/manifest.json`) are 404'd by the extension regex before redirects run.
 7. **Idempotency**: only successful (2xx) responses are cached for replay; error responses must never be.
+8. **Cron dispatch is an exact-string match** in `worker.ts scheduled()`: `event.cron === "0 4 * * *"` → R2 GC, **else → runScheduler**. Any new cron added to `wrangler.toml` MUST get its own explicit `===` branch or it silently runs the scheduler.
+9. **`NETWORK_ADMIN_HOSTNAME` bypass sets only `hostname`** — `site`, `siteDb`, `settings` are undefined there. Any handler assuming `siteDb` will throw on that hostname. A new platform hostname should mirror this bypass pattern deliberately.
+10. **`/__health` is registered before tenantMiddleware** — the pattern for any route that must answer on unregistered hostnames.
+11. **Admin has no role checks and no CSRF tokens** — every logged-in user is a site superadmin; CSRF defense is solely SameSite=Lax. Never add state-changing GETs under `/admin`.
+12. **CI runs typecheck only** (`deploy.yml`) — vitest is not in CI, and vitest runs in plain Node (no Workers pool): new tests must be pure-logic, no `caches`, R2, or Hono context.
+13. **README drift**: README still documents `SITE_SCHEMA_URL` and `cpu_ms=30000`; both are gone from the runtime. Trust code over README.
 
 ## Contract stability
 
