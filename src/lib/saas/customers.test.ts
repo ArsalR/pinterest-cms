@@ -2,7 +2,8 @@
 // Pure-logic tests only (vitest runs in plain Node — no Workers runtime).
 
 import { describe, it, expect } from "vitest"
-import { validateEmail, validatePassword, trialEnd, planGate, TRIAL_DAYS } from "./customers"
+import { validateEmail, validatePassword, trialEnd, planGate, TRIAL_DAYS, customerIterations } from "./customers"
+import { storedHashIterations } from "../auth"
 
 describe("validateEmail", () => {
   it("normalizes case and whitespace", () => {
@@ -60,5 +61,32 @@ describe("planGate (decision B: trial expiry = read-only, sites stay live)", () 
   })
   it("trialing with no trial date is read-only (defensive)", () => {
     expect(planGate({ plan_status: "trialing", trial_ends_at: null }, now)).toBe("read_only")
+  })
+})
+
+describe("customerIterations (config-driven work factor, decision #6)", () => {
+  it("defaults to 100k when unset or garbage", () => {
+    expect(customerIterations(undefined)).toBe(100_000)
+    expect(customerIterations("")).toBe(100_000)
+    expect(customerIterations("not-a-number")).toBe(100_000)
+  })
+  it("rejects dangerously low values", () => {
+    expect(customerIterations("500")).toBe(100_000)
+    expect(customerIterations("9999")).toBe(100_000)
+  })
+  it("accepts explicit overrides in both directions", () => {
+    expect(customerIterations("50000")).toBe(50_000)   // free-tier tuning down
+    expect(customerIterations("300000")).toBe(300_000) // paid-plan strengthening
+  })
+})
+
+describe("storedHashIterations (lazy rehash envelope)", () => {
+  it("reads the embedded iteration count", () => {
+    expect(storedHashIterations("pbkdf2$100000$c2FsdA==$aGFzaA==")).toBe(100_000)
+    expect(storedHashIterations("pbkdf2$50000$c2FsdA==$aGFzaA==")).toBe(50_000)
+  })
+  it("returns 0 for unparseable values", () => {
+    expect(storedHashIterations("")).toBe(0)
+    expect(storedHashIterations("bcrypt$whatever")).toBe(0)
   })
 })

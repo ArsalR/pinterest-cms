@@ -83,6 +83,24 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`,
     ],
   },
+  {
+    version: 2,
+    name: "002_saas_rate_limits",
+    statements: [
+      // Fixed-window counters for auth-endpoint rate limiting (per-IP and
+      // per-account). window embeds the window length so different rules
+      // never collide. Expired rows are GC'd opportunistically on first hit
+      // of a fresh window (see src/lib/saas/rateLimit.ts).
+      `CREATE TABLE IF NOT EXISTS saas_rate_limits (
+         bucket     TEXT NOT NULL,
+         window     TEXT NOT NULL,
+         count      INTEGER NOT NULL DEFAULT 0,
+         expires_at TEXT NOT NULL,
+         PRIMARY KEY (bucket, window)
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_saas_rate_limits_expires ON saas_rate_limits(expires_at)`,
+    ],
+  },
 ]
 
 /** Apply all unapplied master migrations. Idempotent; safe to re-run. */

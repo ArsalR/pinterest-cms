@@ -25,6 +25,7 @@ RATE_LIMIT_RPM         = "60"
 # Secrets (wrangler secret put): SAAS_JWT_SECRET, RESEND_API_KEY.
 SAAS_MODE              = ""
 SAAS_APP_HOSTNAME      = ""
+SAAS_PBKDF2_ITERATIONS = ""
 
 [triggers]
 crons = ["*/5 * * * *", "0 4 * * *"]

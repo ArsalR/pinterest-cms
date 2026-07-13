@@ -44,6 +44,8 @@ export interface CloudflareEnv {
   SAAS_APP_HOSTNAME?: string   // dashboard hostname (arsal.app); www.<host> 301s to apex
   SAAS_JWT_SECRET?: string     // secret — customer session JWTs (separate from tenant JWT_SECRET)
   RESEND_API_KEY?: string      // secret — transactional email; unset = dev logging mode
+  SAAS_PBKDF2_ITERATIONS?: string // work factor for customer hashes (default 100000);
+                                  // raising it strengthens hashes lazily on next login
 }
 
 export interface SiteConfig {

@@ -11,6 +11,7 @@ import { getMasterDb } from "../../lib/turso"
 import { ensureMasterSchema } from "../../lib/masterMigrate"
 import { issueToken, audit } from "../../lib/saas/customers"
 import { sendEmail, verificationEmailHtml } from "../../lib/saas/email"
+import { allowRate, AUTH_LIMITS } from "../../lib/saas/rateLimit"
 
 function nowSqlite(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19)
@@ -61,6 +62,9 @@ export async function resendVerificationHandler(c: Context<AppEnv>): Promise<Res
     try {
       const db = getMasterDb(c.env)
       await ensureMasterSchema(db)
+      if (!(await allowRate(db, `resend:customer:${customer.id}`, AUTH_LIMITS.resendVerification))) {
+        return new Response(null, { status: 302, headers: { Location: "/app" } })
+      }
       const token = await issueToken(db, customer.id, "verify")
       await audit(db, customer.id, "customer.verification_resent")
       c.executionCtx.waitUntil(

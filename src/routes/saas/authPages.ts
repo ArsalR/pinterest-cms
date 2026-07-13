@@ -23,8 +23,10 @@ import {
   consumeToken,
   markEmailVerified,
   setCustomerPassword,
+  customerIterations,
   audit,
 } from "../../lib/saas/customers"
+import { allowRate, AUTH_LIMITS, clientIp, RATE_LIMIT_MESSAGE } from "../../lib/saas/rateLimit"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 
@@ -99,10 +101,13 @@ export async function signupPostHandler(c: Context<AppEnv>): Promise<Response> {
 
   try {
     const db = await masterDb(c)
+    if (!(await allowRate(db, `signup:ip:${clientIp(c.req.raw)}`, AUTH_LIMITS.signupIp))) {
+      return redirectTo("/app/signup?error=" + encodeURIComponent(RATE_LIMIT_MESSAGE))
+    }
     if (await findCustomerByEmail(db, email)) {
       return redirectTo("/app/login?error=" + encodeURIComponent("You already have an account with that email — sign in instead."))
     }
-    const customer = await createCustomer(db, email, password, name)
+    const customer = await createCustomer(db, email, password, name, customerIterations(c.env.SAAS_PBKDF2_ITERATIONS))
     await audit(db, customer.id, "customer.signup")
 
     const token = await issueToken(db, customer.id, "verify")
@@ -181,7 +186,14 @@ export async function loginPostHandler(c: Context<AppEnv>): Promise<Response> {
 
   try {
     const db = await masterDb(c)
-    const customer = await verifyCustomerPassword(db, email, password)
+    // Per-IP then per-account limits — credential-stuffing defense.
+    if (
+      !(await allowRate(db, `login:ip:${clientIp(c.req.raw)}`, AUTH_LIMITS.loginIp)) ||
+      !(await allowRate(db, `login:email:${email}`, AUTH_LIMITS.loginEmail))
+    ) {
+      return redirectTo("/app/login?error=" + encodeURIComponent(RATE_LIMIT_MESSAGE))
+    }
+    const customer = await verifyCustomerPassword(db, email, password, customerIterations(c.env.SAAS_PBKDF2_ITERATIONS))
     if (!customer) {
       await audit(db, null, "customer.login_failed", email)
       return redirectTo("/app/login?error=" + encodeURIComponent("That email or password isn't right."))
@@ -279,16 +291,31 @@ export async function forgotPostHandler(c: Context<AppEnv>): Promise<Response> {
   if (!email) return done
   try {
     const db = await masterDb(c)
+    // Per-IP and per-email limits — reset-email-bombing defense. The email
+    // limit is counted whether or not the account exists (uniform timing).
+    if (
+      !(await allowRate(db, `forgot:ip:${clientIp(c.req.raw)}`, AUTH_LIMITS.forgotIp)) ||
+      !(await allowRate(db, `forgot:email:${email}`, AUTH_LIMITS.forgotEmail))
+    ) {
+      return done // silently drop — same response, no enumeration via 429
+    }
     const customer = await findCustomerByEmail(db, email)
+    // ALL account-existence-dependent work is deferred to waitUntil so the
+    // response returns after identical awaited work for both outcomes —
+    // no timing oracle on account existence.
     if (customer) {
-      const token = await issueToken(db, customer.id, "reset")
-      await audit(db, customer.id, "customer.reset_requested")
+      const env = c.env
+      const hostname = c.get("hostname")
       c.executionCtx.waitUntil(
-        sendEmail(c.env, {
-          to: email,
-          subject: "Reset your password",
-          html: resetEmailHtml(appUrl(c, `/app/reset?token=${token}`)),
-        })
+        (async () => {
+          const token = await issueToken(db, customer.id, "reset")
+          await audit(db, customer.id, "customer.reset_requested")
+          await sendEmail(env, {
+            to: email,
+            subject: "Reset your password",
+            html: resetEmailHtml(`https://${hostname}/app/reset?token=${token}`),
+          })
+        })().catch((err) => console.error("forgot deferred work failed:", err))
       )
     }
   } catch (err) {
@@ -333,11 +360,14 @@ export async function resetPostHandler(c: Context<AppEnv>): Promise<Response> {
   }
   try {
     const db = await masterDb(c)
+    if (!(await allowRate(db, `reset:ip:${clientIp(c.req.raw)}`, AUTH_LIMITS.resetIp))) {
+      return redirectTo("/app/forgot?error=" + encodeURIComponent(RATE_LIMIT_MESSAGE))
+    }
     const customerId = await consumeToken(db, token, "reset")
     if (!customerId) {
       return redirectTo("/app/forgot?error=" + encodeURIComponent("That reset link is invalid or expired — request a new one."))
     }
-    await setCustomerPassword(db, customerId, password)
+    await setCustomerPassword(db, customerId, password, customerIterations(c.env.SAAS_PBKDF2_ITERATIONS))
     await audit(db, customerId, "customer.password_reset")
     return redirectTo("/app/login?info=" + encodeURIComponent("Password updated — sign in with your new password."))
   } catch (err) {

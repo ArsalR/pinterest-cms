@@ -7,7 +7,7 @@
 // so tenant admin sessions and platform sessions can never be confused.
 
 import type { Client } from "@libsql/client/web"
-import { hashPassword, verifyPassword, signJwt, verifyJwt } from "../auth"
+import { hashPassword, verifyPassword, signJwt, verifyJwt, storedHashIterations } from "../auth"
 import { cuid } from "../utils"
 
 export const SAAS_SESSION_COOKIE = "saas_session"
@@ -15,6 +15,23 @@ export const TRIAL_DAYS = 14
 
 const VERIFY_TTL_HOURS = 24
 const RESET_TTL_HOURS = 1
+
+// Work factor for customer password hashes. Config-driven (decision #6):
+// SAAS_PBKDF2_ITERATIONS env var overrides; the pbkdf2$<iters>$… envelope is
+// self-describing, so raising the value later strengthens hashes LAZILY on
+// next successful login (rehash-on-login below) — no data migration.
+const DEFAULT_CUSTOMER_ITERATIONS = 100_000
+
+export function customerIterations(envValue: string | undefined): number {
+  const n = parseInt(envValue ?? "", 10)
+  return Number.isFinite(n) && n >= 10_000 ? n : DEFAULT_CUSTOMER_ITERATIONS
+}
+
+// Valid-format hash of a random throwaway password. verifyCustomerPassword
+// verifies against this when the email has no account, so "no such account"
+// and "wrong password" cost the same PBKDF2 work — no timing oracle.
+const DUMMY_HASH =
+  "pbkdf2$100000$LBQD4ZySnQxmn8NzofChng==$puD8a0OFSSvgmHYNo85KWNG4HxoBsqyrZ1yHj5Ccnxw="
 
 export interface Customer {
   id: string
@@ -148,10 +165,11 @@ export async function createCustomer(
   db: Client,
   email: string,
   password: string,
-  name: string | null
+  name: string | null,
+  iterations: number = DEFAULT_CUSTOMER_ITERATIONS
 ): Promise<Customer> {
   const id = cuid()
-  const passwordHash = await hashPassword(password)
+  const passwordHash = await hashPassword(password, iterations)
   await db.execute({
     sql: `INSERT INTO customers (id, email, password, name, trial_ends_at)
           VALUES (?, ?, ?, ?, ?)`,
@@ -162,25 +180,49 @@ export async function createCustomer(
   return created
 }
 
+/**
+ * Constant-work verification: unknown emails verify against a dummy hash so
+ * account existence can't be inferred from response timing. On success, if
+ * the stored work factor differs from the configured target, the hash is
+ * transparently re-created at the target (lazy strengthening — decision #6).
+ */
 export async function verifyCustomerPassword(
   db: Client,
   email: string,
-  password: string
+  password: string,
+  iterations: number = DEFAULT_CUSTOMER_ITERATIONS
 ): Promise<Customer | null> {
   const r = await db.execute({
     sql: "SELECT id, password FROM customers WHERE email = ? LIMIT 1",
     args: [email],
   })
-  if (!r.rows.length) return null
-  const ok = await verifyPassword(password, r.rows[0].password as string)
+  if (!r.rows.length) {
+    await verifyPassword(password, DUMMY_HASH) // burn the same PBKDF2 cost
+    return null
+  }
+  const stored = r.rows[0].password as string
+  const ok = await verifyPassword(password, stored)
   if (!ok) return null
+  if (storedHashIterations(stored) !== iterations) {
+    // Rehash at the configured work factor; best-effort, never blocks login.
+    try {
+      await setCustomerPassword(db, r.rows[0].id as string, password, iterations)
+    } catch (err) {
+      console.error("rehash-on-login failed:", err instanceof Error ? err.message : err)
+    }
+  }
   return findCustomerById(db, r.rows[0].id as string)
 }
 
-export async function setCustomerPassword(db: Client, id: string, password: string): Promise<void> {
+export async function setCustomerPassword(
+  db: Client,
+  id: string,
+  password: string,
+  iterations: number = DEFAULT_CUSTOMER_ITERATIONS
+): Promise<void> {
   await db.execute({
     sql: "UPDATE customers SET password = ? WHERE id = ?",
-    args: [await hashPassword(password), id],
+    args: [await hashPassword(password, iterations), id],
   })
 }
 
