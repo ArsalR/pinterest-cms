@@ -1,14 +1,13 @@
-name: Deploy
+name: PR checks
 
 on:
-  push:
-    branches: [main]
+  pull_request: {}
   workflow_dispatch: {}
 
 jobs:
-  deploy:
+  checks:
     runs-on: ubuntu-latest
-    name: Deploy to Cloudflare Workers
+    name: Typecheck + tests
     steps:
       - uses: actions/checkout@v4
 
@@ -24,9 +23,3 @@ jobs:
 
       - name: Tests
         run: npm test
-
-      - name: Deploy
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}

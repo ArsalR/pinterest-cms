@@ -1,0 +1,77 @@
+// src/routes/saas/index.ts
+// SaaS dashboard router (/app/*) — assembled with fall-through gating.
+//
+// Gating contract (byte-identical guarantee): every handler here is wrapped
+// so that when saas_mode is off OR the request is not on SAAS_APP_HOSTNAME,
+// the handler defers via next() and the request falls through to whatever
+// matched before this feature existed (the frontend catch-all). Tenant sites'
+// /app/... URLs therefore behave exactly as they always did.
+//
+// NOTE for worker.ts: the /app root must be mounted twice directly on the
+// main app (Hono sub-app root-path gotcha #1) — saasRootHandler is exported
+// for that purpose.
+
+import { Hono } from "hono"
+import type { Context, MiddlewareHandler } from "hono"
+import type { AppEnv } from "../../lib/types"
+import { saasActive, requireCustomer } from "../../middleware/saasAuthMiddleware"
+import {
+  signupGetHandler, signupPostHandler,
+  loginGetHandler, loginPostHandler, logoutPostHandler,
+  verifyGetHandler,
+  forgotGetHandler, forgotPostHandler,
+  resetGetHandler, resetPostHandler,
+} from "./authPages"
+import { saasHomeHandler, resendVerificationHandler, saasStubHandler } from "./dashboard"
+
+type PageHandler = (c: Context<AppEnv>) => Promise<Response>
+
+/** Public page: gated on saas hostname+flag, no session required. */
+function pub(handler: PageHandler): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    if (!saasActive(c)) return next()
+    return handler(c)
+  }
+}
+
+/** Protected page: gated + signed-in customer required (302 to login otherwise). */
+function prot(handler: PageHandler): MiddlewareHandler<AppEnv> {
+  return async (c, next) => {
+    if (!saasActive(c)) return next()
+    const customer = await requireCustomer(c, "page")
+    if (customer instanceof Response) return customer
+    return handler(c)
+  }
+}
+
+/** Root handler for /app and /app/ — mounted directly on the main app. */
+export const saasRootHandler: MiddlewareHandler<AppEnv> = prot(saasHomeHandler)
+
+export const saasAppRoutes = new Hono<AppEnv>()
+
+// Auth pages (no session).
+saasAppRoutes.get("/signup", pub(signupGetHandler))
+saasAppRoutes.post("/signup", pub(signupPostHandler))
+saasAppRoutes.get("/login", pub(loginGetHandler))
+saasAppRoutes.post("/login", pub(loginPostHandler))
+saasAppRoutes.post("/logout", pub(logoutPostHandler))
+saasAppRoutes.get("/verify", pub(verifyGetHandler))
+saasAppRoutes.get("/forgot", pub(forgotGetHandler))
+saasAppRoutes.post("/forgot", pub(forgotPostHandler))
+saasAppRoutes.get("/reset", pub(resetGetHandler))
+saasAppRoutes.post("/reset", pub(resetPostHandler))
+
+// Signed-in pages.
+saasAppRoutes.post("/resend-verification", prot(resendVerificationHandler))
+saasAppRoutes.get(
+  "/sites",
+  prot(saasStubHandler("Sites", "sites", "Site provisioning arrives with the next platform update. Connect GitHub and Cloudflare first under Connections."))
+)
+saasAppRoutes.get(
+  "/connections",
+  prot(saasStubHandler("Connections", "connections", "The GitHub + Cloudflare connection wizard arrives with the next platform update."))
+)
+saasAppRoutes.get(
+  "/account",
+  prot(saasStubHandler("Account", "account", "Account settings arrive with the next platform update."))
+)

@@ -51,11 +51,22 @@ async function pbkdf2(
   return new Uint8Array(bits)
 }
 
-/** Hash a password. Output format: pbkdf2$<iters>$<saltB64>$<hashB64> */
-export async function hashPassword(password: string): Promise<string> {
+/** Hash a password. Output format: pbkdf2$<iters>$<saltB64>$<hashB64>
+ *  The format is self-describing (verifyPassword reads the embedded iteration
+ *  count), so callers may pass a different work factor — used by the SaaS
+ *  layer's config-driven iterations + lazy rehash-on-login. */
+export async function hashPassword(password: string, iterations = PBKDF2_ITERATIONS): Promise<string> {
+  const iters = Number.isFinite(iterations) && iterations >= 1000 ? Math.floor(iterations) : PBKDF2_ITERATIONS
   const salt = crypto.getRandomValues(new Uint8Array(PBKDF2_SALT_BYTES))
-  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS, PBKDF2_HASH_BYTES)
-  return `pbkdf2$${PBKDF2_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`
+  const hash = await pbkdf2(password, salt, iters, PBKDF2_HASH_BYTES)
+  return `pbkdf2$${iters}$${bytesToBase64(salt)}$${bytesToBase64(hash)}`
+}
+
+/** Read the iteration count embedded in a stored hash (0 if unparseable). */
+export function storedHashIterations(stored: string): number {
+  if (!stored || !stored.startsWith("pbkdf2$")) return 0
+  const iters = parseInt(stored.split("$")[1] ?? "", 10)
+  return Number.isFinite(iters) ? iters : 0
 }
 
 /** Verify a password against a stored hash. Constant-time on the hash compare. */

@@ -21,6 +21,11 @@ FEATURE_RATE_LIMIT     = ""
 FEATURE_BATCH_POSTS    = ""
 GC_ENABLED             = ""
 RATE_LIMIT_RPM         = "60"
+# SaaS layer (saas_mode) — set SAAS_MODE = "1" + hostname to enable.
+# Secrets (wrangler secret put): SAAS_JWT_SECRET, RESEND_API_KEY.
+SAAS_MODE              = ""
+SAAS_APP_HOSTNAME      = ""
+SAAS_PBKDF2_ITERATIONS = ""
 
 [triggers]
 crons = ["*/5 * * * *", "0 4 * * *"]

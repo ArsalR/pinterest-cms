@@ -18,6 +18,25 @@ export const tenantMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
     return next()
   }
 
+  // SaaS dashboard hostname — same bypass pattern as NETWORK_ADMIN_HOSTNAME:
+  // only `hostname` is set; site/siteDb/settings stay undefined (gotcha #9).
+  // Inert unless SAAS_MODE=1, so tenant behavior is byte-identical when off.
+  if (c.env.SAAS_MODE === "1" && c.env.SAAS_APP_HOSTNAME) {
+    const saasHost = c.env.SAAS_APP_HOSTNAME.toLowerCase()
+    if (hostname === saasHost) {
+      c.set("hostname", hostname)
+      return next()
+    }
+    // www → apex canonical 301 for the dashboard domain.
+    if (hostname === `www.${saasHost}`) {
+      const url = new URL(c.req.url)
+      return new Response(null, {
+        status: 301,
+        headers: { Location: `https://${saasHost}${url.pathname}${url.search}` },
+      })
+    }
+  }
+
   if (!hostname) {
     return c.html(siteNotFoundHtml("No host header"), 400)
   }
