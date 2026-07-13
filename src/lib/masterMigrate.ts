@@ -101,6 +101,30 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_saas_rate_limits_expires ON saas_rate_limits(expires_at)`,
     ],
   },
+  {
+    version: 3,
+    name: "003_connections",
+    statements: [
+      // BYO-infrastructure connections (Phase 2). encrypted_payload is a
+      // vault envelope (see lib/saas/vault.ts) — NULL for providers with no
+      // stored secret (github: only installation metadata). meta is
+      // non-secret JSON safe to render (account names, previews, zone ids).
+      // status: 'active' | 'invalid' | 'revoked'.
+      `CREATE TABLE IF NOT EXISTS connections (
+         id                TEXT PRIMARY KEY,
+         customer_id       TEXT NOT NULL,
+         provider          TEXT NOT NULL,
+         encrypted_payload TEXT,
+         meta              TEXT NOT NULL DEFAULT '{}',
+         status            TEXT NOT NULL DEFAULT 'active',
+         created_at        TEXT DEFAULT (datetime('now')),
+         last_verified_at  TEXT,
+         FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+       )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_connections_customer_provider
+         ON connections(customer_id, provider)`,
+    ],
+  },
 ]
 
 /** Apply all unapplied master migrations. Idempotent; safe to re-run. */

@@ -25,6 +25,9 @@ export const AUTH_LIMITS = {
   forgotEmail: { max: 3, windowSecs: 3600 } as LimitRule,
   resetIp: { max: 10, windowSecs: 3600 } as LimitRule,
   resendVerification: { max: 3, windowSecs: 3600 } as LimitRule,
+  // Wizard credential-verification calls (CF token / Anthropic key pastes) —
+  // each triggers outbound API validation; cap abuse without hurting retries.
+  connectionVerify: { max: 20, windowSecs: 3600 } as LimitRule,
 } as const
 
 /** Deterministic window id for a timestamp: `<windowSecs>:<zero-padded index>`.

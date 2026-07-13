@@ -9,6 +9,10 @@ import type { Context, MiddlewareHandler } from "hono"
 import type { AppEnv } from "../../../lib/types"
 import { saasActive, requireCustomer } from "../../../middleware/saasAuthMiddleware"
 import { planGate, type Customer } from "../../../lib/saas/customers"
+import { getMasterDb } from "../../../lib/turso"
+import { ensureMasterSchema } from "../../../lib/masterMigrate"
+import { listConnections, getConnectionSecret } from "../../../lib/saas/connections"
+import { listCfZones } from "../../../lib/saas/cloudflare"
 
 type ApiHandler = (c: Context<AppEnv>, customer: Customer) => Promise<Response>
 
@@ -41,5 +45,43 @@ saasApiRoutes.get(
       emailVerified: customer.email_verified === 1,
       gate: planGate(customer, nowSqlite()),
     })
+  })
+)
+
+// GET /api/saas/v1/connections — render-safe connection list (no secrets).
+saasApiRoutes.get(
+  "/v1/connections",
+  api(async (c, customer) => {
+    const db = getMasterDb(c.env)
+    await ensureMasterSchema(db)
+    return c.json({ connections: await listConnections(db, customer.id) })
+  })
+)
+
+// GET /api/saas/v1/cloudflare/zones — live zone statuses; polled by the
+// wizard's domain step every 15s until all zones are active.
+saasApiRoutes.get(
+  "/v1/cloudflare/zones",
+  api(async (c, customer) => {
+    const db = getMasterDb(c.env)
+    await ensureMasterSchema(db)
+    let token: string | null = null
+    try {
+      token = await getConnectionSecret(db, c.env, customer.id, "cloudflare", "zone-poll")
+    } catch (err) {
+      console.error("zone-poll: decrypt failed:", err instanceof Error ? err.message : err)
+    }
+    if (!token) {
+      return c.json({ error: "Connect Cloudflare first.", code: "not_found" }, 404, { "X-Error-Code": "not_found" })
+    }
+    const zones = await listCfZones(token)
+    if (zones === null) {
+      return c.json(
+        { error: "Couldn't reach Cloudflare just now — will retry.", code: "internal_error" },
+        502,
+        { "X-Error-Code": "internal_error" }
+      )
+    }
+    return c.json({ zones: zones.map((z) => ({ id: z.id, name: z.name, status: z.status, paused: z.paused })) })
   })
 )
