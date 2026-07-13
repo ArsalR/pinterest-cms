@@ -1,8 +1,15 @@
 # PLAN.md — SaaS layer ("saas_mode") on pinterest-cms
 
-> Phase 0 deliverable, **revision 2** (post-review). Maps every phase to concrete files, tables, and routes in THIS codebase.
+> Phase 0 deliverable, **revision 3** — line-by-line verified against `SAAS_BUILD_PROMPT.md` (commit 985e4b3): every covenant item (P1–P9, S1–S5), every K-feature (K1–K12), all 10 spec phases, the spec's 8 ASK ME items, and the 5 non-negotiables. Gaps found in rev 2 are listed in "Verification pass (rev 3)" below and folded into the phases.
 > **Nothing ships until this revision is approved. Existing routes stay byte-identical; all new work is additive and gated behind `saas_mode`.**
-> ⚠️ Reconciliation caveat: `SAAS_BUILD_PROMPT.md` is referenced by the review but **is not present in the repo** (no branch, no commit — likely committed locally but never pushed). This revision reconciles against the full covenant + K1–K12 text from the original brief plus the review's explicit additions; a final verification pass against the file is owed once it's pushed.
+
+## Cross-cutting non-negotiables (spec §Non-negotiables — apply to every phase)
+
+- Existing endpoints byte-identical; all new behavior behind `saas_mode`.
+- Both covenants deploy-blocking, not advisory (§0.2).
+- **Idempotent, resumable provisioning. No plaintext secrets anywhere** — note: the pre-existing CMS stores `sites.turso_token` and webhook secrets in plaintext (frozen behavior we may not touch); the rule binds every NEW secret the SaaS layer stores: vault-encrypted, never logged, never in error messages.
+- **Quality gate ON by default** — this product must never be why a customer's network gets hit by a spam update.
+- **Plain-language errors everywhere** — the user is semi-technical, not DevOps. Every SaaS-facing error message is written for them (no raw API errors, no stack traces); a UX rule enforced in review on every phase.
 
 ## Decisions locked (PLAN review)
 
@@ -49,12 +56,12 @@ Both covenants are enforced by pipeline rules — a violating build **cannot dep
 | # | Rule | Enforced where |
 |---|---|---|
 | P1 | Zero-JS by default (Astro islands only when needed) | Template architecture + CI assertion: no `<script>` in built post pages unless island-annotated |
-| P2 | Lighthouse CI budgets: Perf ≥ 98, LCP < 1.2s, CLS < 0.02, TBT < 50ms, page < 300KB, HTML < 50KB — **fail = deploy blocked** | Template CI (lighthouse-ci step gates the deploy job); plain-language report + "ask Claude to fix" dispatch button in dashboard (Phase 4 `jobs` integration) |
+| P2 | Lighthouse CI budgets: Perf ≥ 98, LCP < 1.2s, CLS < 0.02, TBT < 50ms, page < 300KB, HTML < 50KB — **fail = deploy blocked**. Runs against a **representative page set** (homepage + one post + one programmatic page + heaviest template), not every page — a 500-page site still deploys in minutes | Template CI (lighthouse-ci step gates the deploy job); plain-language report + "ask Claude to fix" dispatch button in dashboard (Phase 4 `jobs` integration) |
 | P3 | Image pipeline: AVIF/WebP `srcset`, explicit dims (zero CLS), lazy below fold, LCP priority hints | Template build (Astro image integration reading CMS media URLs → R2) |
 | P4 | Font discipline: system stack default; custom fonts auto-subset, `font-display: swap`, self-hosted, preloaded; **no Google Fonts requests** | Template + CI check: no fonts.googleapis.com in built output |
 | P5 | CSS: critical inlined, total < 20KB, unused stripped | Template build + CI budget |
 | P6 | Edge: immutable cache headers + hashed filenames, HTML `stale-while-revalidate`, Early Hints 103, HTTP/3, Brotli | Template Workers static-assets config + platform provisioning (zone settings via customer CF token, Phase 3) |
-| P7 | Third-party script firewall: CF Web Analytics default; any other third-party script requires explicit override + shows wire-cost in dashboard ("~180ms — add anyway?") | Template CI (allowlist of external origins in built HTML; unknown origin = fail) + dashboard override UX (Phase 4/6) |
+| P7 | Third-party script firewall: CF Web Analytics default; any other third-party script requires explicit override, **must load via Workers proxy or `defer`**, + shows wire-cost in dashboard ("~180ms — add anyway?") | Template CI (allowlist of external origins in built HTML; unknown origin = fail; allowed scripts injected proxied/deferred only) + dashboard override UX (Phase 4/6) |
 | P8 | Continuous RUM: CWV from real visitors per site, degradation alerts + "ask Claude to diagnose" | Platform (Phase 6, CF Web Analytics API via customer token) |
 | P9 | Optional live "PageSpeed 100" footer badge → public PSI link | Template component, off by default, toggle in dashboard |
 
@@ -79,6 +86,8 @@ Additional locked rule: **`workers.dev` is disabled on production sites** — pr
 
 Goal: `SAAS_MODE` flag, customer accounts, dashboard shell, master-DB migrations. No external integrations yet. **First item: the master migration runner (approved).** Dashboard hostname is `arsal.app`; the tenantMiddleware bypass also matches `www.arsal.app` and 301s it to the apex.
 
+Spec additions absorbed (spec Phase 1): **email verification and password reset** flows for customer accounts (token tables in master DB; delivery blocked on the transactional-email provider decision — OPEN ASK ME A below). Spec's "orgs → sites model": deferred as a thin seam — `customers` is the org for now, `customer_seats` (Phase 9 agency mode) adds members later; `customer_sites.customer_id` is the org key from day one so no remodel is needed (flagged as OPEN ASK ME F if you want first-class orgs earlier). Stripe stays in Phase 9 per decision #7 (overrides spec Phase 1 placement).
+
 New files:
 - `src/lib/masterMigrate.ts` — idempotent master-DB migration runner (mirror of `migrate.ts`, tracked in master `_migrations`); invoked lazily from saas routes and/or a `scheduled()` branch. **Unblocks every later phase.**
 - `src/lib/saas/customers.ts` — signup/login/session for platform customers (reuses `hashPassword`/`verifyPassword`/`signJwt` from `src/lib/auth.ts`; separate cookie `saas_session`, separate JWT audience claim).
@@ -95,7 +104,7 @@ CI (additive): add `npm test` step to `deploy.yml`; new PR-check workflow (typec
 
 ### Phase 2 — Credential vault + connection wizard (`phase-2-connections`)
 
-Goal: customer connects their GitHub + Cloudflare (+ optional Anthropic key) once, guided.
+Goal: customer connects their GitHub + Cloudflare (+ optional Anthropic key) once, guided. **The wizard is a first-class UX deliverable — it decides conversion** (spec Phase 2): every step validates live before advancing with plain-language errors; steps are **skippable and resumable** (wizard state persisted per customer); the CF step **shows the exact API-token template** to create and verifies it live; the domain step is a **zone picker with nameserver instructions + live verification polling**; the wizard also asks **which of apex/`www` is canonical per site** (the other 301s — feeds Phase 3 DNS); optional steps for Anthropic key, Pinterest OAuth, and GSC OAuth (both OAuth integrations land in Phases 7–8, but the wizard slots exist from the start).
 
 New files:
 - `src/lib/saas/vault.ts` — AES-256-GCM via WebCrypto; per-tenant key = HKDF(`VAULT_MASTER_KEY` secret, salt=customer_id). Never logged, never in error messages; every decrypt writes `audit_log`. **Free-tier constraint (decision #6): all KDF parameters are config-driven** (`VAULT_KDF_PARAMS` var or versioned envelope header) and tuned to fit the 10ms CPU budget — HKDF itself is one HMAC pass (cheap, safe on free tier; the 100k-iteration PBKDF2 cost lives only in interactive login, unchanged). Each ciphertext embeds an envelope version + its own params, so raising parameters after a paid upgrade re-encrypts lazily on next write — **no data migration**.
@@ -109,9 +118,13 @@ Tests: vault round-trip + tamper detection (pure WebCrypto, node-safe), GitHub A
 
 ### Phase 3 — Site provisioning pipeline (`phase-3-provisioning`)
 
-Goal: "Add site" → repo + Workers deployment + custom domain + CMS backing, fully automatic. **The template repo is a separate deliverable: `ArsalR/site-template`** (decision #5), carrying the full covenant enforcement from §0.2: Astro zero-JS, security headers + CI verification (S2), Lighthouse CI budget gate (P2 — fail = deploy blocked), image pipeline (P3), font discipline (P4), critical CSS (P5), third-party script firewall allowlist check (P7), `llms.txt` + Article/FAQ schema + quotable summary blocks (K8), optional PageSpeed badge (P9), build-time fetch from CMS API, **and the trust-page set generated site-specifically, never lorem ipsum** (K1): About Us, Contact Us, Privacy Policy, Terms of Service, Affiliate/Advertising Disclosure, Cookie Policy, Editorial Policy — filled with site name/niche/owner details from the wizard, dated, footer-linked.
+Goal: "Add site" → repo + Workers deployment + custom domain + CMS backing, fully automatic. **The template repo is a separate deliverable: `ArsalR/site-template`** (decision #5), carrying the full covenant enforcement from §0.2: Astro zero-JS, security headers + CI verification (S2), Lighthouse CI budget gate (P2 — fail = deploy blocked), image pipeline (P3), font discipline (P4), critical CSS (P5), third-party script firewall allowlist check (P7), `llms.txt` + Article/FAQ/HowTo schema + quotable summary blocks (K8), optional PageSpeed badge (P9), build-time fetch from CMS API, **and the trust-page set generated site-specifically, never lorem ipsum** (K1): About Us, Contact Us, Privacy Policy, Terms of Service, Affiliate/Advertising Disclosure, Cookie Policy, Editorial Policy — filled with site name/niche/owner details from the wizard, dated, footer-linked.
 
-Provisioning must also (locked in review): **disable the workers.dev route/subdomain** on production deployments (custom-domain only), and enable WAF free rules + bot fight mode (S3) via the customer's CF token.
+Provisioning must also (locked in review + spec Phase 3): **disable the workers.dev route/subdomain** on production deployments — a live workers.dev duplicate is an SEO duplicate-content bug, not just hygiene; handle **apex AND `www`** (canonical chosen in the wizard, the other 301s); enable WAF free rules + bot fight mode (S3); and **create a per-site Turnstile widget (site key + secret) on the customer's CF account via API** for the contact form (spec Phase 6 — replaces rev 2's single platform `TURNSTILE_SECRET`). **Attach-only mode** (spec architecture constraint): customers already on Cloudflare Pages get their existing site attached for monitoring/content without re-provisioning — no migration forced. Genesis target: **live on their domain in under 10 minutes** (the demo that sells).
+
+**Resumability (spec non-negotiable):** provisioning is idempotent and resumable via a dedicated **`provisioning_runs` master table** (run id, site, step, status, error, retry-from-failure) — upgraded from rev 2's generic `jobs` rows; `jobs` remains for other async work.
+
+**Deploy mechanism (OPEN ASK ME E):** the spec says wire the repo to a **Workers Builds** project (CF's git-integrated build service), but Workers Builds auto-deploys on push and cannot be blocked by the template's Lighthouse/security CI gate — the covenant would become advisory. Recommended instead: deploy from the template's GitHub Action (wrangler with the customer's CF token as a repo secret) **after** the gates pass, which makes "budget fail = deploy blocked" literally true. Needs your call.
 
 New files in THIS repo:
 - `src/lib/saas/provisionSite.ts` — orchestrator: create repo from template (customer's GitHub) → set repo secrets (their CF token, a freshly minted `cms_live_` read key, optional Anthropic key) → trigger first deploy → attach custom domain + DNS (their CF) → enable WAF/bot-fight → **reuse `createSite()` from `src/lib/provision.ts` unchanged** for the CMS backing → register webhook endpoint (per-site `webhook_endpoints`) pointing at the rebuild bridge. Steps recorded in `jobs` for resumability (createSite's no-rollback gotcha noted — the job log gives manual recovery).
@@ -129,12 +142,15 @@ Goal: build/change sites by prompting Claude; preview URLs; one-click rollback. 
 
 **Cost guardrails on Claude-in-Actions (locked in review — enforced, not advisory):**
 - **15-minute `timeout-minutes`** on the Claude workflow job (template side).
-- **Per-site concurrency group** (`concurrency: site-${repo}` in the template workflow) — one Claude run per site at a time; new dispatches queue or supersede.
+- **Per-site concurrency group** (`concurrency: site-${repo}` in the template workflow) — one Claude run per site at a time; new dispatches **queue, not parallel**.
 - **Hourly dispatch cap per site** (platform side, `prompts.ts`): counted in `jobs`, exceeded → new error code `quota_exceeded` + dashboard message; every dispatch audit-logged.
+- **Visible run cost** (spec Phase 4): dashboard shows "this run used ~X minutes" per run (from the Actions API) — customers never get surprise GitHub/API bills.
+
+**Claude workflow guardrails in the template (spec Phase 4):** no force-push permitted; a **protected content directory** Claude may not modify; PR/preview mode available. Dispatch via **`workflow_dispatch`** (spec) with typed inputs — `repository_dispatch` reserved for the content-rebuild bridge (Phase 3). Status streamed to the dashboard as **queued → running → committed → building → deployed**.
 
 New files:
-- `src/lib/saas/prompts.ts` — dispatch prompt as `repository_dispatch` payload (enforces the hourly cap; audit-logged), track run via GitHub checks API into `jobs`.
-- `src/routes/saas/builder.ts` — prompt UI, job timeline, before/after preview (template deploys previews as separate Workers versions/URLs), approve-to-merge flow (PR-based: Claude commits to a branch, preview deploys from branch, approve = merge).
+- `src/lib/saas/prompts.ts` — dispatch prompt via `workflow_dispatch` (enforces the hourly cap; audit-logged), track run via GitHub checks/Actions API into `jobs` (status stream + minutes used).
+- `src/routes/saas/builder.ts` — prompt UI, live status timeline, **diff summary + live link on completion**, before/after preview (template deploys previews as separate Workers versions/URLs), approve-to-merge flow (PR-based: Claude commits to a branch, preview deploys from branch, approve = merge). Default mode — direct-to-live vs preview-then-approve — is **OPEN ASK ME C**.
 - Rollback: `src/lib/saas/github.ts` gains `revertToCommit(repo, sha)` (revert commit → push → auto-deploy). UI in site page: pick any commit, one click.
 - Genesis = Phase 3 provisioning + a genesis prompt template (niche, domain, owner details from wizard → 10 seed articles via CMS API, topical map, silo nav, filled-in trust pages).
 
@@ -143,7 +159,7 @@ New files:
 Goal: nothing thin/duplicate publishes. **The gate is ON by default for every SaaS-managed site** (locked in review) — per-site opt-out is an explicit, audit-logged dashboard action, not a default. Non-SaaS CMS sites are untouched (gate never runs for them).
 
 New files:
-- `src/lib/saas/qualityGate.ts` — pure functions: unique-content ratio (shingling/Jaccard between pages), duplicate title/meta detection, thin-content threshold, required-unique-data check. Fully unit-testable in plain vitest (no Workers APIs) — the flagship test suite.
+- `src/lib/saas/qualityGate.ts` — pure functions: **word count** + thin-content threshold, **title/meta presence + duplicate-title/meta detection**, unique-content ratio between pages (shingling/Jaccard), required-unique-data check for programmatic batches. Gate results **visible in the UI** per post (spec Phase 5). Fully unit-testable in plain vitest (no Workers APIs) — the flagship test suite.
 - `src/routes/api/saas/publish.ts` — SaaS publish pipeline: drafts enter via existing public API (unchanged), gate runs against the per-site DB, pass → publish (existing `PUT /v1/posts/:id` semantics), fail → gate report persisted to `jobs` + surfaced in dashboard with "ask Claude to fix".
 - `src/routes/saas/pseo.ts` + `src/lib/saas/pseo.ts` — CSV upload → template → batch generation through the gate (reuses `POST /v1/posts/batch` internally where flag-enabled).
 - Per-site DDL addition (both copies + migration 005): `gate_reports` (id, post_id, verdict, scores JSON, created_at) — or store in master `jobs`; decide at implementation, default master `jobs` (zero per-site DDL).
@@ -169,10 +185,18 @@ New files:
 
 ### Phase 9 — Import, cloning, agency (K9, K6, K11) + billing (`phase-9-scale`)
 
-- `src/lib/saas/wpImport.ts` — WXR parse / WP REST crawl → posts via existing API, images → R2 via existing upload, redirect map → per-site `redirects` (301s, existing engine).
+- `src/lib/saas/wpImport.ts` — WXR parse / WP REST crawl → posts via existing API, images → R2 via existing upload, redirect map → per-site `redirects` (301s, existing engine), **zero 404s on the same domain**. (Deliberate deviation from spec's "posts converted to markdown": per confirmed decision #3 the CMS is the content store, so imports become CMS posts — same outcome, consistent architecture.)
 - Cloning: repo-from-existing-repo + re-theme/re-seed prompt (Phase 4 machinery) + new CMS site (Phase 3 machinery).
 - Agency: `customer_seats` master table (customer_id, email, role, site_scope), white-label settings on `customers`, monthly report generation (cron + email).
-- Billing (flat price): Stripe Checkout + webhook → `customers.plan_status`. **ASK ME #7: in scope? which phase?** Recommended here (last), everything before it works in "free beta" mode.
+- Billing (flat `unlimited_sites` plan, decision #7): Stripe Checkout + webhook → `customers.plan_status`. Price, trial length, and whether agency mode is a higher tier: **OPEN ASK ME B**.
+
+### Phase 10 — Audit (`phase-10-audit`) — **do not skip** (spec Phase 10; was missing from rev 2)
+
+- **Full existing-API regression pass**: every pre-SaaS route exercised with `SAAS_MODE` on AND off; responses byte-identical to a pre-Phase-1 baseline (recorded fixtures).
+- **Provisioning dry-run + failure-resume tests** for every `provisioning_runs` step against **mocked GitHub/CF APIs** (pure-logic mocks — vitest runs in plain Node).
+- **Performance covenant self-test**: `ArsalR/site-template` must pass its own budgets from a cold clone (CI job in the template repo).
+- **Security review**: credential encryption (vault envelopes), no token logging anywhere (grep-audit + code review), webhook signature verification, rate limits + dispatch caps, Action guardrails (no force-push, protected content dir).
+- Run `/security-review` on the final branch.
 
 ---
 
@@ -188,11 +212,40 @@ New files:
 
 ---
 
-# ASK ME — status after PLAN review
+# Verification pass (rev 3) — line-by-line against SAAS_BUILD_PROMPT.md @985e4b3
 
-**All 10 decisions are resolved** — recorded in "Decisions locked" at the top of this file and absorbed into the phases above.
+Checked: P1–P9 ✓ (P2 and P7 amended, see below), S1–S5 ✓, K1–K12 ✓ (K9 carries one approved deviation), spec Phases 0–10 ✓ (spec's phase content re-mapped onto the approved 1–9 structure + new Phase 10), 5 non-negotiables ✓ (now a cross-cutting section at the top), spec's 8 ASK ME items → 3 resolved by your review, **6 still open (A–F below)**.
 
-**One open item:** `SAAS_BUILD_PROMPT.md` is not in the repository (checked every branch and the full commit history — it was likely committed locally but never pushed). This revision reconciles against the original brief's covenant + K1–K12 text plus the review's explicit additions. **Please push the file** so I can run the final line-by-line verification before Phase 1 starts.
+## What rev 2 was still missing (found in this pass, now folded in)
+
+1. **Phase 10 — Audit. Missing entirely.** Regression baseline, provisioning failure-resume tests vs mocked APIs, template self-test from cold clone, security review, `/security-review`. Added as its own phase.
+2. **Email verification + password reset** for customer accounts (spec Phase 1). Added to Phase 1; delivery blocked on the email-provider decision (A).
+3. **Wizard UX requirements** (spec Phase 2): live per-step validation, skippable/resumable state, exact CF-token template shown, zone picker + nameserver instructions + live verification polling. Rev 2 had "wizard UI + callbacks" only. Added to Phase 2.
+4. **Per-site apex/`www` canonical choice** asked in the wizard, other 301s (spec Phase 3). Rev 2 only handled www for `arsal.app` itself. Added to Phases 2 & 3.
+5. **`provisioning_runs` table** with per-step status + retry-from-failure (spec Phase 3). Rev 2 used generic `jobs` rows. Upgraded to a dedicated table; resumable provisioning is a non-negotiable.
+6. **Attach-only mode for existing Cloudflare Pages customers** (spec architecture constraint). Missing from rev 2. Added to Phase 3.
+7. **Per-site Turnstile keys created on the customer's CF account during provisioning** (spec Phase 6). Rev 2 assumed one platform-level `TURNSTILE_SECRET`. Corrected in Phase 3.
+8. **Claude workflow guardrails**: no force-push, protected content directory, PR/preview mode; **`workflow_dispatch`** (not `repository_dispatch`) for prompts; status streaming (queued→…→deployed); **"this run used ~X minutes"** cost line (spec Phase 4). Rev 2 had only the three cost caps. Added to Phase 4.
+9. **Lighthouse representative page set** (homepage + post + programmatic page + heaviest template) so large sites deploy in minutes (spec Phase 6). Amended P2 in §0.2.
+10. **Third-party scripts must load via Workers proxy or `defer`** (spec covenant P7). Amended P7 in §0.2.
+11. **Gate checks "word count" and "visible in UI"** named explicitly (spec Phase 5). Amended Phase 5.
+12. **HowTo schema** alongside Article/FAQ (K8). Folded into template scope.
+13. **"Live in under 10 minutes"** genesis target (K1) + orgs→sites seam (spec Phase 1, deferred with a no-remodel path). Noted in Phases 1 & 3.
+14. **Plain-language errors + no-plaintext-secrets** elevated from scattered mentions to cross-cutting non-negotiables at the top of this file.
+15. **Workers Builds vs Action-gated deploy conflict** (spec Phase 3 vs covenant enforcement) — surfaced as decision E rather than silently picking one.
+
+K9 deviation (flagged, believed approved): spec says imports convert to markdown; per confirmed decision #3 (CMS is the content store) imports become CMS posts instead. Same zero-404 outcome.
+
+## OPEN ASK ME — from the spec's own list, not yet answered
+
+- **A. Transactional email provider** (signup verification, password reset, contact-form delivery, alerts — one provider platform-wide): Resend / MailChannels / SES? Needed by Phase 1.
+- **B. Stripe price + trial length; agency mode a higher tier?** Needed by Phase 9 (billing), but pricing copy shows up in the dashboard earlier.
+- **C. Prompt-edit default: direct-to-live or preview-then-approve?** Needed by Phase 4. (Recommend preview-then-approve default; power users can flip per site.)
+- **D. GSC + Pinterest OAuth app ownership** — platform-owned apps need Google/Pinterest verification, which has lead time. Start the verification process early (before Phases 7–8). Confirm platform-owned (recommended) vs per-customer apps.
+- **E. Deploy mechanism**: Workers Builds (spec letter) vs GitHub-Action-gated wrangler deploy (covenant spirit — gates can actually block). Recommend the Action. Needed by Phase 3.
+- **F. Orgs model**: `customers`-as-org seam (recommended, no remodel later) vs first-class orgs table in Phase 1.
+
+Resolved from the spec's list by your review: Anthropic auth = customer API key as repo secret (#9; subscription-OAuth variant can be added later), Astro (#5), template repo home = `ArsalR/site-template` (#5), embeddings deferred behind the scorer seam (#8).
 
 ## Spec-gap list — what PLAN v1 was missing (now absorbed)
 
