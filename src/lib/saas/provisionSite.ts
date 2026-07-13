@@ -24,10 +24,12 @@ import {
 } from "./github"
 import {
   workerScriptExists, attachWorkersDomain, disableWorkersDevSubdomain, enableZoneProtection,
+  createTurnstileWidget,
 } from "./cloudflare"
 
 export const PROVISION_STEPS = [
   "cms_site",
+  "turnstile",
   "create_repo",
   "site_config",
   "repo_secrets",
@@ -44,6 +46,7 @@ export type ProvisionStep = (typeof PROVISION_STEPS)[number]
 /** Human labels for the dashboard timeline (plain language, spec rule). */
 export const STEP_LABELS: Record<ProvisionStep, string> = {
   cms_site: "Create your content workspace",
+  turnstile: "Set up spam protection for the contact form",
   create_repo: "Create the site repository in your GitHub",
   site_config: "Write the site configuration",
   repo_secrets: "Store deploy credentials in your repository",
@@ -249,6 +252,33 @@ async function executeStep(
       return { detail: { apiKeyEnc } }
     }
 
+    case "turnstile": {
+      const existing = await db.execute({
+        sql: "SELECT sitekey FROM site_turnstile WHERE customer_site_id = ? LIMIT 1",
+        args: [siteId],
+      })
+      if (existing.rows.length) return { skipped: true, note: "Already set up." }
+      const cfToken = await getConnectionSecret(db, env, site.customer_id, "cloudflare", `turnstile:${site.domain}`)
+      const cf = await getConnection(db, site.customer_id, "cloudflare")
+      const accountId = String((JSON.parse(cf?.meta || "{}") as { accountId?: string }).accountId ?? "")
+      if (!cfToken || !accountId) throw new Error("Cloudflare isn't connected — connect it in Connections, then retry.")
+      const widget = await createTurnstileWidget(cfToken, accountId, `sitenetwork ${site.domain}`, [
+        site.domain,
+        `www.${site.domain}`,
+      ])
+      if (!widget.sitekey) {
+        // Contact form falls back to mailto — never blocks the site launch.
+        return { skipped: true, note: `Spam protection skipped: ${"problem" in widget ? widget.problem : "unknown"}. The contact page uses an email link instead.` }
+      }
+      if (!env.VAULT_MASTER_KEY) throw new Error("Credential storage isn't configured on the platform.")
+      const secretEnc = await vaultEncrypt(env.VAULT_MASTER_KEY, site.customer_id, widget.secret)
+      await db.execute({
+        sql: "INSERT INTO site_turnstile (customer_site_id, sitekey, secret_enc) VALUES (?, ?, ?)",
+        args: [siteId, widget.sitekey, secretEnc],
+      })
+      return {}
+    }
+
     case "create_repo": {
       if (!installationId) throw new Error("GitHub isn't connected — connect it in Connections, then retry.")
       const token = await installationToken(env, installationId)
@@ -268,6 +298,11 @@ async function executeStep(
         sql: "SELECT email, name FROM customers WHERE id = ? LIMIT 1",
         args: [site.customer_id],
       })
+      const turnstile = await db.execute({
+        sql: "SELECT sitekey FROM site_turnstile WHERE customer_site_id = ? LIMIT 1",
+        args: [siteId],
+      })
+      const sitekey = turnstile.rows.length ? String(turnstile.rows[0].sitekey) : null
       const config = {
         name: site.name,
         niche: site.niche ?? "",
@@ -277,6 +312,12 @@ async function executeStep(
         ownerName: String(customerRow.rows[0]?.name ?? "") || site.name,
         ownerEmail: String(customerRow.rows[0]?.email ?? ""),
         generatedAt: new Date().toISOString().slice(0, 10),
+        ...(sitekey
+          ? {
+              turnstileSitekey: sitekey,
+              formsEndpoint: `https://${env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/forms/${siteId}`,
+            }
+          : {}),
       }
       await putRepoFile(token, repoFullName, "site.config.json", JSON.stringify(config, null, 2) + "\n", "chore: site configuration")
       await putRepoFile(

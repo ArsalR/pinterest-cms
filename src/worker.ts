@@ -41,6 +41,7 @@ import { frontendRoutes } from "./routes/frontend"
 import { saasAppRoutes, saasRootHandler } from "./routes/saas"
 import { saasApiRoutes } from "./routes/api/saas"
 import { saasHooksRoutes } from "./routes/api/saas/hooks"
+import { saasFormsRoutes } from "./routes/api/saas/forms"
 
 const app = new Hono<AppEnv>()
 
@@ -72,6 +73,7 @@ app.get("/app", saasRootHandler)
 app.get("/app/", saasRootHandler)
 app.route("/app", saasAppRoutes)
 app.route("/api/saas/hooks", saasHooksRoutes)
+app.route("/api/saas/forms", saasFormsRoutes)
 app.route("/api/saas", saasApiRoutes)
 
 // ───────────────────────── Admin ─────────────────────────────────

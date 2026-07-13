@@ -177,6 +177,22 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
          ON provisioning_runs(customer_site_id, ord)`,
     ],
   },
+  {
+    version: 5,
+    name: "005_turnstile",
+    statements: [
+      // Per-site Turnstile widget (created on the CUSTOMER's CF account
+      // during provisioning — locked in review). secret_enc is a vault
+      // envelope; the contact-form relay decrypts it to call siteverify.
+      `CREATE TABLE IF NOT EXISTS site_turnstile (
+         customer_site_id TEXT PRIMARY KEY,
+         sitekey          TEXT NOT NULL,
+         secret_enc       TEXT NOT NULL,
+         created_at       TEXT DEFAULT (datetime('now')),
+         FOREIGN KEY (customer_site_id) REFERENCES customer_sites(id) ON DELETE CASCADE
+       )`,
+    ],
+  },
 ]
 
 /** Apply all unapplied master migrations. Idempotent; safe to re-run. */

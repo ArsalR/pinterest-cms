@@ -12,6 +12,9 @@ export interface SiteConfig {
   ownerName: string
   ownerEmail: string
   generatedAt: string
+  /** Contact-form relay (set at provisioning; absent = mailto fallback). */
+  turnstileSitekey?: string
+  formsEndpoint?: string
 }
 
 export interface CmsPost {

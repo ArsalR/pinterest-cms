@@ -31,6 +31,7 @@ import {
 } from "./connections"
 import {
   sitesPageHandler, createSitePostHandler, siteDetailHandler, siteRetryHandler,
+  sitePromptHandler, siteGenesisHandler, siteRollbackHandler,
 } from "./sites"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
@@ -77,6 +78,10 @@ saasAppRoutes.get("/sites", prot(sitesPageHandler))
 saasAppRoutes.post("/sites", prot(createSitePostHandler))
 saasAppRoutes.get("/sites/:id", prot(siteDetailHandler))
 saasAppRoutes.post("/sites/:id/retry", prot(siteRetryHandler))
+// Prompt-to-build + rollback (Phase 4).
+saasAppRoutes.post("/sites/:id/prompt", prot(sitePromptHandler))
+saasAppRoutes.post("/sites/:id/genesis", prot(siteGenesisHandler))
+saasAppRoutes.post("/sites/:id/rollback", prot(siteRollbackHandler))
 // Connections wizard (Phase 2).
 saasAppRoutes.get("/connections", prot(connectionsPageHandler))
 saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))

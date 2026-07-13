@@ -28,7 +28,24 @@ const pages: Record<string, { title: string; body: string }> = {
   },
   contact: {
     title: `Contact ${config.name}`,
-    body: `
+    // Working form (K1): posts to the platform relay (Turnstile-protected,
+    // emails the owner — no third-party form service, no tracking scripts).
+    // Falls back to mailto when the site was provisioned without Turnstile.
+    body:
+      config.turnstileSitekey && config.formsEndpoint
+        ? `
+      <p>We'd love to hear from you — corrections, questions, and topic suggestions are all welcome.</p>
+      <form method="POST" action="${config.formsEndpoint}" style="max-width:28rem">
+        <p><label>Your email<br><input type="email" name="email" required
+          style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px"></label></p>
+        <p><label>Message<br><textarea name="message" required rows="6" maxlength="4000"
+          style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px"></textarea></label></p>
+        <div class="cf-turnstile" data-sitekey="${config.turnstileSitekey}"></div>
+        <p><button type="submit" style="background:#0a6152;color:#fff;border:none;border-radius:6px;padding:0.6rem 1.2rem;font-size:1rem;cursor:pointer">Send</button></p>
+      </form>
+      <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+      <p>Prefer email? <a href="mailto:${config.ownerEmail}">${config.ownerEmail}</a>.</p>`
+        : `
       <p>We'd love to hear from you — corrections, questions, and topic suggestions are all welcome.</p>
       <p>Email us at <a href="mailto:${config.ownerEmail}">${config.ownerEmail}</a> and we'll get back
       to you as soon as we can.</p>
