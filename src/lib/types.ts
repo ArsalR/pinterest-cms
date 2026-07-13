@@ -51,6 +51,9 @@ export interface CloudflareEnv {
   GITHUB_APP_ID?: string          // secret — platform GitHub App id (GITHUB_APP_SETUP.md)
   GITHUB_APP_PRIVATE_KEY?: string // secret — App private key, PKCS#8 PEM
   GITHUB_APP_SLUG?: string        // var — app slug for the install URL
+  // Phase 3 — provisioning.
+  SAAS_TEMPLATE_REPO?: string     // var — template repo (default ArsalR/site-template)
+  SAAS_CMS_HOST_SUFFIX?: string   // var — per-site CMS hostname suffix (default cms.arsal.app)
 }
 
 export interface SiteConfig {

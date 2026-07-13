@@ -1,0 +1,29 @@
+---
+import Base from "../layouts/Base.astro"
+import { loadConfig, fetchAllPosts, canonicalHost } from "../lib/cms"
+
+const config = loadConfig()
+const posts = await fetchAllPosts(config)
+const host = canonicalHost(config)
+
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: config.name,
+  url: `https://${host}/`,
+  description: config.niche,
+}
+---
+<Base title={config.name} description={config.niche} path="/" schema={schema}>
+  <h1>{config.name}</h1>
+  <p>{config.niche}</p>
+  <ul style="list-style:none;padding:0">
+    {posts.map((p) => (
+      <li style="margin:0 0 1.4rem">
+        <a href={`/posts/${p.slug}/`} style="font-weight:700;font-size:1.1rem;text-decoration:none">{p.title}</a>
+        {p.excerpt && <p style="margin:0.25rem 0 0;color:#555">{p.excerpt}</p>}
+      </li>
+    ))}
+  </ul>
+  {posts.length === 0 && <p>First articles are on their way.</p>}
+</Base>

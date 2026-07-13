@@ -1,0 +1,50 @@
+---
+import Base from "../../layouts/Base.astro"
+import { loadConfig, fetchAllPosts, canonicalHost, type CmsPost } from "../../lib/cms"
+
+export async function getStaticPaths() {
+  const config = loadConfig()
+  const posts = await fetchAllPosts(config)
+  return posts.map((post) => ({ params: { slug: post.slug }, props: { post } }))
+}
+
+interface Props { post: CmsPost }
+const { post } = Astro.props
+const config = loadConfig()
+const host = canonicalHost(config)
+const path = `/posts/${post.slug}/`
+
+// Article schema with dateModified (K4/K8).
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "Article",
+  headline: post.title,
+  description: post.seoDescription ?? post.excerpt ?? "",
+  datePublished: post.publishedAt ?? undefined,
+  dateModified: post.updatedAt ?? post.publishedAt ?? undefined,
+  mainEntityOfPage: `https://${host}${path}`,
+  publisher: { "@type": "Organization", name: config.name },
+  author: { "@type": "Person", name: config.ownerName },
+  ...(post.coverImage ? { image: [post.coverImage] } : {}),
+}
+---
+<Base
+  title={post.seoTitle ?? `${post.title} — ${config.name}`}
+  description={post.seoDescription ?? post.excerpt ?? config.niche}
+  path={path}
+  schema={schema}
+>
+  <article>
+    <h1>{post.title}</h1>
+    {post.excerpt && (
+      <p class="summary" style="font-size:1.05rem;color:#444;border-left:3px solid #0a6152;padding-left:0.9rem">
+        {post.excerpt}
+      </p>
+    )}
+    {post.coverImage && (
+      <img src={post.coverImage} alt={post.title} width="1200" height="675"
+           style="border-radius:8px" fetchpriority="high" />
+    )}
+    <div set:html={post.content} />
+  </article>
+</Base>

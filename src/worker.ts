@@ -40,6 +40,7 @@ import { frontendRoutes } from "./routes/frontend"
 
 import { saasAppRoutes, saasRootHandler } from "./routes/saas"
 import { saasApiRoutes } from "./routes/api/saas"
+import { saasHooksRoutes } from "./routes/api/saas/hooks"
 
 const app = new Hono<AppEnv>()
 
@@ -70,6 +71,7 @@ app.route("/api/public", publicApiRoutes)
 app.get("/app", saasRootHandler)
 app.get("/app/", saasRootHandler)
 app.route("/app", saasAppRoutes)
+app.route("/api/saas/hooks", saasHooksRoutes)
 app.route("/api/saas", saasApiRoutes)
 
 // ───────────────────────── Admin ─────────────────────────────────

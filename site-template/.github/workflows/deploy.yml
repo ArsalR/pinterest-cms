@@ -1,0 +1,57 @@
+# Covenant-gated deploy (decision E): the deploy step runs ONLY after the
+# zero-JS gate, the security-header gate, and the Lighthouse budget gate all
+# pass. Budget fail = deploy blocked — literally.
+#
+# Lighthouse runs against a REPRESENTATIVE page set (homepage + a policy page;
+# post pages are added to lighthouserc.json per-site as content grows), so a
+# 500-page site still deploys in minutes.
+#
+# Triggers: push (edits), repository_dispatch content-updated (CMS publish →
+# platform rebuild bridge), workflow_dispatch (provisioning's first deploy).
+
+name: Build & deploy
+
+on:
+  push:
+    branches: [main]
+  repository_dispatch:
+    types: [content-updated]
+  workflow_dispatch: {}
+
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-gate-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci || npm install
+
+      - name: Build (pulls published content from the CMS)
+        run: npm run build
+        env:
+          CMS_API_KEY: ${{ secrets.CMS_API_KEY }}
+
+      - name: "Gate: zero client JavaScript (Performance Covenant P1)"
+        run: npm run check:zero-js
+
+      - name: "Gate: security headers (Security Covenant S2)"
+        run: npm run check:headers
+
+      - name: "Gate: Lighthouse budgets (Performance Covenant P2 — fail blocks deploy)"
+        run: npm run lhci
+
+      - name: Deploy to YOUR Cloudflare account
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}

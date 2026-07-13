@@ -114,3 +114,66 @@ export async function listCfZones(token: string): Promise<CfZone[] | null> {
     paused: z.paused,
   }))
 }
+
+// ─────────────── Phase 3: provisioning calls (customer token) ───────────────
+
+/** Does the Worker script exist yet? (Provisioning polls this after the first
+ *  Action-gated deploy — decision E: the Action deploys, we only observe.) */
+export async function workerScriptExists(token: string, accountId: string, scriptName: string): Promise<boolean> {
+  const r = await cfFetch<unknown>(token, `/accounts/${accountId}/workers/scripts/${scriptName}`)
+  return r.ok
+}
+
+/** Attach a custom domain (hostname on the customer's zone) to their Worker.
+ *  Cloudflare creates/updates the DNS record automatically. Idempotent. */
+export async function attachWorkersDomain(
+  token: string,
+  accountId: string,
+  zoneId: string,
+  hostname: string,
+  scriptName: string
+): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/accounts/${accountId}/workers/domains`, {
+    method: "PUT",
+    body: JSON.stringify({ zone_id: zoneId, hostname, service: scriptName, environment: "production" }),
+  })
+  return r.ok
+    ? { ok: true, problem: null }
+    : { ok: false, problem: r.errorMessage ?? "Couldn't attach the domain to the Worker." }
+}
+
+/** Disable the *.workers.dev URL for a script — a live workers.dev duplicate
+ *  of the customer's site is an SEO duplicate-content bug (locked in review). */
+export async function disableWorkersDevSubdomain(
+  token: string,
+  accountId: string,
+  scriptName: string
+): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/accounts/${accountId}/workers/scripts/${scriptName}/subdomain`, {
+    method: "POST",
+    body: JSON.stringify({ enabled: false }),
+  })
+  return r.ok
+    ? { ok: true, problem: null }
+    : { ok: false, problem: r.errorMessage ?? "Couldn't disable the workers.dev URL." }
+}
+
+/** Turn on free WAF managed rules + bot fight mode for the zone (covenant S3).
+ *  Best-effort: some settings need higher plans; failures are reported, not fatal. */
+export async function enableZoneProtection(
+  token: string,
+  zoneId: string
+): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/zones/${zoneId}/settings/security_level`, {
+    method: "PATCH",
+    body: JSON.stringify({ value: "medium" }),
+  })
+  const bots = await cfFetch<unknown>(token, `/zones/${zoneId}/bot_management`, {
+    method: "PUT",
+    body: JSON.stringify({ fight_mode: true }),
+  })
+  if (!r.ok && !bots.ok) {
+    return { ok: false, problem: "Couldn't enable zone protection settings (plan limits?) — you can turn on Bot Fight Mode in the Cloudflare dashboard." }
+  }
+  return { ok: true, problem: null }
+}
