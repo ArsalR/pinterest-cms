@@ -1,7 +1,21 @@
 # PLAN.md — SaaS layer ("saas_mode") on pinterest-cms
 
-> Phase 0 deliverable. Maps every phase to concrete files, tables, and routes in THIS codebase.
-> **Nothing ships until PLAN.md is approved. Existing routes stay byte-identical; all new work is additive and gated behind `saas_mode`.**
+> Phase 0 deliverable, **revision 2** (post-review). Maps every phase to concrete files, tables, and routes in THIS codebase.
+> **Nothing ships until this revision is approved. Existing routes stay byte-identical; all new work is additive and gated behind `saas_mode`.**
+> ⚠️ Reconciliation caveat: `SAAS_BUILD_PROMPT.md` is referenced by the review but **is not present in the repo** (no branch, no commit — likely committed locally but never pushed). This revision reconciles against the full covenant + K1–K12 text from the original brief plus the review's explicit additions; a final verification pass against the file is owed once it's pushed.
+
+## Decisions locked (PLAN review)
+
+1. Phase 1–9 structure approved **as structure**; every phase absorbs the spec content mapped below. Covenants are **deploy-blocking, not advisory**.
+2. Control plane: **extend the existing master Turso DB**; master migration runner is the first Phase 1 item.
+3. Content architecture confirmed: CMS is the content store; sites build-time fetch via the existing public API; publish webhook → `repository_dispatch` rebuild.
+4. GitHub App confirmed; exact one-time creation steps (permissions, callback URLs, where to paste App ID/private key) are a Phase 2 kickoff deliverable.
+5. Template: **Astro**, repo **`ArsalR/site-template`**.
+6. **Cloudflare stays FREE TIER for now**: crypto parameters config-driven and tuned to fit the 10ms CPU budget (upgrade strengthens without data migration); uptime checks deferred/reduced until paid.
+7. Billing: Stripe stays in Phase 9.
+8. Internal linking: keyword-overlap first, behind a scorer **interface seam** so embeddings can replace it without touching callers.
+9. AI inference: Claude runs **only** in the customer's GitHub Actions with the customer's own Anthropic key; the platform never proxies inference or carries usage by default.
+10. SaaS dashboard hostname: **`arsal.app`** (`SAAS_APP_HOSTNAME`); `www.arsal.app` → apex 301.
 
 ---
 
@@ -23,11 +37,37 @@ These are the exact seams the repo already exposes; every phase below builds onl
 
 Existing tenant sites (e.g. current live sites) are untouched: SaaS behavior applies only to sites created through the SaaS pipeline (marked in the master DB), and only when `SAAS_MODE=1`.
 
-## 0.1 Content architecture (the one big decision everything hangs on — ASK ME #3)
+## 0.1 Content architecture (CONFIRMED — decision #3)
 
-**Recommended:** the CMS stays the content store; generated sites are static Astro repos that **build-time fetch** published content from the existing public API (`GET /v1/posts`, read-only key) and rebuild on publish via webhook → `repository_dispatch`. Rationale: reuses the frozen API + webhooks exactly as designed; the quality gate sits in the publish pipeline (platform side), not in the site; Claude edits design/layout in the repo while content flows through the CMS; WordPress import (K9) lands in the CMS unchanged.
+The CMS stays the content store; generated sites are static Astro repos that **build-time fetch** published content from the existing public API (`GET /v1/posts`, read-only key) and rebuild on publish via webhook → `repository_dispatch`. Rationale: reuses the frozen API + webhooks exactly as designed; the quality gate sits in the publish pipeline (platform side), not in the site; Claude edits design/layout in the repo while content flows through the CMS; WordPress import (K9) lands in the CMS unchanged.
 
-Alternative (not recommended): content as markdown in the repo — simpler sites but forfeits the CMS, scheduling, quality gate, and the existing API contract.
+## 0.2 Covenant enforcement map (deploy-blocking, not advisory)
+
+Both covenants are enforced by pipeline rules — a violating build **cannot deploy**. Enforcement lives in two places: the `ArsalR/site-template` CI (travels with every customer repo) and platform provisioning code (this repo).
+
+**Performance Covenant** (template CI unless noted):
+| # | Rule | Enforced where |
+|---|---|---|
+| P1 | Zero-JS by default (Astro islands only when needed) | Template architecture + CI assertion: no `<script>` in built post pages unless island-annotated |
+| P2 | Lighthouse CI budgets: Perf ≥ 98, LCP < 1.2s, CLS < 0.02, TBT < 50ms, page < 300KB, HTML < 50KB — **fail = deploy blocked** | Template CI (lighthouse-ci step gates the deploy job); plain-language report + "ask Claude to fix" dispatch button in dashboard (Phase 4 `jobs` integration) |
+| P3 | Image pipeline: AVIF/WebP `srcset`, explicit dims (zero CLS), lazy below fold, LCP priority hints | Template build (Astro image integration reading CMS media URLs → R2) |
+| P4 | Font discipline: system stack default; custom fonts auto-subset, `font-display: swap`, self-hosted, preloaded; **no Google Fonts requests** | Template + CI check: no fonts.googleapis.com in built output |
+| P5 | CSS: critical inlined, total < 20KB, unused stripped | Template build + CI budget |
+| P6 | Edge: immutable cache headers + hashed filenames, HTML `stale-while-revalidate`, Early Hints 103, HTTP/3, Brotli | Template Workers static-assets config + platform provisioning (zone settings via customer CF token, Phase 3) |
+| P7 | Third-party script firewall: CF Web Analytics default; any other third-party script requires explicit override + shows wire-cost in dashboard ("~180ms — add anyway?") | Template CI (allowlist of external origins in built HTML; unknown origin = fail) + dashboard override UX (Phase 4/6) |
+| P8 | Continuous RUM: CWV from real visitors per site, degradation alerts + "ask Claude to diagnose" | Platform (Phase 6, CF Web Analytics API via customer token) |
+| P9 | Optional live "PageSpeed 100" footer badge → public PSI link | Template component, off by default, toggle in dashboard |
+
+**Security Covenant**:
+| # | Rule | Enforced where |
+|---|---|---|
+| S1 | Static = no attack surface (no PHP/plugins/admin/origin DB) | Template architecture (§0.1) — structurally guaranteed |
+| S2 | Security headers baked in + **verified in CI (fail = blocked)**: strict CSP, HSTS preload, X-Content-Type-Options, Referrer-Policy, Permissions-Policy; target A+ securityheaders.com | Template `_headers`/worker config + CI header-assertion step against the built output |
+| S3 | Cloudflare in front: free WAF rules, bot fight mode, DDoS — enabled during provisioning | Platform Phase 3 (`provisionSite.ts` via customer CF token) |
+| S4 | Platform hygiene: tokens encrypted at rest (per-tenant derivation), never logged/never in errors, App private key in Workers secrets, webhook signatures verified, prompt-dispatch rate-limited, audit log of every credential use | Platform Phases 1–4 (`vault.ts`, `audit_log`, `prompts.ts` caps) |
+| S5 | Git as backup: every version in customer's repo; **one-click rollback** of the whole site to any prior state, in seconds | Platform Phase 4 (`revertToCommit`) — headline feature |
+
+Additional locked rule: **`workers.dev` is disabled on production sites** — provisioning (Phase 3) turns off the workers.dev route/subdomain preview for the deployment via the customer's CF API; sites are reachable only on their custom domain.
 
 ---
 
@@ -37,7 +77,7 @@ Alternative (not recommended): content as markdown in the repo — simpler sites
 
 ### Phase 1 — Control plane foundation (`phase-1-foundation`)
 
-Goal: `SAAS_MODE` flag, customer accounts, dashboard shell, master-DB migrations. No external integrations yet.
+Goal: `SAAS_MODE` flag, customer accounts, dashboard shell, master-DB migrations. No external integrations yet. **First item: the master migration runner (approved).** Dashboard hostname is `arsal.app`; the tenantMiddleware bypass also matches `www.arsal.app` and 301s it to the apex.
 
 New files:
 - `src/lib/masterMigrate.ts` — idempotent master-DB migration runner (mirror of `migrate.ts`, tracked in master `_migrations`); invoked lazily from saas routes and/or a `scheduled()` branch. **Unblocks every later phase.**
@@ -58,7 +98,8 @@ CI (additive): add `npm test` step to `deploy.yml`; new PR-check workflow (typec
 Goal: customer connects their GitHub + Cloudflare (+ optional Anthropic key) once, guided.
 
 New files:
-- `src/lib/saas/vault.ts` — AES-256-GCM via WebCrypto; per-tenant key = HKDF(`VAULT_MASTER_KEY` secret, salt=customer_id). Never logged, never in error messages; every decrypt writes `audit_log`.
+- `src/lib/saas/vault.ts` — AES-256-GCM via WebCrypto; per-tenant key = HKDF(`VAULT_MASTER_KEY` secret, salt=customer_id). Never logged, never in error messages; every decrypt writes `audit_log`. **Free-tier constraint (decision #6): all KDF parameters are config-driven** (`VAULT_KDF_PARAMS` var or versioned envelope header) and tuned to fit the 10ms CPU budget — HKDF itself is one HMAC pass (cheap, safe on free tier; the 100k-iteration PBKDF2 cost lives only in interactive login, unchanged). Each ciphertext embeds an envelope version + its own params, so raising parameters after a paid upgrade re-encrypts lazily on next write — **no data migration**.
+- **Phase 2 kickoff deliverable (decision #4)**: exact one-time GitHub App creation walkthrough — app name, homepage/callback/setup URLs on `arsal.app`, webhook URL + secret, required permissions (repo contents RW, actions RW, secrets RW, administration RW for repo-from-template, webhooks RW), and where to paste App ID + private key (`wrangler secret put GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY`).
 - `src/lib/saas/github.ts` — GitHub App client: RS256 App JWT (`GITHUB_APP_ID` + `GITHUB_APP_PRIVATE_KEY` secrets) → installation tokens; repo-from-template, set Actions secrets, dispatch workflows, commits/rollback.
 - `src/lib/saas/cloudflare.ts` — customer-token CF client: token verify (`GET /user/tokens/verify`), zones list, Workers deploys, custom domains, DNS, Web Analytics.
 - `src/routes/saas/connections.ts` — wizard UI + callbacks (GitHub App install redirect → installation_id capture; CF token paste → live verify with scope check; Anthropic key paste → optional).
@@ -68,7 +109,9 @@ Tests: vault round-trip + tamper detection (pure WebCrypto, node-safe), GitHub A
 
 ### Phase 3 — Site provisioning pipeline (`phase-3-provisioning`)
 
-Goal: "Add site" → repo + Workers deployment + custom domain + CMS backing, fully automatic. **The template repo is a separate deliverable** (its own repo, not this codebase) containing: Astro zero-JS, trust pages (K1 set), security headers via `_headers`/worker config (CSP, HSTS, etc.), Lighthouse CI budget gate workflow (Perf ≥98, LCP <1.2s, CLS <0.02, TBT <50ms, weight <300KB, HTML <50KB — fail = deploy blocked), image pipeline (AVIF/WebP srcset, dims, lazy), font discipline, critical CSS, `llms.txt`, Article/FAQ schema, build-time fetch from CMS API.
+Goal: "Add site" → repo + Workers deployment + custom domain + CMS backing, fully automatic. **The template repo is a separate deliverable: `ArsalR/site-template`** (decision #5), carrying the full covenant enforcement from §0.2: Astro zero-JS, security headers + CI verification (S2), Lighthouse CI budget gate (P2 — fail = deploy blocked), image pipeline (P3), font discipline (P4), critical CSS (P5), third-party script firewall allowlist check (P7), `llms.txt` + Article/FAQ schema + quotable summary blocks (K8), optional PageSpeed badge (P9), build-time fetch from CMS API, **and the trust-page set generated site-specifically, never lorem ipsum** (K1): About Us, Contact Us, Privacy Policy, Terms of Service, Affiliate/Advertising Disclosure, Cookie Policy, Editorial Policy — filled with site name/niche/owner details from the wizard, dated, footer-linked.
+
+Provisioning must also (locked in review): **disable the workers.dev route/subdomain** on production deployments (custom-domain only), and enable WAF free rules + bot fight mode (S3) via the customer's CF token.
 
 New files in THIS repo:
 - `src/lib/saas/provisionSite.ts` — orchestrator: create repo from template (customer's GitHub) → set repo secrets (their CF token, a freshly minted `cms_live_` read key, optional Anthropic key) → trigger first deploy → attach custom domain + DNS (their CF) → enable WAF/bot-fight → **reuse `createSite()` from `src/lib/provision.ts` unchanged** for the CMS backing → register webhook endpoint (per-site `webhook_endpoints`) pointing at the rebuild bridge. Steps recorded in `jobs` for resumability (createSite's no-rollback gotcha noted — the job log gives manual recovery).
@@ -84,15 +127,20 @@ Master `sites` gains nothing — linkage lives in `customer_sites` (keeps `resol
 
 Goal: build/change sites by prompting Claude; preview URLs; one-click rollback. **Zero platform inference: Claude Code runs in the customer's GitHub Action using the customer's Anthropic key** (template repo carries the workflow; the platform only dispatches).
 
+**Cost guardrails on Claude-in-Actions (locked in review — enforced, not advisory):**
+- **15-minute `timeout-minutes`** on the Claude workflow job (template side).
+- **Per-site concurrency group** (`concurrency: site-${repo}` in the template workflow) — one Claude run per site at a time; new dispatches queue or supersede.
+- **Hourly dispatch cap per site** (platform side, `prompts.ts`): counted in `jobs`, exceeded → new error code `quota_exceeded` + dashboard message; every dispatch audit-logged.
+
 New files:
-- `src/lib/saas/prompts.ts` — dispatch prompt as `repository_dispatch` payload (rate-limited per customer; audit-logged), track run via GitHub checks API into `jobs`.
+- `src/lib/saas/prompts.ts` — dispatch prompt as `repository_dispatch` payload (enforces the hourly cap; audit-logged), track run via GitHub checks API into `jobs`.
 - `src/routes/saas/builder.ts` — prompt UI, job timeline, before/after preview (template deploys previews as separate Workers versions/URLs), approve-to-merge flow (PR-based: Claude commits to a branch, preview deploys from branch, approve = merge).
 - Rollback: `src/lib/saas/github.ts` gains `revertToCommit(repo, sha)` (revert commit → push → auto-deploy). UI in site page: pick any commit, one click.
 - Genesis = Phase 3 provisioning + a genesis prompt template (niche, domain, owner details from wizard → 10 seed articles via CMS API, topical map, silo nav, filled-in trust pages).
 
 ### Phase 5 — Quality gate + programmatic SEO (K2) (`phase-5-quality-gate`)
 
-Goal: nothing thin/duplicate publishes.
+Goal: nothing thin/duplicate publishes. **The gate is ON by default for every SaaS-managed site** (locked in review) — per-site opt-out is an explicit, audit-logged dashboard action, not a default. Non-SaaS CMS sites are untouched (gate never runs for them).
 
 New files:
 - `src/lib/saas/qualityGate.ts` — pure functions: unique-content ratio (shingling/Jaccard between pages), duplicate title/meta detection, thin-content threshold, required-unique-data check. Fully unit-testable in plain vitest (no Workers APIs) — the flagship test suite.
@@ -103,7 +151,7 @@ New files:
 ### Phase 6 — Network brain (K3) (`phase-6-network-brain`)
 
 - `src/lib/saas/gsc.ts` — Google OAuth per site (needs `GOOGLE_CLIENT_ID/SECRET` secrets); sitemap submit, index status, query data, deindex/manual-action alerts. Tokens in `connections` (provider `gsc`).
-- Uptime: new cron `*/5 * * * *` conflicts with scheduler string — instead new cron `2-57/5 * * * *` (own `===` branch) or gate inside a new explicit branch; pings each `customer_sites.domain` homepage, alerts on failure. Subrequest limits: 50/invocation free, 1000 paid → batch across ticks (ASK ME #6: paid plan assumed).
+- Uptime (decision #6 — **free tier for now**): checks are **deferred at launch, then shipped at reduced cadence** — every 30 min (`13,43 * * * *`, own `===` branch), batched ≤40 pings/invocation to stay inside the 50-subrequest free limit; cadence is a config var (`UPTIME_INTERVAL`) so the paid upgrade drops it to 5 min with no code change. Noted as a launch limitation in the dashboard.
 - 404 monitor + CWV: CF Web Analytics / GraphQL API via customer token (`src/lib/saas/cloudflare.ts`), one-click "add redirect" writes to the per-site `redirects` table (existing engine, no changes).
 - Dashboard: `src/routes/saas/network.ts` — cross-site overview (traffic, CWV, cadence, uptime, 404s, decay flags).
 - New master table: `site_metrics` (site_id, day, source, payload JSON) — rollup cache so dashboards don't hammer external APIs.
@@ -111,7 +159,7 @@ New files:
 ### Phase 7 — Content intelligence (K4 decay, K5 internal links, K8 AEO) (`phase-7-content-intel`)
 
 - `src/lib/saas/decay.ts` — GSC rolling 28-day comparison → decay flags into `site_metrics`; "refresh" = prompt dispatch (Phase 4) whose output goes through the gate (Phase 5) and republishes via existing API (sets `dateModified` via existing `structured_data`/`updated_at` — no API changes).
-- `src/lib/saas/linking.ts` — keyword-overlap related-post scoring against the per-site DB (embeddings optional later — ASK ME #8); suggestions UI; auto-insert mode edits content via existing `PUT /v1/posts/:id`; orphan detection (published post with zero inbound internal links) as a gate rule.
+- `src/lib/saas/linking.ts` — related-post scoring behind a **`RelatednessScorer` interface** (decision #8): `score(postA, postB): number` + `related(post, corpus, k)`. Ships with `KeywordOverlapScorer`; an `EmbeddingScorer` can replace it later **without touching callers**. Suggestions UI; auto-insert mode edits content via existing `PUT /v1/posts/:id`; orphan detection (published post with zero inbound internal links) as a gate rule.
 - AEO: checks live mostly in the template (llms.txt, schema, summary blocks); dashboard adds per-post AEO checklist in `src/lib/saas/aeo.ts` (pure functions, unit-tested).
 
 ### Phase 8 — Traffic + monetization (K7 Pinterest, K10 affiliate) (`phase-8-traffic`)
@@ -140,18 +188,24 @@ New files:
 
 ---
 
-# ASK ME — decisions I need from you before Phase 1
+# ASK ME — status after PLAN review
 
-1. **Phase list.** Your brief was cut off after Phase 0. Confirm my Phase 1–9 breakdown above, or paste your intended phases and I'll re-map.
-2. **Control-plane data location.** Recommended: extend the existing **master Turso DB** with new SaaS tables via a new master migration runner (no new infra, one DB to operate). Alternative: a separate control-plane Turso DB (cleaner blast radius, more config). Which?
-3. **Content architecture.** Confirm §0.1: CMS stays the content store; static sites build-time fetch via the existing public API and rebuild on publish webhooks. (The alternative — markdown-in-repo — abandons most of the CMS.)
-4. **GitHub App.** The BYO-GitHub flow needs a platform GitHub App (you create it once in your GitHub org; I need its App ID + private key as Worker secrets, and its name for the install URL). OK to design around a GitHub App (recommended), vs. asking customers to paste a PAT (weaker, but zero setup for you)?
-5. **Template framework + home.** Astro (zero-JS by default, islands when needed) as the site template — confirm. And the template repo lives in your GitHub org as a public template repo — name preference?
-6. **Workers plan.** Uptime pings, image pipeline, and PBKDF2 auth all want the **paid** Workers plan ($5/mo) for the platform Worker (earlier this session we removed `cpu_ms` because the account was free-tier). Is the platform account going paid? (Customer sites are on THEIR accounts and are static — free tier is fine for them.)
-7. **Billing scope.** Is Stripe billing part of this build (my Phase 9), later, or out of scope?
-8. **Internal-linking engine.** Keyword-overlap scoring (zero cost, good enough to start — recommended) vs. embeddings (needs Workers AI or customer OpenAI/Anthropic key, better quality). Start with which?
-9. **AI inference confirmation.** Claude runs exclusively in the **customer's** GitHub Actions with the **customer's** Anthropic key (platform pays zero inference; no key = prompting features disabled with an upsell to add one). Confirm this is the intended model — it's what "platform pays for zero AI inference" implies.
-10. **SaaS dashboard hostname.** e.g. `app.<yourplatformdomain>` served by this same Worker via a `SAAS_APP_HOSTNAME` bypass (recommended, matches NETWORK_ADMIN_HOSTNAME pattern). What domain?
+**All 10 decisions are resolved** — recorded in "Decisions locked" at the top of this file and absorbed into the phases above.
+
+**One open item:** `SAAS_BUILD_PROMPT.md` is not in the repository (checked every branch and the full commit history — it was likely committed locally but never pushed). This revision reconciles against the original brief's covenant + K1–K12 text plus the review's explicit additions. **Please push the file** so I can run the final line-by-line verification before Phase 1 starts.
+
+## Spec-gap list — what PLAN v1 was missing (now absorbed)
+
+Found by reconciling v1 against the spec content now available:
+
+1. **Covenants were under-specified as CI gates.** v1 had the Lighthouse budget gate but did not enumerate: the zero-JS CI assertion (P1), the no-Google-Fonts check (P4), the CSS budget (P5), the **third-party script firewall with wire-cost UX** (P7 — entirely missing from v1), RUM/CWV degradation alerts with "ask Claude to diagnose" (P8), the optional PageSpeed badge (P9), and the **security-header CI verification** (S2 — v1 baked headers into the template but didn't gate deploys on them). Now all in §0.2 with enforcement locations.
+2. **Cost guardrails on Claude-in-Actions** — entirely missing from v1: 15-min job timeout, per-site concurrency group, hourly dispatch cap with `quota_exceeded`. Now in Phase 4.
+3. **`workers.dev` disabled on production sites** — missing from v1's provisioning step list. Now in Phase 3.
+4. **Quality gate ON by default** — v1 described the gate but not its default posture. Now explicit in Phase 5 (default-on, audit-logged opt-out).
+5. **Trust pages under-enumerated** — v1 said "trust-page set (K1)"; the spec requires the specific seven pages, filled with wizard details (never lorem ipsum), dated, footer-linked. Now enumerated in Phase 3.
+6. **Edge/protocol settings** (Early Hints 103, HTTP/3, Brotli, immutable + SWR cache headers) — v1 mentioned none. Now P6 in §0.2, wired into Phase 3 provisioning.
+7. **AEO quotable summary blocks** — v1 had llms.txt + schema but not the summary-block requirement. Folded into the template scope (Phase 3) and the AEO checklist (Phase 7).
+8. **Free-tier consequences** (decision #6) — v1 assumed paid: crypto params now config-driven with versioned envelopes (Phase 2), uptime deferred/30-min cadence with config-driven upgrade path (Phase 6).
 
 ---
 
