@@ -236,16 +236,18 @@ Checked: P1–P9 ✓ (P2 and P7 amended, see below), S1–S5 ✓, K1–K12 ✓ (
 
 K9 deviation (flagged, believed approved): spec says imports convert to markdown; per confirmed decision #3 (CMS is the content store) imports become CMS posts instead. Same zero-404 outcome.
 
-## OPEN ASK ME — from the spec's own list, not yet answered
+## ASK ME A–F — RESOLVED (rev 3 approval)
 
-- **A. Transactional email provider** (signup verification, password reset, contact-form delivery, alerts — one provider platform-wide): Resend / MailChannels / SES? Needed by Phase 1.
-- **B. Stripe price + trial length; agency mode a higher tier?** Needed by Phase 9 (billing), but pricing copy shows up in the dashboard earlier.
-- **C. Prompt-edit default: direct-to-live or preview-then-approve?** Needed by Phase 4. (Recommend preview-then-approve default; power users can flip per site.)
-- **D. GSC + Pinterest OAuth app ownership** — platform-owned apps need Google/Pinterest verification, which has lead time. Start the verification process early (before Phases 7–8). Confirm platform-owned (recommended) vs per-customer apps.
-- **E. Deploy mechanism**: Workers Builds (spec letter) vs GitHub-Action-gated wrangler deploy (covenant spirit — gates can actually block). Recommend the Action. Needed by Phase 3.
-- **F. Orgs model**: `customers`-as-org seam (recommended, no remodel later) vs first-class orgs table in Phase 1.
+- **A. Email: Resend**, sending from `arsal.app` (SPF/DKIM DNS records go in the provisioning docs). Platform-wide: verification, reset, contact-form delivery, alerts.
+- **B. Billing: $29/mo flat, unlimited sites; 14-day trial, no card required; no agency tier at launch** — `customers.plan` field is the tier seam (no migration to add tiers later). **Trial expiry behavior**: sites stay live (customer's own infra — never taken down); dashboard goes read-only; publishing and prompt-edits pause until subscribed.
+- **C. Prompt-edit default: preview-then-approve**; per-site setting flips to direct-to-live.
+- **D. OAuth apps: platform-owned** under the owner's accounts; creation + verification checklist delivered as `OAUTH_SETUP.md` (verification lead time runs in parallel with Phases 1–6).
+- **E. SPEC AMENDMENT (approved): deploy is Action-gated `wrangler deploy`, NOT Workers Builds auto-deploy.** Workers Builds deploys on push and cannot be blocked by CI gates; the Action deploys only after Lighthouse + security-header gates pass, making "budget fail = deploy blocked" literally true. Supersedes spec Phase 3's "Workers Builds" wording.
+- **F. Orgs: customers-as-org seam** confirmed (`customer_seats` joins in Phase 9; `customer_sites.customer_id` is the org key from day one).
 
-Resolved from the spec's list by your review: Anthropic auth = customer API key as repo secret (#9; subscription-OAuth variant can be added later), Astro (#5), template repo home = `ArsalR/site-template` (#5), embeddings deferred behind the scorer seam (#8).
+Also resolved earlier: Anthropic auth = customer API key as repo secret (subscription-OAuth variant possible later), Astro, `ArsalR/site-template`, embeddings deferred behind the scorer seam.
+
+**rev 3 APPROVED including the K9 deviation (imports → CMS posts). Phase 1 is a go.**
 
 ## Spec-gap list — what PLAN v1 was missing (now absorbed)
 
