@@ -1,6 +1,7 @@
 {
   "name": "Template Site",
   "niche": "placeholder — overwritten by provisioning",
+  "kind": "content",
   "domain": "example.com",
   "canonicalHost": "apex",
   "cmsApiUrl": "https://example.cms.arsal.app/api/public/v1",

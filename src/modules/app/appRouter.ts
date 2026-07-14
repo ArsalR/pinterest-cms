@@ -26,7 +26,7 @@ import { saasHomeHandler, resendVerificationHandler, saasStubHandler } from "../
 import {
   connectionsPageHandler,
   githubStartHandler, githubCallbackHandler,
-  cloudflareConnectHandler, anthropicConnectHandler,
+  cloudflareConnectHandler, anthropicConnectHandler, stripeConnectHandler,
   disconnectHandler,
 } from "../connections"
 import {
@@ -88,6 +88,7 @@ saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))
 saasAppRoutes.get("/connections/github/callback", prot(githubCallbackHandler))
 saasAppRoutes.post("/connections/cloudflare", prot(cloudflareConnectHandler))
 saasAppRoutes.post("/connections/anthropic", prot(anthropicConnectHandler))
+saasAppRoutes.post("/connections/stripe", prot(stripeConnectHandler))
 saasAppRoutes.post("/connections/:provider/delete", prot(disconnectHandler))
 saasAppRoutes.get(
   "/account",

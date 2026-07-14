@@ -9,7 +9,7 @@ import { cuid } from "../../lib/utils"
 import { vaultEncrypt, vaultDecrypt } from "../vault"
 import { audit } from "../customers"
 
-export type ConnectionProvider = "github" | "cloudflare" | "anthropic" | "pinterest" | "gsc"
+export type ConnectionProvider = "github" | "cloudflare" | "anthropic" | "pinterest" | "gsc" | "stripe"
 
 export interface ConnectionRow {
   id: string

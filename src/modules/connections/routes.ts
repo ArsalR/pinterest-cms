@@ -23,6 +23,7 @@ import {
 import { githubAppConfigured, githubInstallUrl, getInstallation } from "./github"
 import { CF_TOKEN_TEMPLATE, verifyCfToken, listCfZones, type CfZone } from "./cloudflare"
 import { verifyAnthropicKey } from "./anthropic"
+import { verifyStripeKey } from "./stripe"
 import { credentialPreview } from "../vault"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -82,6 +83,7 @@ function doneMessage(done: string): string {
     case "github": return "GitHub connected — your sites will live in your own account."
     case "cloudflare": return "Cloudflare connected — token verified and stored encrypted."
     case "anthropic": return "Anthropic key saved — prompt-powered building is ready to enable."
+    case "stripe": return "Stripe connected — your store can take payments on your own account."
     case "disconnected": return "Disconnected."
     default: return "Saved."
   }
@@ -252,12 +254,35 @@ function stepOptional(byProvider: Map<string, ConnectionView>): string {
            </form>`
     }
 
+    <h3 style="font-size:14px;margin:18px 0 4px">Stripe ${stripeChip(byProvider)}</h3>
+    ${stripeBlock(byProvider)}
+
     <h3 style="font-size:14px;margin:18px 0 4px">Pinterest <span class="chip soon">Available soon</span></h3>
     <p class="muted-sm">Auto-pin your posts on a drip schedule. Our Pinterest app is in review — this switches on automatically once approved.</p>
 
     <h3 style="font-size:14px;margin:14px 0 4px">Google Search Console <span class="chip soon">Available soon</span></h3>
     <p class="muted-sm">Indexing status, query data, decay alerts per site. Our Google verification is in review — this switches on automatically once approved.</p>
   </div>`
+}
+
+function stripeChip(byProvider: Map<string, ConnectionView>): string {
+  return byProvider.get("stripe")?.status === "active" ? `<span class="chip done">Connected</span>` : ""
+}
+
+function stripeBlock(byProvider: Map<string, ConnectionView>): string {
+  const stripe = byProvider.get("stripe")
+  if (stripe?.status === "active") {
+    const name = String(stripe.meta?.accountName ?? "")
+    const mode = stripe.meta?.livemode ? "live" : "test"
+    return `<p style="font-size:13px">Connected${name ? ` — <strong>${escapeHtml(name)}</strong>` : ""} (${mode} mode), key ${escapeHtml(String(stripe.meta?.preview ?? ""))} stored encrypted. ${disconnectForm("stripe")}</p>`
+  }
+  return `<p class="muted-sm">Needed only for <strong>online store</strong> sites — checkout runs on <em>your</em> Stripe account, your payouts. (This is separate from your SiteNetwork subscription.)</p>
+    <form method="POST" action="/app/connections/stripe">
+      <div class="row">
+        <input class="wide" type="password" name="key" placeholder="sk_live_…" autocomplete="off" required>
+        <button class="btn ghost" type="submit">Verify &amp; save</button>
+      </div>
+    </form>`
 }
 
 // ─────────────────────── GitHub install flow ───────────────────────
@@ -370,9 +395,44 @@ export async function anthropicConnectHandler(c: Context<AppEnv>): Promise<Respo
   return back({ done: "anthropic" })
 }
 
+// ─────────────────────── Stripe key (BYO — ecommerce) ───────────────────────
+
+export async function stripeConnectHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return back({ error: "That form didn't come through — please paste the key again." })
+  }
+  const key = String(form.get("key") || "").trim()
+
+  const db = await masterDb(c)
+  if (!(await allowRate(db, `connverify:customer:${customer.id}`, AUTH_LIMITS.connectionVerify))) {
+    return back({ error: RATE_LIMIT_MESSAGE })
+  }
+  if (!c.env.VAULT_MASTER_KEY) {
+    console.error("connections: VAULT_MASTER_KEY is not set")
+    return back({ error: "Credential storage isn't available right now — please try again later." })
+  }
+
+  const check = await verifyStripeKey(key)
+  if (!check.valid) {
+    await audit(db, customer.id, "connection.verify_failed", "stripe")
+    return back({ error: check.problem ?? "That key didn't validate." })
+  }
+
+  await saveConnection(db, c.env, customer.id, "stripe", key, {
+    accountName: check.accountName,
+    livemode: check.livemode,
+    preview: credentialPreview(key),
+  })
+  return back({ done: "stripe" })
+}
+
 // ─────────────────────── disconnect ───────────────────────
 
-const DISCONNECTABLE: ReadonlySet<string> = new Set(["github", "cloudflare", "anthropic", "pinterest", "gsc"])
+const DISCONNECTABLE: ReadonlySet<string> = new Set(["github", "cloudflare", "anthropic", "pinterest", "gsc", "stripe"])
 
 export async function disconnectHandler(c: Context<AppEnv>): Promise<Response> {
   const customer = c.get("customer") as Customer

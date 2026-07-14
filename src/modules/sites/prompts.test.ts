@@ -37,17 +37,16 @@ describe("runMinutes — the visible cost line", () => {
 })
 
 describe("genesisPrompt (K1)", () => {
-  const p = genesisPrompt("BrewCraft", "home espresso gear")
-  it("carries the name, niche, topical-map structure, and article count", () => {
+  const p = genesisPrompt("BrewCraft", "home espresso gear") // defaults to content kind
+  it("carries the name, niche, and topical-map structure", () => {
     expect(p).toContain("BrewCraft")
     expect(p).toContain("home espresso gear")
-    expect(p).toContain("10")
     expect(p).toMatch(/pillar/i)
     expect(p).toMatch(/CMS API/)
   })
   it("re-states the guardrails (protected files, zero JS)", () => {
     expect(p).toMatch(/protected files/i)
-    expect(p).toMatch(/client-side JavaScript/i)
+    expect(p).toMatch(/client JavaScript/i)
   })
 })
 

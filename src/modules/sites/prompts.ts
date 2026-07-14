@@ -32,22 +32,59 @@ export interface PromptJob {
   created_at: string
 }
 
-/** Genesis prompt (K1) — one prompt, whole site: design + 10 seed articles. */
-export function genesisPrompt(name: string, niche: string): string {
-  return [
-    `SITE GENESIS for "${name}" — a brand-new site about: ${niche}.`,
+/** Genesis prompt (K1) — one prompt, whole site. Kind-aware (amendment 2):
+ *  the shared core (design within the covenants, no protected-file edits, zero
+ *  client JS) is constant; the content brief branches by site kind. */
+export function genesisPrompt(name: string, niche: string, kind: string = "content"): string {
+  const header = [
+    `SITE GENESIS for "${name}" — a brand-new ${kindLabel(kind)} about: ${niche}.`,
     ``,
-    `Do ALL of the following:`,
-    `1. Design: adjust the site's colors and typography in src/layouts/Base.astro to fit the niche`,
-    `   (keep the system font stack, keep total CSS small, keep zero client JavaScript).`,
-    `2. Content: create 10 genuinely useful seed articles via the CMS API (see the rules above for`,
-    `   how to call it). Build a topical map for the niche first: 2 pillar guides and 8 supporting`,
-    `   articles that link the pillars. Each article: descriptive title, 800+ words of specific,`,
-    `   practical content (real steps, real numbers — never filler), a 1-2 sentence excerpt, and a`,
-    `   category. Publish them (published: true).`,
-    `3. Navigation: if the homepage would benefit from category links once articles exist, add them.`,
-    `Do NOT touch protected files. Do NOT add client-side JavaScript.`,
-  ].join("\n")
+    `Design: adjust colors and typography in src/layouts/Base.astro to fit the niche`,
+    `(keep the system font stack, keep total CSS small, keep ZERO client JavaScript).`,
+    `Do NOT touch protected files (.github/**, site.config.json, wrangler.toml, scripts/**).`,
+    ``,
+    `Content — do ALL of the following via the CMS API (see the rules above for how to call it),`,
+    `publishing everything (published: true), each item with a descriptive title, a 1–2 sentence`,
+    `excerpt, a category, and specific, practical copy with real detail (never filler):`,
+  ]
+  const brief =
+    kind === "ecommerce"
+      ? [
+          `1. 6–8 buying guides / how-to articles for the niche that will attract search traffic and`,
+          `   link naturally to the products you'll sell.`,
+          `2. 2 pillar guides that establish topical authority.`,
+          `NOTE: product listings + checkout are set up separately in the dashboard — for now focus on`,
+          `the content that drives shoppers in. Do not add a cart or checkout UI yourself.`,
+        ]
+      : kind === "local-business"
+        ? [
+            `1. A clear homepage message + 4–6 service pages describing exactly what you offer, for whom,`,
+            `   and the areas you serve (use the niche for specifics).`,
+            `2. 4 local-SEO articles (guides/FAQs) that a nearby customer would search for.`,
+            `Keep NAP-style clarity: make it obvious what the business does and how to get in touch`,
+            `(the contact page already exists).`,
+          ]
+        : kind === "portfolio"
+          ? [
+              `1. A homepage that leads with the value you provide, plus a services/offerings section.`,
+              `2. 4–6 case-study or project write-ups (problem → approach → result) relevant to the niche.`,
+              `3. 2 supporting articles that demonstrate expertise.`,
+            ]
+          : [
+              `1. A topical map first: 2 pillar guides and 8 supporting articles that link the pillars.`,
+              `2. Each article 800+ words of genuinely useful, specific content.`,
+              `3. Add category links to the homepage once articles exist, if it helps navigation.`,
+            ]
+  return [...header, ...brief].join("\n")
+}
+
+function kindLabel(kind: string): string {
+  switch (kind) {
+    case "ecommerce": return "online store"
+    case "local-business": return "local-business site"
+    case "portfolio": return "portfolio / services site"
+    default: return "content site"
+  }
 }
 
 /** Map a claude.yml run + follow-on deploy run to the streamed status. */

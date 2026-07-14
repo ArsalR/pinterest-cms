@@ -193,7 +193,34 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
        )`,
     ],
   },
+  {
+    version: 6,
+    name: "006_site_kind",
+    statements: [
+      // Amendment 2: per-site kind (content | ecommerce | local-business |
+      // portfolio). Runner applies each version exactly once (tracked in
+      // _migrations), so a plain ADD COLUMN is safe — no IF NOT EXISTS needed.
+      // Existing rows default to 'content' → behavior unchanged.
+      `ALTER TABLE customer_sites ADD COLUMN kind TEXT NOT NULL DEFAULT 'content'`,
+    ],
+  },
 ]
+
+// Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO
+// set); differ in layout + content model. Only ecommerce carries commerce.
+export const SITE_KINDS = ["content", "ecommerce", "local-business", "portfolio"] as const
+export type SiteKind = (typeof SITE_KINDS)[number]
+
+export function isSiteKind(v: string): v is SiteKind {
+  return (SITE_KINDS as readonly string[]).includes(v)
+}
+
+export const SITE_KIND_LABELS: Record<SiteKind, string> = {
+  content: "Blog / content site",
+  ecommerce: "Online store",
+  "local-business": "Local business",
+  portfolio: "Portfolio / services",
+}
 
 /** Apply all unapplied master migrations. Idempotent; safe to re-run. */
 export async function runMasterMigrations(db: Client): Promise<void> {
