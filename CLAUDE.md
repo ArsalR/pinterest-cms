@@ -72,6 +72,10 @@ Contract features external automation depends on (a companion system publishes t
 - Discovery lists are hand-maintained in TWO places: the `endpoints` array in `capabilities.ts` and the notFound `available` array in `routes/public/index.ts`. New endpoints must be appended to both.
 - Browser-visible new headers must be whitelisted in `corsMiddleware.ts` (both Allow-Headers and Expose-Headers).
 
+## Code structure (SaaS layer)
+
+The `saas_mode` layer follows a **deploy-blocking structure covenant** — see `STRUCTURE.md`. CMS core stays in `src/lib`, `src/middleware`, `src/routes/{admin,frontend,public,network}`, `src/views` (frozen contract, not moved). SaaS code lives in `src/modules/<name>/` (each owns service + routes + tests + a public `index.ts` barrel) plus `src/shared/` (cross-module utilities). `npm run lint:structure` enforces no-circular-deps (`madge`) + barrel-only cross-module imports; it runs in CI (pr-checks + deploy). When adding SaaS code, put it in the right module and import siblings via their barrel (`../vault`, not `../vault/vault`).
+
 ## Conventions
 
 - **Routing**: one file per admin page / API resource, exporting a `Hono` sub-app (`export const xAdminRoute = new Hono<AppEnv>()`), mounted in `worker.ts`.
