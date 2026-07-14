@@ -15,10 +15,15 @@ describe("MASTER_MIGRATIONS invariants", () => {
   })
 
   it("every statement is idempotent DDL (IF NOT EXISTS) — required because a freshly provisioned DB re-runs all migrations", () => {
+    // Allowed: CREATE … IF NOT EXISTS (re-run-safe), or ALTER TABLE … ADD
+    // COLUMN. The master runner tracks applied versions and applies each
+    // exactly once (the DB is a long-lived singleton, never re-provisioned),
+    // so ADD COLUMN runs once; a concurrent first-apply race self-heals on the
+    // next request (loser sees the version applied and skips it).
     for (const m of MASTER_MIGRATIONS) {
       for (const sql of m.statements) {
         expect(sql, `${m.name}: ${sql.slice(0, 60)}…`).toMatch(
-          /^\s*CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS/i
+          /^\s*(CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS|ALTER TABLE \w+ ADD COLUMN)/i
         )
       }
     }

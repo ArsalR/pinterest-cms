@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs"
 export interface SiteConfig {
   name: string
   niche: string
+  kind?: "content" | "ecommerce" | "local-business" | "portfolio"
   domain: string
   canonicalHost: "apex" | "www"
   cmsApiUrl: string

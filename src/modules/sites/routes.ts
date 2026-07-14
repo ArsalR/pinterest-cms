@@ -5,7 +5,7 @@
 import type { Context } from "hono"
 import type { AppEnv } from "../../lib/types"
 import { getMasterDb } from "../../lib/turso"
-import { ensureMasterSchema } from "../../shared/masterMigrate"
+import { ensureMasterSchema, isSiteKind } from "../../shared/masterMigrate"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { renderSaasLayout } from "../../shared/ui"
 import { planGate, type Customer } from "../customers"
@@ -69,7 +69,9 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
 
   const github = await getConnection(db, customer.id, "github")
   const cloudflare = await getConnection(db, customer.id, "cloudflare")
+  const stripe = await getConnection(db, customer.id, "stripe")
   const ready = github?.status === "active" && cloudflare?.status === "active"
+  const stripeConnected = stripe?.status === "active"
 
   let zoneOptions = ""
   if (ready) {
@@ -108,6 +110,14 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
         : `<form method="POST" action="/app/sites">
              <label for="zone">Domain</label>
              <select id="zone" name="zone" class="wide" required>${zoneOptions}</select>
+             <label for="kind">What kind of site?</label>
+             <select id="kind" name="kind" class="wide" required>
+               <option value="content">Blog / content site</option>
+               <option value="ecommerce">Online store</option>
+               <option value="local-business">Local business</option>
+               <option value="portfolio">Portfolio / services</option>
+             </select>
+             ${stripeConnected ? "" : `<p class="muted" style="font-size:12px;margin:6px 0 0">Online stores need Stripe — connect it under <a href="/app/connections" style="color:#93c5fd">Connections</a> (you can do it after creating the site).</p>`}
              <label>Canonical address</label>
              <div style="font-size:14px;display:flex;gap:18px">
                <label style="margin:0;font-weight:400"><input type="radio" name="canonical" value="apex" checked> yourdomain.com <span class="muted">(www redirects here)</span></label>
@@ -150,6 +160,8 @@ export async function createSitePostHandler(c: Context<AppEnv>): Promise<Respons
   const canonical = String(form.get("canonical") || "apex") === "www" ? "www" : "apex"
   const name = String(form.get("name") || "").trim()
   const niche = String(form.get("niche") || "").trim()
+  const kindRaw = String(form.get("kind") || "content")
+  const kind = isSiteKind(kindRaw) ? kindRaw : "content"
 
   if (!zoneId || !domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) return fail("Pick a domain from the list.")
   if (!name) return fail("Give the site a name.")
@@ -164,6 +176,7 @@ export async function createSitePostHandler(c: Context<AppEnv>): Promise<Respons
     name,
     niche,
     zoneId,
+    kind,
   })
   c.executionCtx.waitUntil(
     runProvisioning(db, c.env, siteId).catch((err) => console.error("provisioning crashed:", err))
@@ -355,7 +368,7 @@ export async function siteGenesisHandler(c: Context<AppEnv>): Promise<Response> 
     return siteRedirect(siteId, { error: "Your trial has ended — prompt-edits are paused until you subscribe." })
   }
   const db = await masterDb(c)
-  const result = await dispatchPrompt(db, c.env, site, genesisPrompt(site.name, site.niche ?? ""), "direct", "genesis")
+  const result = await dispatchPrompt(db, c.env, site, genesisPrompt(site.name, site.niche ?? "", site.kind ?? "content"), "direct", "genesis")
   return result.ok
     ? siteRedirect(siteId, { notice: "Genesis started — design plus 10 seed articles. This usually finishes within 15 minutes." })
     : siteRedirect(siteId, { error: result.problem ?? "Couldn't start genesis." })

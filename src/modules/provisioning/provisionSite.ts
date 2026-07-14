@@ -70,6 +70,7 @@ export interface CustomerSiteRow {
   zone_id: string | null
   name: string
   niche: string | null
+  kind: string
   status: string
 }
 
@@ -88,14 +89,14 @@ function randomHex(bytes: number): string {
 export async function createProvisioningPlan(
   db: Client,
   customer: Customer,
-  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string }
+  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string; kind: string }
 ): Promise<string> {
   const id = cuid()
   const slug = siteSlug(input.domain)
   await db.execute({
-    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, repo_full_name, worker_name)
-          VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, `site-${slug}`],
+    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, kind, repo_full_name, worker_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, input.kind, `site-${slug}`],
   })
   for (let i = 0; i < PROVISION_STEPS.length; i++) {
     await db.execute({
@@ -306,6 +307,7 @@ async function executeStep(
       const config = {
         name: site.name,
         niche: site.niche ?? "",
+        kind: site.kind ?? "content", // content | ecommerce | local-business | portfolio
         domain: site.domain,
         canonicalHost: site.canonical_host, // 'apex' | 'www'
         cmsApiUrl: `https://${site.cms_hostname}/api/public/v1`,
