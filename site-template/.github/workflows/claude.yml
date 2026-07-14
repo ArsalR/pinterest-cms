@@ -1,0 +1,147 @@
+# Claude edit runner — dispatched by the platform (workflow_dispatch only).
+#
+# COST GUARDRAILS (locked in review — do not loosen):
+#   - timeout-minutes: 15 (hard cap per run)
+#   - concurrency group per site, queued NOT parallel (cancel-in-progress: false)
+#   - the platform additionally caps dispatches per site per hour
+#
+# SAFETY GUARDRAILS:
+#   - protected paths: workflows, site.config.json, wrangler.toml — the guard
+#     step fails the run if Claude touched them (and the default GITHUB_TOKEN
+#     cannot push workflow changes anyway)
+#   - no force-push anywhere; rollbacks are forward revert commits
+#   - preview mode (default): changes go to a branch + PR + a noindexed
+#     preview worker — approve by merging; direct mode pushes to main and the
+#     covenant-gated deploy takes it live
+
+name: Claude edit
+run-name: "claude-edit ${{ inputs.job_id }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "What to build or change"
+        required: true
+        type: string
+      mode:
+        description: "preview (branch + PR + preview URL) or direct (push to main)"
+        required: true
+        default: "preview"
+        type: choice
+        options: [preview, direct]
+      job_id:
+        description: "Platform job id (surfaces in run-name for status tracking)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: site-claude
+  cancel-in-progress: false
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Guard — API key present
+        run: |
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            echo "::error::No Anthropic API key connected. Add one in the dashboard (Connections) and retry."
+            exit 1
+          fi
+
+      - name: Create work branch
+        run: |
+          git config user.name "sitenetwork-claude"
+          git config user.email "claude@users.noreply.github.com"
+          git checkout -b "claude/${{ inputs.job_id }}"
+
+      - name: Run Claude
+        uses: anthropics/claude-code-base-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are editing a static Astro site. Repository rules you MUST follow:
+            - NEVER modify: .github/**, site.config.json, wrangler.toml, scripts/** — these are platform-managed.
+            - The site must remain zero client-side JavaScript (CI enforces it; the only allowed external script is the Turnstile widget already on the contact page).
+            - Keep total CSS small; system font stack; no external fonts or scripts.
+            - Content lives in the CMS, not this repo — to create or edit ARTICLES, use the CMS API:
+              base URL is `cmsApiUrl` in site.config.json, auth header "Authorization: Bearer $CMS_API_KEY"
+              (the env var is available), POST /posts {title, content, excerpt, category, published: true}.
+            - Design/layout/pages changes happen in this repo (src/**, public/** except _headers).
+
+            Task from the site owner:
+            ${{ inputs.prompt }}
+          allowed_tools: "Edit,Write,Read,Glob,Grep,Bash"
+          timeout_minutes: "12"
+        env:
+          CMS_API_KEY: ${{ secrets.CMS_API_KEY }}
+
+      - name: Guard — protected paths untouched
+        run: |
+          CHANGED=$(git status --porcelain | awk '{print $2}')
+          BAD=$(echo "$CHANGED" | grep -E '^(\.github/|site\.config\.json|wrangler\.toml|scripts/)' || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::Protected files were modified and the change was rejected: $BAD"
+            exit 1
+          fi
+
+      - name: Guard — no secrets in the diff
+        # Key hygiene: fail the run if anything shaped like a credential was
+        # written into the working tree (would otherwise become public in the
+        # repo). Patterns: Anthropic keys, CMS keys, CF API tokens in env form.
+        run: |
+          LEAKS=$(git diff --no-color | grep -nE '(sk-ant-[A-Za-z0-9_-]{8,}|cms_live_[0-9a-f]{8,}|CLOUDFLARE_API_TOKEN\s*[:=]\s*["'"'"']?[A-Za-z0-9_-]{20,})' || true)
+          if [ -n "$LEAKS" ]; then
+            echo "::error::A credential-shaped string was found in the changes; the run was rejected. Nothing was committed."
+            exit 1
+          fi
+
+      - name: Commit
+        id: commit
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No repo changes (the task may have been content-only, via the CMS)."
+          else
+            git commit -m "claude: ${{ inputs.job_id }}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Direct mode — push to main (no force; covenant-gated deploy takes over)
+        if: inputs.mode == 'direct' && steps.commit.outputs.changed == 'true'
+        run: git push origin "HEAD:main"
+
+      - name: Preview mode — push branch + open PR
+        if: inputs.mode == 'preview' && steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push origin "claude/${{ inputs.job_id }}"
+          gh pr create --head "claude/${{ inputs.job_id }}" \
+            --title "Claude edit: ${{ inputs.job_id }}" \
+            --body "Automated edit. Review the diff, check the preview, and merge to go live." || true
+
+      - name: Preview mode — build + deploy noindexed preview worker
+        if: inputs.mode == 'preview' && steps.commit.outputs.changed == 'true'
+        env:
+          CMS_API_KEY: ${{ secrets.CMS_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          npm ci || npm install
+          npm run build
+          printf '\n/*\n  X-Robots-Tag: noindex\n' >> dist/_headers
+          NAME=$(grep '^name' wrangler.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          npx wrangler deploy --name "${NAME}-preview"
+          echo "Preview deployed as ${NAME}-preview" >> "$GITHUB_STEP_SUMMARY"

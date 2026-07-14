@@ -1,0 +1,28 @@
+# Preview lifecycle: the -preview worker is a single, reused slot per site
+# (each preview overwrites it — accumulation is bounded to one worker), and
+# this workflow deletes it whenever a PR closes — merged (approve) or not
+# (reject) — so nothing orphaned lingers on the customer's account.
+
+name: Preview cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Delete the preview worker (best-effort)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          NAME=$(grep '^name' wrangler.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          curl -s -X DELETE \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/${NAME}-preview" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" > /dev/null || true
+          echo "Preview worker ${NAME}-preview removed (if it existed)."

@@ -14,6 +14,7 @@ describe("PROVISION_STEPS", () => {
     expect(idx("first_deploy")).toBeLessThan(idx("verify_deploy"))
     expect(idx("verify_deploy")).toBeLessThan(idx("attach_domains"))
     expect(idx("attach_domains")).toBeLessThan(idx("disable_workers_dev")) // never disable before the domain works
+    expect(idx("turnstile")).toBeLessThan(idx("site_config")) // config embeds the sitekey
   })
 
   it("every step has a plain-language label (spec UX rule)", () => {

@@ -158,6 +158,43 @@ export async function disableWorkersDevSubdomain(
     : { ok: false, problem: r.errorMessage ?? "Couldn't disable the workers.dev URL." }
 }
 
+/** Create a Turnstile widget on the CUSTOMER's account (locked in review —
+ *  per-site keys on their infrastructure, not a shared platform key). */
+export async function createTurnstileWidget(
+  token: string,
+  accountId: string,
+  name: string,
+  domains: string[]
+): Promise<{ sitekey: string; secret: string } | { sitekey: null; secret: null; problem: string }> {
+  const r = await cfFetch<{ sitekey: string; secret: string }>(
+    token,
+    `/accounts/${accountId}/challenges/widgets`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name, domains, mode: "managed" }),
+    }
+  )
+  if (!r.ok || !r.result?.sitekey) {
+    return { sitekey: null, secret: null, problem: r.errorMessage ?? "Couldn't create the Turnstile widget." }
+  }
+  return { sitekey: r.result.sitekey, secret: r.result.secret }
+}
+
+/** Verify a Turnstile response token (contact-form relay). */
+export async function verifyTurnstileToken(secret: string, responseToken: string, ip?: string): Promise<boolean> {
+  try {
+    const resp = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret, response: responseToken, ...(ip ? { remoteip: ip } : {}) }),
+    })
+    const body = (await resp.json().catch(() => null)) as { success?: boolean } | null
+    return !!body?.success
+  } catch {
+    return false
+  }
+}
+
 /** Turn on free WAF managed rules + bot fight mode for the zone (covenant S3).
  *  Best-effort: some settings need higher plans; failures are reported, not fatal. */
 export async function enableZoneProtection(

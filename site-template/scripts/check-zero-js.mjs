@@ -7,15 +7,26 @@ import { join } from "node:path"
 const dist = new URL("../dist", import.meta.url).pathname
 const offenders = []
 
+// The ONLY allowed external script: the Turnstile widget, and only on the
+// contact page (spec K1 — "spam-protected via Turnstile, zero performance
+// cost"). Everything else anywhere = deploy blocked (P1/P7).
+const TURNSTILE = /src\s*=\s*["']https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js["']/i
+
 function walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
     if (statSync(p).isDirectory()) walk(p)
     else if (p.endsWith(".html")) {
       const html = readFileSync(p, "utf8")
+      const rel = p.replace(dist, "")
+      const isContact = /^\/contact\//.test(rel)
       const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0])
-      const bad = scripts.filter((tag) => !/type\s*=\s*["']application\/ld\+json["']/i.test(tag))
-      if (bad.length) offenders.push(`${p.replace(dist, "")}: ${bad.join(" ")}`)
+      const bad = scripts.filter(
+        (tag) =>
+          !/type\s*=\s*["']application\/ld\+json["']/i.test(tag) &&
+          !(isContact && TURNSTILE.test(tag))
+      )
+      if (bad.length) offenders.push(`${rel}: ${bad.join(" ")}`)
     }
   }
 }

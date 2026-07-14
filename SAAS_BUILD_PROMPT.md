@@ -134,3 +134,36 @@ Prompt-edits can deploy direct-to-live OR to an instant preview URL (Workers pre
 - Idempotent, resumable provisioning. No plaintext secrets anywhere.
 - Quality gate ON by default — this product must never be the reason a customer's network gets hit by a spam update.
 - Plain-language errors everywhere; the user is semi-technical, not DevOps.
+
+## AMENDMENT 2 — Site kinds + Ecommerce (K13)
+Template system is multi-kind. Every kind shares the same core (both covenants,
+seven trust pages, full SEO file set) and differs in layout/content model.
+Launch kinds: content/blog, ecommerce, local-business, portfolio/services.
+Genesis (K1) asks the kind first.
+Ecommerce, static-first — covenants stay deploy-blocking:
+- Products are a CMS content collection (price, images, variants, stock flag);
+  product + category pages statically generated with Product/Offer JSON-LD,
+  clean URLs, OG images.
+- Cart is the ONLY JavaScript island. Checkout = Stripe Checkout on the
+  CUSTOMER'S OWN Stripe account (BYO-Stripe; key vault-encrypted; optional
+  wizard step — distinct from Phase 9 platform billing). A small Workers
+  endpoint creates checkout sessions server-side (price math never client-side);
+  a webhook records orders back to the CMS (per-site orders table).
+- Launch scope: digital + simple physical goods. No inventory sync, tax engine,
+  or multi-currency — flagged post-launch.
+
+## AMENDMENT 3 — Code structure covenant (deploy-blocking, like P and S)
+Platform: strict modular organization adapted to THIS stack (Workers/Hono/
+Turso — no Docker/K8s/nginx/terraform). src/modules/<name>/ (auth, customers,
+vault, provisioning, sites, publishing, quality-gate, ecommerce, webhooks,
+billing, analytics), each owning routes + service + schema + tests;
+src/shared/ for cross-module utilities; cross-module imports only via a
+module's public index; no circular deps (lint rule in CI); STRUCTURE.md
+documents the rules. Migrate incrementally, tests green each step, existing
+API byte-identical.
+Generated sites: repos a professional developer would respect — src/content/,
+src/components/, src/layouts/, src/pages/, public/, clean naming, zero dead
+code, per-repo README. Every site ships the full SEO file set verified by a
+deploy-blocking CI check: sitemap, robots.txt, RSS, llms.txt, canonical tags,
+OG + Twitter meta, JSON-LD, favicon set + manifest, custom 404, redirects
+file. Missing any = deploy blocked.

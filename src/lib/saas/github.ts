@@ -242,3 +242,119 @@ export async function repositoryDispatch(
     body: JSON.stringify({ event_type: eventType, client_payload: payload }),
   })
 }
+
+// ─────────────── Phase 4: prompt runs, commits, rollback ───────────────
+
+export interface WorkflowRunInfo {
+  id: number
+  displayTitle: string
+  status: string            // queued | in_progress | completed
+  conclusion: string | null // success | failure | cancelled | …
+  headSha: string
+  htmlUrl: string
+  runStartedAt: string | null
+  updatedAt: string | null
+}
+
+export async function listWorkflowRuns(
+  token: string,
+  fullName: string,
+  workflowFile: string,
+  perPage = 10
+): Promise<WorkflowRunInfo[]> {
+  const r = await ghInst<{
+    workflow_runs: Array<{
+      id: number; display_title: string; status: string; conclusion: string | null
+      head_sha: string; html_url: string; run_started_at: string | null; updated_at: string | null
+    }>
+  }>(token, `/repos/${fullName}/actions/workflows/${workflowFile}/runs?per_page=${perPage}`)
+  return (r.body?.workflow_runs ?? []).map((run) => ({
+    id: run.id,
+    displayTitle: run.display_title,
+    status: run.status,
+    conclusion: run.conclusion,
+    headSha: run.head_sha,
+    htmlUrl: run.html_url,
+    runStartedAt: run.run_started_at,
+    updatedAt: run.updated_at,
+  }))
+}
+
+export interface CommitInfo {
+  sha: string
+  message: string
+  date: string | null
+  filesChanged: number
+  additions: number
+  deletions: number
+}
+
+export async function listCommits(token: string, fullName: string, perPage = 15): Promise<CommitInfo[]> {
+  const r = await ghInst<Array<{ sha: string; commit: { message: string; committer?: { date?: string } } }>>(
+    token,
+    `/repos/${fullName}/commits?per_page=${perPage}`
+  )
+  return (r.body ?? []).map((c) => ({
+    sha: c.sha,
+    message: c.commit.message.split("\n")[0],
+    date: c.commit.committer?.date ?? null,
+    filesChanged: 0,
+    additions: 0,
+    deletions: 0,
+  }))
+}
+
+/** One commit's diff summary (files + line counts) for the dashboard. */
+export async function commitSummary(token: string, fullName: string, sha: string): Promise<CommitInfo | null> {
+  const r = await ghInst<{
+    sha: string
+    commit: { message: string; committer?: { date?: string } }
+    files?: Array<{ additions: number; deletions: number }>
+    stats?: { additions: number; deletions: number }
+  }>(token, `/repos/${fullName}/commits/${sha}`, {}, [404, 422])
+  if (!r.body?.sha) return null
+  return {
+    sha: r.body.sha,
+    message: r.body.commit.message.split("\n")[0],
+    date: r.body.commit.committer?.date ?? null,
+    filesChanged: r.body.files?.length ?? 0,
+    additions: r.body.stats?.additions ?? 0,
+    deletions: r.body.stats?.deletions ?? 0,
+  }
+}
+
+/**
+ * One-click rollback (K12): restore the tree of `targetSha` as a NEW commit
+ * on top of the current head — a forward revert, never a force-push (the
+ * covenant-gated deploy then redeploys the restored state). History survives.
+ */
+export async function rollbackToCommit(
+  token: string,
+  fullName: string,
+  targetSha: string,
+  branch = "main"
+): Promise<string> {
+  const target = await ghInst<{ commit: { tree: { sha: string } } }>(
+    token,
+    `/repos/${fullName}/commits/${targetSha}`
+  )
+  const head = await ghInst<{ object: { sha: string } }>(
+    token,
+    `/repos/${fullName}/git/ref/heads/${branch}`
+  )
+  if (!target.body || !head.body) throw new Error("Couldn't read the repository state.")
+  const commit = await ghInst<{ sha: string }>(token, `/repos/${fullName}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify({
+      message: `rollback: restore site state from ${targetSha.slice(0, 7)}`,
+      tree: target.body.commit.tree.sha,
+      parents: [head.body.object.sha],
+    }),
+  })
+  if (!commit.body?.sha) throw new Error("Couldn't create the rollback commit.")
+  await ghInst(token, `/repos/${fullName}/git/refs/heads/${branch}`, {
+    method: "PATCH",
+    body: JSON.stringify({ sha: commit.body.sha, force: false }),
+  })
+  return commit.body.sha
+}

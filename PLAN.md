@@ -249,6 +249,33 @@ Also resolved earlier: Anthropic auth = customer API key as repo secret (subscri
 
 **rev 3 APPROVED including the K9 deviation (imports → CMS posts). Phase 1 is a go.**
 
+## Spec amendments 2 & 3 — recorded post-hoc (Phase 4 merge review)
+
+**Provenance note (honest record):** these two amendments were referenced at the Phase-4 merge review as if previously communicated, but they appear in no prior message, no PLAN revision, and no commit of `SAAS_BUILD_PROMPT.md` (single commit, 985e4b3 — verified). They are recorded here from the review's summary; **please push the full amendment text into SAAS_BUILD_PROMPT.md** so a line-by-line verification can confirm nothing below is under-specified.
+
+**Amendment 2 — site kinds + ecommerce (K13):** per-site `kind` (content | ecommerce | …) in the content model; a wizard **Stripe step** for ecommerce sites; **kind-aware genesis** (prompt + template behavior branch on kind). *Was slotted for Phase 3; shipped without it — Phase 3 predates this record.*
+
+**Amendment 3 — structure covenant:** modular platform layout with a written `STRUCTURE.md`; **circular-dependency lint** in platform CI; a **deploy-blocking SEO-file-set CI check on generated sites** (robots.txt, sitemap, llms.txt present in every build).
+
+**Full amendment text is now in SAAS_BUILD_PROMPT.md (appended verbatim at the Phase-4 merge review).**
+
+**Catch-up schedule (approved: docs + partial gate now, full code in Phase 4.5 before Phase 5):**
+- **Shipped in PR #25:** this record + a first SEO-file gate (6 files) + robots.txt generation + preview cleanup + guardrail tests.
+- **Phase 4.5 (`phase-4.5-structure-ecommerce`, BEFORE Phase 5) — line-by-line coverage of both amendments:**
+
+  *Amendment 3 first (structure pass, so Phase 5 lands in the new layout):*
+  1. `STRUCTURE.md`: module map + the rules (each module owns routes + service + schema + tests; `src/shared/` for cross-module utilities; cross-module imports ONLY via a module's public `index.ts`).
+  2. Target platform layout `src/modules/{auth,customers,vault,provisioning,sites,publishing,quality-gate,ecommerce,webhooks,billing,analytics}/` — **incremental migration, tests green each step, existing API byte-identical** (pre-SaaS CMS code migrates last or stays put; the frozen-contract surface is not reshuffled for cosmetics).
+  3. **Circular-dep lint in CI** (madge over src/, fails pr-checks on any cycle) + public-index import rule check.
+  4. **Full SEO-file gate on generated sites** — the shipped 6-file gate (index.html, robots.txt, sitemap-index.xml, llms.txt, _headers, _redirects) is extended to the amendment's complete list. **Gate-diff, honestly noted — missing today:** RSS feed (template doesn't generate one yet), canonical-tag verification (tags exist in Base.astro; gate doesn't check them), OG + Twitter meta (**template gap — Base.astro currently emits neither**), JSON-LD verification (emitted; unchecked), favicon set + manifest (**template gap — none shipped**), custom 404 page (**template gap — `not_found_handling` expects a 404.html no page generates**). Phase 4.5 adds the missing template features AND extends `check-seo-files.mjs` to verify all of: sitemap, robots, RSS, llms.txt, canonical, OG/Twitter, JSON-LD, favicons+manifest, 404, redirects. Missing any = deploy blocked.
+  5. Generated-repo professionalism: `src/content/`, `src/components/`, `src/layouts/`, `src/pages/`, `public/`, clean naming, zero dead code, per-repo README.
+
+  *Amendment 2 (site kinds + K13):*
+  6. **Launch kinds: content/blog, ecommerce, local-business, portfolio/services** — shared core (both covenants, seven trust pages, full SEO set), kind-specific layout/content model; `customer_sites.kind` master migration (default 'content', existing rows unaffected); **genesis asks the kind first** (wizard field feeds kind-aware genesis prompts).
+  7. **Ecommerce, static-first:** products as a CMS content collection (price, images, variants, stock flag — additive per-site schema, public API untouched); product + category pages statically generated with **Product/Offer JSON-LD, clean URLs, OG images**; **cart is the ONLY JavaScript island** (explicit, deliberate exception to the zero-JS gate, scoped like the Turnstile allowance); **Stripe Checkout on the customer's own Stripe account** (BYO-Stripe wizard step, key vault-encrypted — distinct from Phase-9 platform billing); a small Workers endpoint creates checkout sessions server-side (**price math never client-side**); a webhook records orders back to the CMS (**per-site orders table**).
+  8. **Launch scope: digital + simple physical goods only** — no inventory sync, no tax engine, no multi-currency (flagged post-launch).
+- **Phase 5 addendum:** the quality gate hooks the SaaS publish path — **genesis seed articles route through the gate like any other publish** (genesis switches to draft-then-gated-publish once the gate exists; launch-day sites are never exempt).
+
 ## Spec-gap list — what PLAN v1 was missing (now absorbed)
 
 Found by reconciling v1 against the spec content now available:
