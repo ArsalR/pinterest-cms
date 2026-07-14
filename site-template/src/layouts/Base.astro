@@ -6,11 +6,13 @@ import { loadConfig, canonicalHost } from "../lib/cms"
 interface Props {
   title: string
   description: string
-  path: string           // e.g. "/posts/my-post/"
-  schema?: object | null // page-specific JSON-LD
+  path: string             // e.g. "/posts/my-post/"
+  schema?: object | null   // page-specific JSON-LD
+  ogType?: string          // "website" | "article" | "product"
+  ogImage?: string | null  // absolute URL of the social image
 }
 
-const { title, description, path, schema = null } = Astro.props
+const { title, description, path, schema = null, ogType = "website", ogImage = null } = Astro.props
 const config = loadConfig()
 const host = canonicalHost(config)
 const canonical = `https://${host}${path}`
@@ -25,6 +27,26 @@ const year = new Date().getFullYear()
   <meta name="description" content={description} />
   <link rel="canonical" href={canonical} />
   <link rel="sitemap" href="/sitemap-index.xml" />
+  <link rel="alternate" type="application/rss+xml" title={config.name} href="/rss.xml" />
+
+  {/* Favicon + PWA manifest (SEO file set, amendment 3). SVG favicon covers
+      modern browsers; genesis adds branded .ico/apple-touch PNGs per niche. */}
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="theme-color" content="#0a6152" />
+
+  {/* Open Graph + Twitter (social + AI-answer surfaces). */}
+  <meta property="og:type" content={ogType} />
+  <meta property="og:site_name" content={config.name} />
+  <meta property="og:title" content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:url" content={canonical} />
+  {ogImage && <meta property="og:image" content={ogImage} />}
+  <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
+  <meta name="twitter:title" content={title} />
+  <meta name="twitter:description" content={description} />
+  {ogImage && <meta name="twitter:image" content={ogImage} />}
+
   {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
   <style>
     /* System font stack — no webfont requests (P4). Total CSS budget < 20KB (P5). */

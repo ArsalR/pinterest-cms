@@ -47,7 +47,7 @@ jobs:
       - name: "Gate: security headers (Security Covenant S2)"
         run: npm run check:headers
 
-      - name: "Gate: SEO file set (amendment 3 — robots, sitemap, llms.txt)"
+      - name: "Gate: SEO file set + tags (amendment 3 — sitemap, robots, RSS, llms.txt, manifest, favicon, 404, redirects, canonical, OG/Twitter, JSON-LD)"
         run: node scripts/check-seo-files.mjs
 
       - name: "Gate: Lighthouse budgets (Performance Covenant P2 — fail blocks deploy)"

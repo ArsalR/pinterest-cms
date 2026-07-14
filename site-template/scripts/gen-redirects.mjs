@@ -19,3 +19,23 @@ writeFileSync(
   `User-agent: *\nAllow: /\n\nSitemap: https://${to}/sitemap-index.xml\n`
 )
 console.log(`robots.txt: sitemap -> https://${to}/sitemap-index.xml`)
+
+// PWA manifest (SEO file set) — named + themed from config, SVG icon.
+writeFileSync(
+  new URL("../dist/site.webmanifest", import.meta.url),
+  JSON.stringify(
+    {
+      name: config.name,
+      short_name: config.name.slice(0, 12),
+      description: config.niche,
+      start_url: "/",
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: "#0a6152",
+      icons: [{ src: "/favicon.svg", sizes: "any", type: "image/svg+xml" }],
+    },
+    null,
+    2
+  ) + "\n"
+)
+console.log("site.webmanifest: generated")

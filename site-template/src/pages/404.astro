@@ -1,0 +1,11 @@
+---
+// Custom 404 (SEO file set + wrangler not_found_handling = "404-page").
+import Base from "../layouts/Base.astro"
+import { loadConfig } from "../lib/cms"
+const config = loadConfig()
+---
+<Base title={`Page not found — ${config.name}`} description="The page you were looking for doesn't exist." path="/404/">
+  <h1>Page not found</h1>
+  <p>Sorry — we couldn't find that page. It may have moved.</p>
+  <p><a href="/">← Back to the homepage</a></p>
+</Base>
