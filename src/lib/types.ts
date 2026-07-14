@@ -74,7 +74,21 @@ export interface HonoVariables {
   user?: { id: string; email: string; role: string }
   apiKeyId?: string
   // SaaS layer — set by requireCustomer() on SAAS_APP_HOSTNAME requests only.
-  customer?: import("./saas/customers").Customer
+  customer?: Customer
+}
+
+// SaaS customer account (control-plane). Defined here alongside the other
+// shared row types so the Hono context above can reference it without a
+// core→module import; the customers module re-exports this as its own type.
+export interface Customer {
+  id: string
+  email: string
+  name: string | null
+  plan: string
+  plan_status: string
+  trial_ends_at: string | null
+  email_verified: number
+  created_at: string
 }
 
 export type AppEnv = {
