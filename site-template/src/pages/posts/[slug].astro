@@ -33,6 +33,8 @@ const schema = {
   description={post.seoDescription ?? post.excerpt ?? config.niche}
   path={path}
   schema={schema}
+  ogType="article"
+  ogImage={post.coverImage}
 >
   <article>
     <h1>{post.title}</h1>
