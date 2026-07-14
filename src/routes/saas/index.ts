@@ -23,6 +23,12 @@ import {
   resetGetHandler, resetPostHandler,
 } from "./authPages"
 import { saasHomeHandler, resendVerificationHandler, saasStubHandler } from "./dashboard"
+import {
+  connectionsPageHandler,
+  githubStartHandler, githubCallbackHandler,
+  cloudflareConnectHandler, anthropicConnectHandler,
+  disconnectHandler,
+} from "./connections"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
 
@@ -67,10 +73,13 @@ saasAppRoutes.get(
   "/sites",
   prot(saasStubHandler("Sites", "sites", "Site provisioning arrives with the next platform update. Connect GitHub and Cloudflare first under Connections."))
 )
-saasAppRoutes.get(
-  "/connections",
-  prot(saasStubHandler("Connections", "connections", "The GitHub + Cloudflare connection wizard arrives with the next platform update."))
-)
+// Connections wizard (Phase 2).
+saasAppRoutes.get("/connections", prot(connectionsPageHandler))
+saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))
+saasAppRoutes.get("/connections/github/callback", prot(githubCallbackHandler))
+saasAppRoutes.post("/connections/cloudflare", prot(cloudflareConnectHandler))
+saasAppRoutes.post("/connections/anthropic", prot(anthropicConnectHandler))
+saasAppRoutes.post("/connections/:provider/delete", prot(disconnectHandler))
 saasAppRoutes.get(
   "/account",
   prot(saasStubHandler("Account", "account", "Account settings arrive with the next platform update."))

@@ -46,6 +46,11 @@ export interface CloudflareEnv {
   RESEND_API_KEY?: string      // secret — transactional email; unset = dev logging mode
   SAAS_PBKDF2_ITERATIONS?: string // work factor for customer hashes (default 100000);
                                   // raising it strengthens hashes lazily on next login
+  // Phase 2 — connections wizard.
+  VAULT_MASTER_KEY?: string       // secret — hex(>=32 bytes); per-tenant HKDF root for the credential vault
+  GITHUB_APP_ID?: string          // secret — platform GitHub App id (GITHUB_APP_SETUP.md)
+  GITHUB_APP_PRIVATE_KEY?: string // secret — App private key, PKCS#8 PEM
+  GITHUB_APP_SLUG?: string        // var — app slug for the install URL
 }
 
 export interface SiteConfig {
