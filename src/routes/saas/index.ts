@@ -29,6 +29,9 @@ import {
   cloudflareConnectHandler, anthropicConnectHandler,
   disconnectHandler,
 } from "./connections"
+import {
+  sitesPageHandler, createSitePostHandler, siteDetailHandler, siteRetryHandler,
+} from "./sites"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
 
@@ -69,10 +72,11 @@ saasAppRoutes.post("/reset", pub(resetPostHandler))
 
 // Signed-in pages.
 saasAppRoutes.post("/resend-verification", prot(resendVerificationHandler))
-saasAppRoutes.get(
-  "/sites",
-  prot(saasStubHandler("Sites", "sites", "Site provisioning arrives with the next platform update. Connect GitHub and Cloudflare first under Connections."))
-)
+// Sites + provisioning (Phase 3).
+saasAppRoutes.get("/sites", prot(sitesPageHandler))
+saasAppRoutes.post("/sites", prot(createSitePostHandler))
+saasAppRoutes.get("/sites/:id", prot(siteDetailHandler))
+saasAppRoutes.post("/sites/:id/retry", prot(siteRetryHandler))
 // Connections wizard (Phase 2).
 saasAppRoutes.get("/connections", prot(connectionsPageHandler))
 saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))

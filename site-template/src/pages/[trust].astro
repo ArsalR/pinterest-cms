@@ -1,0 +1,110 @@
+---
+// The K1 trust-page set — seven pages, generated site-specifically from
+// site.config.json (never lorem ipsum), dated, and footer-linked. These are
+// E-E-A-T signals and AdSense/affiliate-program requirements.
+import Base from "../layouts/Base.astro"
+import { loadConfig, canonicalHost } from "../lib/cms"
+
+export function getStaticPaths() {
+  return ["about", "contact", "privacy", "terms", "disclosure", "cookies", "editorial"].map((trust) => ({
+    params: { trust },
+  }))
+}
+
+const { trust } = Astro.params
+const config = loadConfig()
+const host = canonicalHost(config)
+const dated = `Last updated: ${config.generatedAt}`
+
+const pages: Record<string, { title: string; body: string }> = {
+  about: {
+    title: `About ${config.name}`,
+    body: `
+      <p>${config.name} is dedicated to ${config.niche}. We publish practical, carefully researched
+      articles so you can make better decisions without wading through fluff.</p>
+      <p>The site is run by ${config.ownerName}. Every article is reviewed against our
+      <a href="/editorial/">editorial policy</a> before it is published.</p>
+      <p>Questions or suggestions? <a href="/contact/">Get in touch</a> — we read everything.</p>`,
+  },
+  contact: {
+    title: `Contact ${config.name}`,
+    body: `
+      <p>We'd love to hear from you — corrections, questions, and topic suggestions are all welcome.</p>
+      <p>Email us at <a href="mailto:${config.ownerEmail}">${config.ownerEmail}</a> and we'll get back
+      to you as soon as we can.</p>
+      <p>For matters covered by our policies, see the <a href="/privacy/">privacy policy</a> and
+      <a href="/terms/">terms of service</a>.</p>`,
+  },
+  privacy: {
+    title: `Privacy Policy — ${config.name}`,
+    body: `
+      <p>This policy describes how ${config.name} (https://${host}) handles information when you visit.</p>
+      <h2>What we collect</h2>
+      <p>This site is fully static and sets no first-party cookies for browsing. We use
+      privacy-respecting, aggregate analytics (Cloudflare Web Analytics) that does not use cookies,
+      does not fingerprint you, and does not track you across sites.</p>
+      <h2>What we don't do</h2>
+      <p>We do not sell, rent, or share personal information. We do not run third-party advertising
+      trackers. If you email us at ${config.ownerEmail}, we use your address only to reply.</p>
+      <h2>Third-party links</h2>
+      <p>Articles may link to other websites (including affiliate links — see our
+      <a href="/disclosure/">disclosure</a>). Their privacy practices are their own.</p>
+      <h2>Contact</h2>
+      <p>Privacy questions: <a href="mailto:${config.ownerEmail}">${config.ownerEmail}</a>.</p>`,
+  },
+  terms: {
+    title: `Terms of Service — ${config.name}`,
+    body: `
+      <p>By using https://${host} you agree to these terms.</p>
+      <h2>Content</h2>
+      <p>All content is provided for general information about ${config.niche}. It is not professional
+      advice; always use your own judgment and consult a professional where decisions matter.</p>
+      <h2>Intellectual property</h2>
+      <p>Content on this site is © ${config.name} unless otherwise noted. You may quote brief excerpts
+      with attribution and a link; wholesale republication is not permitted.</p>
+      <h2>Liability</h2>
+      <p>The site is provided "as is" without warranties. To the maximum extent permitted by law,
+      ${config.name} is not liable for losses arising from use of the site.</p>
+      <h2>Contact</h2>
+      <p>Questions about these terms: <a href="mailto:${config.ownerEmail}">${config.ownerEmail}</a>.</p>`,
+  },
+  disclosure: {
+    title: `Affiliate & Advertising Disclosure — ${config.name}`,
+    body: `
+      <p>Some links on ${config.name} are affiliate links: if you buy through them, we may earn a
+      commission at no extra cost to you. This is how the site funds its research and writing
+      about ${config.niche}.</p>
+      <p>Commissions never decide our recommendations. We only recommend products and services we
+      believe are genuinely useful, per our <a href="/editorial/">editorial policy</a>, and we
+      disclose material connections in line with FTC guidance.</p>`,
+  },
+  cookies: {
+    title: `Cookie Policy — ${config.name}`,
+    body: `
+      <p>${config.name} sets <strong>no cookies</strong> for normal browsing. The site is static and
+      our analytics (Cloudflare Web Analytics) is cookie-free by design.</p>
+      <p>If embedded third-party content ever sets its own cookies, that will be governed by the
+      third party's policy and disclosed on the page where it appears.</p>`,
+  },
+  editorial: {
+    title: `Editorial Policy — ${config.name}`,
+    body: `
+      <p>Every article on ${config.name} follows the same rules:</p>
+      <ul>
+        <li><strong>Accuracy first.</strong> Claims about ${config.niche} are checked against primary
+        sources; when facts change, articles are updated and the update date is shown.</li>
+        <li><strong>Independence.</strong> Affiliate relationships (see the
+        <a href="/disclosure/">disclosure</a>) never determine conclusions.</li>
+        <li><strong>Corrections.</strong> Found an error? Email
+        <a href="mailto:${config.ownerEmail}">${config.ownerEmail}</a> and we'll fix it promptly.</li>
+      </ul>`,
+  },
+}
+
+const page = pages[trust!]
+---
+<Base title={page.title} description={`${page.title}.`} path={`/${trust}/`}>
+  <h1>{page.title}</h1>
+  <p style="color:#777;font-size:0.85rem">{dated}</p>
+  <div set:html={page.body} />
+</Base>

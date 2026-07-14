@@ -1,0 +1,10 @@
+{
+  "name": "Template Site",
+  "niche": "placeholder — overwritten by provisioning",
+  "domain": "example.com",
+  "canonicalHost": "apex",
+  "cmsApiUrl": "https://example.cms.arsal.app/api/public/v1",
+  "ownerName": "Site Owner",
+  "ownerEmail": "owner@example.com",
+  "generatedAt": "2026-01-01"
+}

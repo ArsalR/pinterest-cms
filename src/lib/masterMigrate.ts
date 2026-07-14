@@ -125,6 +125,58 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
          ON connections(customer_id, provider)`,
     ],
   },
+  {
+    version: 4,
+    name: "004_provisioning",
+    statements: [
+      // SaaS-managed customer sites (Phase 3). Links a customer to their repo,
+      // their Workers deployment, their domain, and the CMS backing workspace
+      // (cms_site_id = master registry row id — linkage lives HERE so
+      // resolveSite's SELECT and its cached shape stay untouched).
+      // canonical_host: 'apex' | 'www' (wizard choice).
+      // status: 'provisioning' | 'active' | 'failed' | 'detached'.
+      `CREATE TABLE IF NOT EXISTS customer_sites (
+         id              TEXT PRIMARY KEY,
+         customer_id     TEXT NOT NULL,
+         cms_site_id     TEXT,
+         cms_hostname    TEXT,
+         repo_full_name  TEXT,
+         worker_name     TEXT,
+         domain          TEXT NOT NULL,
+         canonical_host  TEXT NOT NULL DEFAULT 'apex',
+         zone_id         TEXT,
+         name            TEXT NOT NULL,
+         niche           TEXT,
+         status          TEXT NOT NULL DEFAULT 'provisioning',
+         created_at      TEXT DEFAULT (datetime('now')),
+         updated_at      TEXT DEFAULT (datetime('now')),
+         FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+       )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_sites_domain ON customer_sites(domain)`,
+      `CREATE INDEX IF NOT EXISTS idx_customer_sites_customer ON customer_sites(customer_id)`,
+
+      // Idempotent + resumable provisioning (spec non-negotiable): one row
+      // per (run, step) with per-step status: 'pending' | 'running' | 'done'
+      // | 'failed' | 'skipped'. Retry re-executes from the first non-done step.
+      `CREATE TABLE IF NOT EXISTS provisioning_runs (
+         id               TEXT PRIMARY KEY,
+         customer_site_id TEXT NOT NULL,
+         step             TEXT NOT NULL,
+         ord              INTEGER NOT NULL,
+         status           TEXT NOT NULL DEFAULT 'pending',
+         error            TEXT,
+         detail           TEXT,
+         started_at       TEXT,
+         finished_at      TEXT,
+         created_at       TEXT DEFAULT (datetime('now')),
+         FOREIGN KEY (customer_site_id) REFERENCES customer_sites(id) ON DELETE CASCADE
+       )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_provisioning_runs_site_step
+         ON provisioning_runs(customer_site_id, step)`,
+      `CREATE INDEX IF NOT EXISTS idx_provisioning_runs_site
+         ON provisioning_runs(customer_site_id, ord)`,
+    ],
+  },
 ]
 
 /** Apply all unapplied master migrations. Idempotent; safe to re-run. */

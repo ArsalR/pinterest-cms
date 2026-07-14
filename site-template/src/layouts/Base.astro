@@ -1,0 +1,68 @@
+---
+// Base layout — zero client JS (P1), system font stack (P4), critical CSS
+// inlined by Astro (P5), semantic HTML + JSON-LD (K8/AEO).
+import { loadConfig, canonicalHost } from "../lib/cms"
+
+interface Props {
+  title: string
+  description: string
+  path: string           // e.g. "/posts/my-post/"
+  schema?: object | null // page-specific JSON-LD
+}
+
+const { title, description, path, schema = null } = Astro.props
+const config = loadConfig()
+const host = canonicalHost(config)
+const canonical = `https://${host}${path}`
+const year = new Date().getFullYear()
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <link rel="canonical" href={canonical} />
+  <link rel="sitemap" href="/sitemap-index.xml" />
+  {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
+  <style>
+    /* System font stack — no webfont requests (P4). Total CSS budget < 20KB (P5). */
+    :root { --fg:#1a1a1a; --muted:#555; --bg:#ffffff; --accent:#0a6152; --maxw:44rem; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+           color:var(--fg); background:var(--bg); line-height:1.65; }
+    header, main, footer { max-width:var(--maxw); margin:0 auto; padding:0 1.25rem; }
+    header { padding-top:1.5rem; padding-bottom:1rem; }
+    header a.brand { font-weight:800; font-size:1.15rem; color:var(--fg); text-decoration:none; letter-spacing:-0.02em; }
+    main { padding-bottom:3rem; }
+    a { color:var(--accent); }
+    img { max-width:100%; height:auto; }
+    footer { border-top:1px solid #e5e5e5; padding-top:1.25rem; padding-bottom:2.5rem;
+             font-size:0.85rem; color:var(--muted); }
+    footer nav { display:flex; flex-wrap:wrap; gap:0.9rem; margin-bottom:0.75rem; }
+    footer nav a { color:var(--muted); text-decoration:none; }
+    h1 { font-size:1.9rem; letter-spacing:-0.02em; line-height:1.25; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">{config.name}</a>
+  </header>
+  <main>
+    <slot />
+  </main>
+  <footer>
+    <nav>
+      <a href="/about/">About</a>
+      <a href="/contact/">Contact</a>
+      <a href="/privacy/">Privacy Policy</a>
+      <a href="/terms/">Terms of Service</a>
+      <a href="/disclosure/">Affiliate Disclosure</a>
+      <a href="/cookies/">Cookie Policy</a>
+      <a href="/editorial/">Editorial Policy</a>
+    </nav>
+    <p>© {year} {config.name}. All rights reserved.</p>
+  </footer>
+</body>
+</html>

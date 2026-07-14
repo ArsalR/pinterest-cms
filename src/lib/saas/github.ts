@@ -128,3 +128,117 @@ export async function installationToken(env: CloudflareEnv, installationId: numb
   })
   return data.token
 }
+
+// ─────────────── Phase 3: repo provisioning (installation-token calls) ───────────────
+
+import { sealToPublicKey } from "./sealedBox"
+
+async function ghInst<T>(
+  token: string,
+  path: string,
+  init: RequestInit = {},
+  okStatuses: number[] = []
+): Promise<{ status: number; body: T | null }> {
+  const resp = await fetch(`${GITHUB_API}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": UA,
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!resp.ok && !okStatuses.includes(resp.status)) {
+    throw new Error(`GitHub API ${path} failed (${resp.status})`)
+  }
+  const body = (await resp.json().catch(() => null)) as T | null
+  return { status: resp.status, body }
+}
+
+/** True if the repo already exists (idempotent-provisioning probe). */
+export async function repoExists(token: string, fullName: string): Promise<boolean> {
+  const r = await ghInst(token, `/repos/${fullName}`, {}, [404])
+  return r.status !== 404
+}
+
+/** Create a repo in the customer's account from the platform template. */
+export async function createRepoFromTemplate(
+  token: string,
+  templateFullName: string,
+  owner: string,
+  name: string,
+  description: string
+): Promise<void> {
+  await ghInst(token, `/repos/${templateFullName}/generate`, {
+    method: "POST",
+    body: JSON.stringify({ owner, name, description, private: false, include_all_branches: false }),
+  })
+}
+
+/** Set a repo Actions secret (sealed to the repo's public key, as GitHub requires). */
+export async function setRepoSecret(
+  token: string,
+  fullName: string,
+  secretName: string,
+  value: string
+): Promise<void> {
+  const keyResp = await ghInst<{ key: string; key_id: string }>(
+    token,
+    `/repos/${fullName}/actions/secrets/public-key`
+  )
+  if (!keyResp.body) throw new Error(`GitHub API: no public key for ${fullName}`)
+  await ghInst(token, `/repos/${fullName}/actions/secrets/${secretName}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      encrypted_value: sealToPublicKey(keyResp.body.key, value),
+      key_id: keyResp.body.key_id,
+    }),
+  })
+}
+
+/** Create or update a single file via the contents API (idempotent by SHA). */
+export async function putRepoFile(
+  token: string,
+  fullName: string,
+  path: string,
+  content: string,
+  message: string
+): Promise<void> {
+  const existing = await ghInst<{ sha?: string }>(token, `/repos/${fullName}/contents/${path}`, {}, [404])
+  const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(content)))
+  await ghInst(token, `/repos/${fullName}/contents/${path}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      message,
+      content: b64,
+      ...(existing.status !== 404 && existing.body?.sha ? { sha: existing.body.sha } : {}),
+    }),
+  })
+}
+
+/** Fire a workflow_dispatch (deploys) or repository_dispatch (content rebuilds). */
+export async function dispatchWorkflow(
+  token: string,
+  fullName: string,
+  workflowFile: string,
+  ref = "main",
+  inputs: Record<string, string> = {}
+): Promise<void> {
+  await ghInst(token, `/repos/${fullName}/actions/workflows/${workflowFile}/dispatches`, {
+    method: "POST",
+    body: JSON.stringify({ ref, inputs }),
+  })
+}
+
+export async function repositoryDispatch(
+  token: string,
+  fullName: string,
+  eventType: string,
+  payload: Record<string, unknown> = {}
+): Promise<void> {
+  await ghInst(token, `/repos/${fullName}/dispatches`, {
+    method: "POST",
+    body: JSON.stringify({ event_type: eventType, client_payload: payload }),
+  })
+}
