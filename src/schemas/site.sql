@@ -191,7 +191,47 @@ CREATE TABLE IF NOT EXISTS redirects (
   created_at  TEXT DEFAULT (datetime('now'))
 );
 
+-- ─────────────── ECOMMERCE (amendment 2 — kind='ecommerce' sites) ───────────────
+-- Additive; inert for content sites. Products are a CMS content collection;
+-- orders are recorded by the platform Stripe webhook (4.5e). Runtime truth is
+-- in provision.ts SITE_SCHEMA_STATEMENTS + migrate.ts (migration 005).
+CREATE TABLE IF NOT EXISTS products (
+  id              TEXT PRIMARY KEY,
+  slug            TEXT UNIQUE NOT NULL,
+  title           TEXT NOT NULL,
+  description     TEXT,
+  price_cents     INTEGER NOT NULL DEFAULT 0,
+  currency        TEXT NOT NULL DEFAULT 'usd',
+  images          TEXT NOT NULL DEFAULT '[]',
+  sku             TEXT,
+  stock_status    TEXT NOT NULL DEFAULT 'in_stock',
+  digital         INTEGER NOT NULL DEFAULT 0,
+  published       INTEGER NOT NULL DEFAULT 0,
+  category_id     TEXT,
+  seo_title       TEXT,
+  seo_description TEXT,
+  structured_data TEXT,
+  source          TEXT DEFAULT 'manual',
+  created_at      TEXT DEFAULT (datetime('now')),
+  updated_at      TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id                 TEXT PRIMARY KEY,
+  stripe_session_id  TEXT UNIQUE,          -- order idempotency
+  email              TEXT,
+  amount_total_cents INTEGER NOT NULL DEFAULT 0,
+  currency           TEXT NOT NULL DEFAULT 'usd',
+  items              TEXT NOT NULL DEFAULT '[]',
+  status             TEXT NOT NULL DEFAULT 'paid',
+  created_at         TEXT DEFAULT (datetime('now'))
+);
+
 -- ─────────────── INDEXES ───────────────
+CREATE INDEX IF NOT EXISTS idx_products_slug      ON products(slug);
+CREATE INDEX IF NOT EXISTS idx_products_published ON products(published);
+CREATE INDEX IF NOT EXISTS idx_orders_created     ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_posts_slug       ON posts(slug);
 CREATE INDEX IF NOT EXISTS idx_posts_published  ON posts(published, published_at);
 CREATE INDEX IF NOT EXISTS idx_posts_category   ON posts(category_id);

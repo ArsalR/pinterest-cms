@@ -8,6 +8,7 @@ import { idempotencyMiddleware } from "../../lib/idempotency"
 import { rateLimitMiddleware } from "../../lib/rateLimit"
 import { uploadRoutes } from "./v1/upload"
 import { postRoutes } from "./v1/posts"
+import { productRoutes } from "./v1/products"
 import { categoryRoutes } from "./v1/categories"
 import { statusRoutes } from "./v1/status"
 import { webhookRoutes } from "./v1/webhooks"
@@ -25,9 +26,10 @@ publicApiRoutes.route("/v1/capabilities", capabilitiesRoutes)
 publicApiRoutes.route("/v1/status", statusRoutes)
 publicApiRoutes.route("/v1/upload", uploadRoutes)
 publicApiRoutes.route("/v1/posts", postRoutes)
+publicApiRoutes.route("/v1/products", productRoutes)
 publicApiRoutes.route("/v1/categories", categoryRoutes)
 publicApiRoutes.route("/v1/webhooks", webhookRoutes)
 
 publicApiRoutes.notFound((c) =>
-  c.json({ error: "Not found", available: ["/v1/status", "/v1/posts", "/v1/upload", "/v1/categories", "/v1/webhooks"] }, 404)
+  c.json({ error: "Not found", available: ["/v1/status", "/v1/posts", "/v1/products", "/v1/upload", "/v1/categories", "/v1/webhooks"] }, 404)
 )
