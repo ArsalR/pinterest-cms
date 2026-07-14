@@ -23,7 +23,7 @@ import {
 import { githubAppConfigured, githubInstallUrl, getInstallation } from "./github"
 import { CF_TOKEN_TEMPLATE, verifyCfToken, listCfZones, type CfZone } from "./cloudflare"
 import { verifyAnthropicKey } from "./anthropic"
-import { verifyStripeKey } from "./stripe"
+import { verifyStripeKey, createWebhookEndpoint } from "./stripe"
 import { credentialPreview } from "../vault"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -422,7 +422,18 @@ export async function stripeConnectHandler(c: Context<AppEnv>): Promise<Response
     return back({ error: check.problem ?? "That key didn't validate." })
   }
 
-  await saveConnection(db, c.env, customer.id, "stripe", key, {
+  // Register a webhook on the customer's Stripe account so paid orders get
+  // recorded (checkout.session.completed → /api/saas/stripe-webhook/:customerId).
+  // Store the key + webhook signing secret together as the encrypted payload.
+  const hookUrl = `https://${c.env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/stripe-webhook/${customer.id}`
+  const wh = await createWebhookEndpoint(key, hookUrl)
+  if (!wh.endpoint) {
+    await audit(db, customer.id, "connection.verify_failed", "stripe")
+    return back({ error: wh.error ? `Stripe connected but the order webhook couldn't be set up (${wh.error}). Please retry.` : "Couldn't finish the Stripe setup — please retry." })
+  }
+
+  const payload = JSON.stringify({ secretKey: key, webhookSecret: wh.endpoint.secret, webhookId: wh.endpoint.id })
+  await saveConnection(db, c.env, customer.id, "stripe", payload, {
     accountName: check.accountName,
     livemode: check.livemode,
     preview: credentialPreview(key),

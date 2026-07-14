@@ -320,6 +320,9 @@ async function executeStep(
               formsEndpoint: `https://${env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/forms/${siteId}`,
             }
           : {}),
+        ...(site.kind === "ecommerce"
+          ? { checkoutEndpoint: `https://${env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/checkout/${siteId}` }
+          : {}),
       }
       await putRepoFile(token, repoFullName, "site.config.json", JSON.stringify(config, null, 2) + "\n", "chore: site configuration")
       await putRepoFile(

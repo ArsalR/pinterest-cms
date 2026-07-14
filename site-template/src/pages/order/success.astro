@@ -1,0 +1,12 @@
+---
+import Base from "../../layouts/Base.astro"
+import { loadConfig } from "../../lib/cms"
+const config = loadConfig()
+---
+<Base title={`Thank you — ${config.name}`} description="Your order was received." path="/order/success/">
+  <h1>Thank you for your order!</h1>
+  <p>Your payment was successful and a receipt is on its way to your email.</p>
+  <p><a href="/shop/">← Back to the shop</a></p>
+  {/* Clear the cart after a successful checkout. */}
+  <script src="/order-complete.js" defer></script>
+</Base>

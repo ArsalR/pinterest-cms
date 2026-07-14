@@ -16,6 +16,25 @@ export interface SiteConfig {
   /** Contact-form relay (set at provisioning; absent = mailto fallback). */
   turnstileSitekey?: string
   formsEndpoint?: string
+  /** Ecommerce checkout relay (set at provisioning for kind='ecommerce'). */
+  checkoutEndpoint?: string
+}
+
+export interface CmsProduct {
+  id: string
+  slug: string
+  title: string
+  description: string | null
+  priceCents: number
+  currency: string
+  images: string[]
+  sku: string | null
+  stockStatus: string
+  digital: boolean
+  published: boolean
+  categorySlug: string | null
+  seoTitle: string | null
+  seoDescription: string | null
 }
 
 export interface CmsPost {
@@ -79,4 +98,32 @@ export async function fetchAllPosts(config: SiteConfig): Promise<CmsPost[]> {
     if (out.length >= data.total || data.posts.length < limit) break
   }
   return out
+}
+
+/** Fetch all published products (ecommerce sites). Empty for non-store sites. */
+export async function fetchAllProducts(config: SiteConfig): Promise<CmsProduct[]> {
+  if (config.kind !== "ecommerce") return []
+  const key = process.env.CMS_API_KEY
+  if (!key) throw new Error("CMS_API_KEY is not set (repo Actions secret)")
+  const out: CmsProduct[] = []
+  const limit = 100
+  for (let offset = 0; ; offset += limit) {
+    const resp = await fetch(`${config.cmsApiUrl}/products?limit=${limit}&offset=${offset}&published=true`, {
+      headers: { Authorization: `Bearer ${key}` },
+    })
+    if (!resp.ok) throw new Error(`CMS API /products returned ${resp.status}`)
+    const data = (await resp.json()) as { products: CmsProduct[]; total: number }
+    for (const p of data.products) out.push(p)
+    if (out.length >= data.total || data.products.length < limit) break
+  }
+  return out
+}
+
+/** Money formatter for display (cents → localized currency string). */
+export function formatPrice(cents: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100)
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`
+  }
 }
