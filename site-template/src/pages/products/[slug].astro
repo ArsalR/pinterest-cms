@@ -1,0 +1,68 @@
+---
+import Base from "../../layouts/Base.astro"
+import { loadConfig, fetchAllProducts, canonicalHost, formatPrice, type CmsProduct } from "../../lib/cms"
+
+export async function getStaticPaths() {
+  const config = loadConfig()
+  const products = await fetchAllProducts(config) // [] unless kind === 'ecommerce'
+  return products.map((product) => ({ params: { slug: product.slug }, props: { product } }))
+}
+
+interface Props { product: CmsProduct }
+const { product } = Astro.props
+const config = loadConfig()
+const host = canonicalHost(config)
+const path = `/products/${product.slug}/`
+const price = formatPrice(product.priceCents, product.currency)
+const inStock = product.stockStatus === "in_stock"
+
+// Product + Offer JSON-LD (amendment 2 — indexable, price-in-results).
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "Product",
+  name: product.title,
+  description: product.seoDescription ?? product.description ?? "",
+  ...(product.images.length ? { image: product.images } : {}),
+  ...(product.sku ? { sku: product.sku } : {}),
+  offers: {
+    "@type": "Offer",
+    price: (product.priceCents / 100).toFixed(2),
+    priceCurrency: product.currency.toUpperCase(),
+    availability: inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+    url: `https://${host}${path}`,
+  },
+}
+---
+<Base
+  title={product.seoTitle ?? `${product.title} — ${config.name}`}
+  description={product.seoDescription ?? product.description ?? config.niche}
+  path={path}
+  schema={schema}
+  ogType="product"
+  ogImage={product.images[0] ?? null}
+>
+  <article>
+    <p style="margin:0 0 1rem"><a href="/shop/">← Shop</a></p>
+    {product.images[0] && (
+      <img src={product.images[0]} alt={product.title} width="800" height="800"
+           style="border-radius:8px;aspect-ratio:1/1;object-fit:cover" fetchpriority="high" />
+    )}
+    <h1>{product.title}</h1>
+    <p style="font-size:1.4rem;font-weight:700">{price}</p>
+    {product.description && <div set:html={product.description} />}
+    {inStock ? (
+      <button
+        data-add-to-cart
+        data-id={product.id}
+        data-title={product.title}
+        data-price={String(product.priceCents)}
+        data-currency={product.currency}
+        style="background:#0a6152;color:#fff;border:none;border-radius:8px;padding:.75rem 1.5rem;font-size:1rem;cursor:pointer;margin-top:1rem"
+      >Add to cart</button>
+    ) : (
+      <p style="color:#a33;font-weight:600;margin-top:1rem">Sold out</p>
+    )}
+    <p style="margin-top:1rem"><a href="/cart/" data-cart-count-link>View cart (<span data-cart-count>0</span>)</a></p>
+  </article>
+  <script src="/cart.js" defer></script>
+</Base>

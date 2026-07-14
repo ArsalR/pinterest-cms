@@ -40,6 +40,7 @@ import { frontendRoutes } from "./routes/frontend"
 
 import { saasAppRoutes, saasRootHandler, saasApiRoutes } from "./modules/app"
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
+import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 
 const app = new Hono<AppEnv>()
 
@@ -72,6 +73,8 @@ app.get("/app/", saasRootHandler)
 app.route("/app", saasAppRoutes)
 app.route("/api/saas/hooks", saasHooksRoutes)
 app.route("/api/saas/forms", saasFormsRoutes)
+app.route("/api/saas/checkout", saasCheckoutRoutes)
+app.route("/api/saas/stripe-webhook", saasStripeWebhookRoutes)
 app.route("/api/saas", saasApiRoutes)
 
 // ───────────────────────── Admin ─────────────────────────────────

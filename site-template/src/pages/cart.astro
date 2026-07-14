@@ -1,0 +1,23 @@
+---
+import Base from "../layouts/Base.astro"
+import { loadConfig } from "../lib/cms"
+const config = loadConfig()
+const checkout = config.checkoutEndpoint ?? ""
+---
+<Base title={`Cart — ${config.name}`} description="Your shopping cart." path="/cart/">
+  <h1>Your cart</h1>
+  <div data-cart-view><p>Loading…</p></div>
+  {checkout ? (
+    <form method="POST" action={checkout} data-checkout-form style="margin-top:1.5rem">
+      <input type="hidden" name="items" data-cart-items-field />
+      <button type="submit" style="background:#0a6152;color:#fff;border:none;border-radius:8px;padding:.75rem 1.75rem;font-size:1rem;cursor:pointer">
+        Checkout securely →
+      </button>
+      <p style="color:#777;font-size:.85rem;margin-top:.5rem">Payments are processed securely by Stripe.</p>
+    </form>
+  ) : (
+    <p style="color:#a33;margin-top:1rem">Checkout isn't set up yet.</p>
+  )}
+  <p style="margin-top:1rem"><a href="/shop/">← Continue shopping</a></p>
+  <script src="/cart.js" defer></script>
+</Base>

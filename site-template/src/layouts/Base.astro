@@ -68,8 +68,14 @@ const year = new Date().getFullYear()
   </style>
 </head>
 <body>
-  <header>
+  <header style="display:flex;justify-content:space-between;align-items:center">
     <a class="brand" href="/">{config.name}</a>
+    {config.kind === "ecommerce" && (
+      <nav style="font-size:0.95rem;display:flex;gap:1rem">
+        <a href="/shop/" style="text-decoration:none">Shop</a>
+        <a href="/cart/" style="text-decoration:none">Cart</a>
+      </nav>
+    )}
   </header>
   <main>
     <slot />

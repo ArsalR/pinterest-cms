@@ -1,0 +1,27 @@
+---
+import Base from "../layouts/Base.astro"
+import { loadConfig, fetchAllProducts, formatPrice } from "../lib/cms"
+
+const config = loadConfig()
+const products = await fetchAllProducts(config)
+// Non-store sites: redirect intent → this page just shows nothing meaningful,
+// but it's only linked from ecommerce layouts, so it stays out of the way.
+---
+<Base title={`Shop — ${config.name}`} description={`Products from ${config.name}.`} path="/shop/">
+  <h1>Shop</h1>
+  {products.length === 0 && <p>Products are on their way.</p>}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:1.5rem">
+    {products.map((p) => (
+      <div>
+        <a href={`/products/${p.slug}/`} style="text-decoration:none;color:inherit">
+          {p.images[0] && <img src={p.images[0]} alt={p.title} width="400" height="400"
+             loading="lazy" style="border-radius:8px;aspect-ratio:1/1;object-fit:cover" />}
+          <div style="font-weight:600;margin-top:.5rem">{p.title}</div>
+        </a>
+        <div style="color:#555">{formatPrice(p.priceCents, p.currency)}</div>
+      </div>
+    ))}
+  </div>
+  <p style="margin-top:1.5rem"><a href="/cart/">Cart (<span data-cart-count>0</span>)</a></p>
+  <script src="/cart.js" defer></script>
+</Base>
