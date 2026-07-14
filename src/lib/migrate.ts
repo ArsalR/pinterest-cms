@@ -86,6 +86,48 @@ const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_rate_limit_window ON rate_limit_counters(window)`,
     ],
   },
+  {
+    version: 5,
+    name: "005_ecommerce",
+    statements: [
+      // Ecommerce data model (amendment 2). Additive; inert for non-store sites.
+      `CREATE TABLE IF NOT EXISTS products (
+         id            TEXT PRIMARY KEY,
+         slug          TEXT UNIQUE NOT NULL,
+         title         TEXT NOT NULL,
+         description   TEXT,
+         price_cents   INTEGER NOT NULL DEFAULT 0,
+         currency      TEXT NOT NULL DEFAULT 'usd',
+         images        TEXT NOT NULL DEFAULT '[]',
+         sku           TEXT,
+         stock_status  TEXT NOT NULL DEFAULT 'in_stock',
+         digital       INTEGER NOT NULL DEFAULT 0,
+         published     INTEGER NOT NULL DEFAULT 0,
+         category_id   TEXT,
+         seo_title     TEXT,
+         seo_description TEXT,
+         structured_data TEXT,
+         source        TEXT DEFAULT 'manual',
+         created_at    TEXT DEFAULT (datetime('now')),
+         updated_at    TEXT DEFAULT (datetime('now')),
+         FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+       )`,
+      // stripe_session_id UNIQUE = order idempotency (the 4.5e webhook may fire twice).
+      `CREATE TABLE IF NOT EXISTS orders (
+         id                 TEXT PRIMARY KEY,
+         stripe_session_id  TEXT UNIQUE,
+         email              TEXT,
+         amount_total_cents INTEGER NOT NULL DEFAULT 0,
+         currency           TEXT NOT NULL DEFAULT 'usd',
+         items              TEXT NOT NULL DEFAULT '[]',
+         status             TEXT NOT NULL DEFAULT 'paid',
+         created_at         TEXT DEFAULT (datetime('now'))
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_products_slug ON products(slug)`,
+      `CREATE INDEX IF NOT EXISTS idx_products_published ON products(published)`,
+      `CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at)`,
+    ],
+  },
 ]
 
 export async function runMigrations(db: Client): Promise<void> {

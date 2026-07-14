@@ -41,7 +41,7 @@ Cron (`wrangler.toml [triggers]`): `*/5 * * * *` → scheduler (publish schedule
 ## Databases
 
 - **Master DB** (`TURSO_MASTER_URL`/`TOKEN` secrets): single `sites` table — `id, hostname, name, turso_url, turso_token, active, created_at`. Schema: `src/schemas/master.sql`.
-- **Per-site DB**: `users`, `api_keys`, `api_logs`, `categories`, `posts`, `post_images`, `menu_items`, `media`, `settings` (key/value), `idempotency_cache`, `rate_limit_counters`, `webhook_endpoints`, `webhook_deliveries`, `redirects`, plus `_migrations` (created lazily by the runner).
+- **Per-site DB**: `users`, `api_keys`, `api_logs`, `categories`, `posts`, `post_images`, `menu_items`, `media`, `settings` (key/value), `idempotency_cache`, `rate_limit_counters`, `webhook_endpoints`, `webhook_deliveries`, `redirects`, `products`, `orders` (ecommerce, additive/inert for content sites), plus `_migrations` (created lazily by the runner).
 - **Schema truth is TRIPLICATED** — the Worker never reads `.sql` files at runtime:
   1. `SITE_SCHEMA_STATEMENTS` in `src/lib/provision.ts` — applied to **new** sites at provisioning.
   2. `MIGRATIONS` array in `src/lib/migrate.ts` — forward-only, idempotent DDL applied to **existing** sites by the 5-minute cron (tracked in per-site `_migrations`).
