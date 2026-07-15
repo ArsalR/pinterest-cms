@@ -43,9 +43,11 @@ export function genesisPrompt(name: string, niche: string, kind: string = "conte
     `(keep the system font stack, keep total CSS small, keep ZERO client JavaScript).`,
     `Do NOT touch protected files (.github/**, site.config.json, wrangler.toml, scripts/**).`,
     ``,
-    `Content — do ALL of the following via the CMS API (see the rules above for how to call it),`,
-    `publishing everything (published: true), each item with a descriptive title, a 1–2 sentence`,
-    `excerpt, a category, and specific, practical copy with real detail (never filler):`,
+    `Content — do ALL of the following via the CMS API (see the rules above for how to call it).`,
+    `Create each item as a DRAFT (published: false) — it will pass through the quality gate in the`,
+    `dashboard before going live, so launch content is held to the same bar as everything else.`,
+    `Give each a descriptive title, a 1–2 sentence excerpt, a category, and specific, practical copy`,
+    `with real detail (never filler):`,
   ]
   const brief =
     kind === "ecommerce"
