@@ -3,7 +3,10 @@
 // belongs to Phase-10 mocked-integration tests.
 
 import { describe, it, expect } from "vitest"
-import { parseWxr, tagText, slugify } from "./wordpress"
+import {
+  parseWxr, parseRestPosts, tagText, slugify,
+  originalPath, extractImageUrls, rewriteImageUrls,
+} from "./wordpress"
 
 const WXR = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:excerpt="http://wordpress.org/export/1.2/excerpt/">
@@ -77,5 +80,58 @@ describe("helpers", () => {
   it("slugify normalizes to url-safe", () => {
     expect(slugify("Hello, World!")).toBe("hello-world")
     expect(slugify("")).toBe("post")
+  })
+})
+
+describe("WXR captures the old permalink for redirects", () => {
+  it("sets originalUrl from <link>", () => {
+    const { posts } = parseWxr(WXR)
+    expect(posts[0].originalUrl).toBe("https://old.example/hello-world/")
+  })
+})
+
+describe("parseRestPosts (REST API import)", () => {
+  const rest = [
+    {
+      slug: "rest-post",
+      status: "publish",
+      link: "https://old.example/2024/rest-post/",
+      date_gmt: "2024-05-02T09:00:00",
+      title: { rendered: "REST &amp; Friends" },
+      content: { rendered: "<p>Body from REST.</p>" },
+      excerpt: { rendered: "<p>Summary.</p>" },
+      _embedded: { "wp:term": [[{ taxonomy: "category", name: "Guides" }, { taxonomy: "post_tag", name: "x" }]] },
+    },
+  ]
+  it("normalizes REST JSON into WpPost shape", () => {
+    const [p] = parseRestPosts(rest)
+    expect(p.title).toBe("REST & Friends")
+    expect(p.slug).toBe("rest-post")
+    expect(p.contentHtml).toContain("Body from REST")
+    expect(p.excerpt).toBe("Summary.")
+    expect(p.categories).toEqual(["Guides"])
+    expect(p.originalUrl).toBe("https://old.example/2024/rest-post/")
+    expect(p.publishedAt).toBe("2024-05-02T09:00:00.000Z")
+  })
+  it("returns [] on non-array input", () => {
+    expect(parseRestPosts(null)).toEqual([])
+    expect(parseRestPosts({})).toEqual([])
+  })
+})
+
+describe("redirect + media helpers", () => {
+  it("originalPath extracts the path, ignoring bare roots", () => {
+    expect(originalPath("https://old.example/2024/hello/")).toBe("/2024/hello/")
+    expect(originalPath("https://old.example/")).toBeNull()
+    expect(originalPath("garbage")).toBeNull()
+  })
+  it("extractImageUrls finds absolute image srcs only", () => {
+    const html = `<img src="https://cdn.old/a.jpg"><img src="/rel/b.png"><img src="https://cdn.old/a.jpg">`
+    expect(extractImageUrls(html)).toEqual(["https://cdn.old/a.jpg"])
+  })
+  it("rewriteImageUrls swaps mapped URLs", () => {
+    const html = `<img src="https://cdn.old/a.jpg">`
+    const map = new Map([["https://cdn.old/a.jpg", "https://r2.pub/x/a.jpg"]])
+    expect(rewriteImageUrls(html, map)).toBe(`<img src="https://r2.pub/x/a.jpg">`)
   })
 })

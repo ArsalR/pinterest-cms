@@ -14,6 +14,7 @@ export interface WpPost {
   status: string        // original WP status: publish | draft | private | …
   publishedAt: string | null // ISO, from wp:post_date_gmt when present
   categories: string[]
+  originalUrl: string   // the old permalink — drives the edge redirect map
 }
 
 function decodeEntities(s: string): string {
@@ -100,10 +101,91 @@ export function parseWxr(xml: string): ParseResult {
         status: tagText(item, "wp:status") || "draft",
         publishedAt: toIso(tagText(item, "wp:post_date_gmt") || tagText(item, "wp:post_date")),
         categories: categoriesOf(item),
+        originalUrl: tagText(item, "link"),
       })
     } catch {
       skipped++
     }
   }
   return { posts, skipped }
+}
+
+// ─────────────────────── REST API import ───────────────────────
+
+interface WpRestPost {
+  slug?: string
+  status?: string
+  link?: string
+  date_gmt?: string
+  title?: { rendered?: string }
+  content?: { rendered?: string }
+  excerpt?: { rendered?: string }
+  _embedded?: { "wp:term"?: Array<Array<{ taxonomy?: string; name?: string }>> }
+}
+
+/**
+ * Normalize a WordPress REST API posts array (`/wp-json/wp/v2/posts?_embed`)
+ * into the same WpPost shape as the WXR parser. Pure — unit-tested.
+ */
+export function parseRestPosts(json: unknown): WpPost[] {
+  if (!Array.isArray(json)) return []
+  const out: WpPost[] = []
+  for (const raw of json as WpRestPost[]) {
+    try {
+      const title = decodeEntities((raw.title?.rendered ?? "").trim())
+      const content = raw.content?.rendered ?? ""
+      if (!title && !content) continue
+      const cats: string[] = []
+      for (const group of raw._embedded?.["wp:term"] ?? []) {
+        for (const term of group) {
+          if (term.taxonomy === "category" && term.name) cats.push(decodeEntities(term.name))
+        }
+      }
+      out.push({
+        title,
+        slug: raw.slug || slugify(title),
+        contentHtml: content,
+        excerpt: (raw.excerpt?.rendered ?? "").replace(/<[^>]+>/g, "").trim(),
+        status: raw.status || "publish",
+        publishedAt: toIso(raw.date_gmt ?? ""),
+        categories: cats,
+        originalUrl: raw.link ?? "",
+      })
+    } catch {
+      // skip a malformed record, keep the rest
+    }
+  }
+  return out
+}
+
+// ─────────────────────── redirect + media helpers (pure) ───────────────────────
+
+/** The path portion of an old permalink, for the redirect map. Pure. */
+export function originalPath(url: string): string | null {
+  try {
+    const p = new URL(url).pathname
+    return p && p !== "/" ? p : null
+  } catch {
+    return null
+  }
+}
+
+/** All <img src> URLs in the HTML (absolute http/https only). Pure. */
+export function extractImageUrls(html: string): string[] {
+  const out: string[] = []
+  const re = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    if (/^https?:\/\//i.test(m[1]) && !out.includes(m[1])) out.push(m[1])
+  }
+  return out
+}
+
+/** Replace image URLs per a src→newSrc map (e.g. old host → R2). Pure. */
+export function rewriteImageUrls(html: string, map: Map<string, string>): string {
+  let out = html
+  for (const [from, to] of map) {
+    out = out.split(from).join(to)
+  }
+  return out
 }

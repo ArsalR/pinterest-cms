@@ -10,7 +10,7 @@ import { ensureMasterSchema } from "../../shared"
 import { renderSaasLayout } from "../../shared"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, planGate, type Customer } from "../customers"
-import { loadConfig, saveConfig, scanPosts, applyToAllPosts } from "./service"
+import { loadConfig, saveConfig, scanPosts, applyToAllPosts, loadClickTotals, loadDeadLinks } from "./service"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 
@@ -44,8 +44,12 @@ export async function affiliatePageHandler(c: Context<AppEnv>): Promise<Response
   const done = url.searchParams.get("done")
   const error = url.searchParams.get("error")
 
-  const config = site.cms_site_id ? await loadConfig(master, site.cms_site_id) : { affiliateDomains: [], disclosureText: "" }
+  const config = site.cms_site_id
+    ? await loadConfig(master, site.cms_site_id)
+    : { affiliateDomains: [], disclosureText: "", clickTrackingEnabled: false }
   const scan = site.cms_site_id && config.affiliateDomains.length ? await scanPosts(master, site.cms_site_id, config).catch(() => null) : null
+  const clicks = await loadClickTotals(master, site.id).catch(() => ({ total: 0, byHost: [] as Array<{ host: string; count: number }> }))
+  const deadReport = await loadDeadLinks(master, site.id).catch(() => null)
 
   const scanCard = scan
     ? `<div class="card">
@@ -83,11 +87,43 @@ export async function affiliatePageHandler(c: Context<AppEnv>): Promise<Response
         <textarea name="domains" rows="4" style="width:100%;background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:10px;color:#fafafa;font-family:ui-monospace,monospace;font-size:13px">${escapeHtml(config.affiliateDomains.join("\n"))}</textarea>
         <label style="display:block;font-size:13px;margin:14px 0 6px">Disclosure text</label>
         <textarea name="disclosure" rows="2" style="width:100%;background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:10px;color:#fafafa;font-size:13px">${escapeHtml(config.disclosureText)}</textarea>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-top:14px">
+          <input type="checkbox" name="clicktracking" value="1" ${config.clickTrackingEnabled ? "checked" : ""}>
+          Count affiliate clicks at the edge <span class="muted">(routes links through your dashboard's tracker; apply the fix below to activate)</span>
+        </label>
         <div style="margin-top:12px"><button class="btn" type="submit">Save settings</button></div>
       </form>
     </div>
-    ${scanCard}`
+    ${scanCard}
+    ${clicksCard(clicks)}
+    ${deadLinksCard(deadReport)}`
   return c.html(renderSaasLayout({ title: "Affiliate", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+function clicksCard(clicks: { total: number; byHost: Array<{ host: string; count: number }> }): string {
+  if (!clicks.total) return ""
+  const rows = clicks.byHost
+    .map((h) => `<tr><td>${escapeHtml(h.host)}</td><td style="text-align:right">${h.count}</td></tr>`)
+    .join("")
+  return `<div class="card">
+    <h3 style="margin:0 0 10px;font-size:15px">Affiliate clicks <span class="muted" style="font-size:12px">(${clicks.total} total)</span></h3>
+    <table style="width:100%;font-size:14px;border-collapse:collapse"><tr style="color:#a3a3a3"><th style="text-align:left">Destination</th><th style="text-align:right">Clicks</th></tr>${rows}</table>
+  </div>`
+}
+
+function deadLinksCard(report: { scannedAt: string; checked: number; dead: Array<{ url: string; status: number }> } | null): string {
+  if (!report) return `<div class="card"><p class="muted" style="font-size:13px">Dead-link scan runs automatically each week — no results yet.</p></div>`
+  if (!report.dead.length) {
+    return `<div class="card"><p class="muted" style="font-size:13px">✓ Last weekly scan checked ${report.checked} outbound link${report.checked === 1 ? "" : "s"} — none broken.</p></div>`
+  }
+  const rows = report.dead
+    .map((d) => `<tr><td style="word-break:break-all">${escapeHtml(d.url)}</td><td style="text-align:right;color:#fca5a5">${d.status || "—"}</td></tr>`)
+    .join("")
+  return `<div class="card" style="border-color:#7f1d1d">
+    <h3 style="margin:0 0 10px;font-size:15px">Broken links <span style="color:#fca5a5;font-size:12px">(${report.dead.length})</span></h3>
+    <table style="width:100%;font-size:13px;border-collapse:collapse"><tr style="color:#a3a3a3"><th style="text-align:left">URL</th><th style="text-align:right">Status</th></tr>${rows}</table>
+    <p class="muted" style="font-size:12px;margin-top:8px">From the weekly scan. Fix these in the affected posts to protect your affiliate revenue and rankings.</p>
+  </div>`
 }
 
 export async function affiliateSaveHandler(c: Context<AppEnv>): Promise<Response> {
@@ -101,7 +137,7 @@ export async function affiliateSaveHandler(c: Context<AppEnv>): Promise<Response
 
   let form: FormData
   try { form = await c.req.formData() } catch { return back({ error: "That form didn't come through — try again." }) }
-  await saveConfig(master, site.cms_site_id, String(form.get("domains") || ""), String(form.get("disclosure") || ""))
+  await saveConfig(master, site.cms_site_id, String(form.get("domains") || ""), String(form.get("disclosure") || ""), form.get("clicktracking") === "1")
   await audit(master, customer.id, "site.affiliate_configured", site.domain).catch(() => {})
   return back({ done: "Affiliate settings saved." })
 }
@@ -117,7 +153,8 @@ export async function affiliateApplyHandler(c: Context<AppEnv>): Promise<Respons
   if (planGate(customer, nowSqlite()) === "read_only") return back({ error: "Your trial has ended — subscribe to edit content." })
   if (!site.cms_site_id) return back({ error: "This site has no content workspace yet." })
 
-  const config = await loadConfig(master, site.cms_site_id)
+  const saasHost = c.env.SAAS_APP_HOSTNAME || "arsal.app"
+  const config = await loadConfig(master, site.cms_site_id, { siteId: site.id, saasHost })
   if (!config.affiliateDomains.length) return back({ error: "Add at least one affiliate domain first." })
 
   try {

@@ -10,6 +10,9 @@
 export interface AffiliateConfig {
   affiliateDomains: string[] // bare hostnames, e.g. ["amazon.com", "amzn.to"]
   disclosureText: string
+  // When set, affiliate links are wrapped through the platform's edge
+  // click-counter (K10 "edge click counting"). Opt-in — off unless configured.
+  clickTracking?: { siteId: string; saasHost: string }
 }
 
 export const DEFAULT_DISCLOSURE =
@@ -70,6 +73,22 @@ export function hasDisclosure(html: string): boolean {
   return html.includes(DISCLOSURE_CLASS)
 }
 
+/** Every outbound (http/https) anchor href in the HTML — feeds the dead-link scan. Pure. */
+export function extractOutboundLinks(html: string): string[] {
+  const out: string[] = []
+  const re = /<a\b[^>]*?\bhref\s*=\s*["'](https?:\/\/[^"']+)["']/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    if (!out.includes(m[1])) out.push(m[1])
+  }
+  return out
+}
+
+/** The platform edge click-counter URL for a target link. Pure. */
+export function clickTrackingUrl(saasHost: string, siteId: string, target: string): string {
+  return `https://${saasHost}/api/saas/go/${encodeURIComponent(siteId)}?u=${encodeURIComponent(target)}`
+}
+
 export interface RewriteResult {
   html: string
   linksFixed: number
@@ -89,15 +108,28 @@ export function rewriteAffiliateLinks(html: string, config: AffiliateConfig): Re
   const rewritten = html.replace(/<a\b([^>]*)>/gi, (full, attrs: string) => {
     const hrefM = /\bhref\s*=\s*["']([^"']+)["']/i.exec(attrs)
     if (!hrefM) return full
-    if (!isAffiliateHref(hrefM[1], config.affiliateDomains)) return full
+    const targetHref = hrefM[1]
+    if (!isAffiliateHref(targetHref, config.affiliateDomains)) return full
     sawAffiliate = true
 
     let newAttrs = attrs
+
+    // Edge click counting (opt-in): route the affiliate link through the
+    // platform counter. Once wrapped, the href host is the platform's, so a
+    // re-run won't match isAffiliateHref — idempotent by construction.
+    if (config.clickTracking) {
+      const wrapped = clickTrackingUrl(config.clickTracking.saasHost, config.clickTracking.siteId, targetHref)
+      newAttrs = newAttrs.replace(/\bhref\s*=\s*["'][^"']*["']/i, `href="${wrapped}"`)
+    }
     const existingRel = relTokens(`<a ${attrs}>`)
     const relSet = new Set(existingRel.split(/\s+/).filter(Boolean).map((t) => t.toLowerCase()))
     const hadTarget = /\btarget\s*=/i.test(attrs)
     // Already fully compliant? Then this is a no-op (keeps rewrite idempotent).
-    const wasCompliant = relSet.has("sponsored") && relSet.has("nofollow") && relSet.has("noopener") && hadTarget
+    // If click-tracking is on, an affiliate-host link always still needs
+    // wrapping (a wrapped link's host is the platform's, so it wouldn't reach
+    // here), so it's never "already compliant".
+    const wasCompliant =
+      relSet.has("sponsored") && relSet.has("nofollow") && relSet.has("noopener") && hadTarget && !config.clickTracking
 
     relSet.add("sponsored")
     relSet.add("nofollow")
