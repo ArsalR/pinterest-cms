@@ -38,7 +38,7 @@ import { redirectsAdminRoute } from "./routes/admin/redirects"
 
 import { frontendRoutes } from "./routes/frontend"
 
-import { saasAppRoutes, saasRootHandler, saasApiRoutes } from "./modules/app"
+import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms } from "./modules/app"
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 
@@ -70,6 +70,12 @@ app.route("/api/public", publicApiRoutes)
 // the frontend catch-all). Root mounted twice per Hono root-path gotcha #1.
 app.get("/app", saasRootHandler)
 app.get("/app/", saasRootHandler)
+// Public apex + legal pages on the SaaS host (indexable; Google-verification
+// blocker for Phase 7 GSC). pub()-gated → fall through to the frontend
+// catch-all on tenant hosts, so a real site's "/" is byte-identical.
+app.get("/", marketingHome)
+app.get("/privacy", marketingPrivacy)
+app.get("/terms", marketingTerms)
 app.route("/app", saasAppRoutes)
 app.route("/api/saas/hooks", saasHooksRoutes)
 app.route("/api/saas/forms", saasFormsRoutes)

@@ -37,6 +37,11 @@ import { performancePageHandler } from "../analytics"
 import { draftsPageHandler, publishDraftHandler, publishAllHandler } from "../publishing"
 import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
+import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler } from "../marketing"
+import {
+  brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
+  gscStartHandler, gscCallbackHandler, submitSitemapHandler,
+} from "../network"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
 
@@ -60,6 +65,15 @@ function prot(handler: PageHandler): MiddlewareHandler<AppEnv> {
 
 /** Root handler for /app and /app/ — mounted directly on the main app. */
 export const saasRootHandler: MiddlewareHandler<AppEnv> = prot(saasHomeHandler)
+
+// Public apex pages (homepage + legal). Root-path exact matches must be mounted
+// DIRECTLY on the main app (Hono sub-app root-path gotcha #1), so these are
+// exported pre-gated and worker.ts registers them alongside saasRootHandler.
+// pub() falls through via next() on non-saas hosts, so tenant sites' "/" is
+// untouched.
+export const marketingHome: MiddlewareHandler<AppEnv> = pub(marketingHomeHandler)
+export const marketingPrivacy: MiddlewareHandler<AppEnv> = pub(marketingPrivacyHandler)
+export const marketingTerms: MiddlewareHandler<AppEnv> = pub(marketingTermsHandler)
 
 export const saasAppRoutes = new Hono<AppEnv>()
 
@@ -95,6 +109,14 @@ saasAppRoutes.post("/sites/:id/pseo", prot(pseoGenerateHandler))
 saasAppRoutes.get("/sites/:id/insights", prot(insightsPageHandler))
 // Performance / Core Web Vitals (Phase 6).
 saasAppRoutes.get("/sites/:id/performance", prot(performancePageHandler))
+// Network brain — GSC + decay radar + AEO (Phase 7).
+saasAppRoutes.get("/network", prot(brainPageHandler))
+saasAppRoutes.get("/sites/:id/search", prot(siteSearchPageHandler))
+saasAppRoutes.post("/sites/:id/search/sitemap", prot(submitSitemapHandler))
+saasAppRoutes.get("/sites/:id/decay", prot(siteDecayPageHandler))
+saasAppRoutes.get("/sites/:id/aeo", prot(siteAeoPageHandler))
+saasAppRoutes.get("/connections/gsc/start", prot(gscStartHandler))
+saasAppRoutes.get("/connections/gsc/callback", prot(gscCallbackHandler))
 // Connections wizard (Phase 2).
 saasAppRoutes.get("/connections", prot(connectionsPageHandler))
 saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))

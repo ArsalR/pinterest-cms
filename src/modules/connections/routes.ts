@@ -69,7 +69,7 @@ export async function connectionsPageHandler(c: Context<AppEnv>): Promise<Respon
     ${stepGithub(c, byProvider.get("github"))}
     ${stepCloudflare(byProvider.get("cloudflare"))}
     ${stepDomains(byProvider.get("cloudflare"), zones)}
-    ${stepOptional(byProvider)}
+    ${stepOptional(byProvider, !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET))}
   `
   return c.html(
     renderSaasLayout({ title: "Connections", active: "connections", customer, bodyHtml: body }),
@@ -233,7 +233,7 @@ function zonePollScript(): string {
   </script>`
 }
 
-function stepOptional(byProvider: Map<string, ConnectionView>): string {
+function stepOptional(byProvider: Map<string, ConnectionView>, gscAvailable: boolean): string {
   const anthropic = byProvider.get("anthropic")
   const aConnected = anthropic?.status === "active"
   const aPreview = aConnected ? String(anthropic?.meta?.preview ?? "") : ""
@@ -260,13 +260,32 @@ function stepOptional(byProvider: Map<string, ConnectionView>): string {
     <h3 style="font-size:14px;margin:18px 0 4px">Pinterest <span class="chip soon">Available soon</span></h3>
     <p class="muted-sm">Auto-pin your posts on a drip schedule. Our Pinterest app is in review — this switches on automatically once approved.</p>
 
-    <h3 style="font-size:14px;margin:14px 0 4px">Google Search Console <span class="chip soon">Available soon</span></h3>
-    <p class="muted-sm">Indexing status, query data, decay alerts per site. Our Google verification is in review — this switches on automatically once approved.</p>
+    <h3 style="font-size:14px;margin:14px 0 4px">Google Search Console ${gscChip(byProvider, gscAvailable)}</h3>
+    ${gscBlock(byProvider, gscAvailable)}
   </div>`
 }
 
 function stripeChip(byProvider: Map<string, ConnectionView>): string {
   return byProvider.get("stripe")?.status === "active" ? `<span class="chip done">Connected</span>` : ""
+}
+
+function gscChip(byProvider: Map<string, ConnectionView>, available: boolean): string {
+  if (byProvider.get("gsc")?.status === "active") return `<span class="chip done">Connected</span>`
+  return available ? "" : `<span class="chip soon">Available soon</span>`
+}
+
+function gscBlock(byProvider: Map<string, ConnectionView>, available: boolean): string {
+  if (byProvider.get("gsc")?.status === "active") {
+    return `<p style="font-size:13px">Connected — search analytics, indexing, and decay alerts are live on the
+      <a href="/app/network" style="color:#93c5fd">Network</a> page. ${disconnectForm("gsc")}</p>`
+  }
+  if (available) {
+    // The OAuth start lives in the network module (gscStartHandler); we only
+    // render the link here to avoid a connections → network import cycle.
+    return `<p class="muted-sm">Indexing status, query data, and content-decay alerts per site.</p>
+      <a class="btn ghost" href="/app/connections/gsc/start">Connect Search Console</a>`
+  }
+  return `<p class="muted-sm">Indexing status, query data, decay alerts per site. Our Google verification is in review — this switches on automatically once approved.</p>`
 }
 
 function stripeBlock(byProvider: Map<string, ConnectionView>): string {

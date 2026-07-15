@@ -1,7 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro"
 import Img from "../../components/Img.astro"
-import { loadConfig, fetchAllPosts, canonicalHost, type CmsPost } from "../../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, type CmsPost } from "../../lib/cms"
 
 export async function getStaticPaths() {
   const config = loadConfig()
@@ -15,9 +15,11 @@ const config = loadConfig()
 const host = canonicalHost(config)
 const path = `/posts/${post.slug}/`
 
-// Article schema with dateModified (K4/K8).
-const schema = {
-  "@context": "https://schema.org",
+// Structured data as a @graph (K4/K8 — AEO). Article carries dateModified;
+// BreadcrumbList aids result presentation; FAQPage is emitted only when the
+// post actually contains ≥2 question-style headings, so AI engines can lift
+// direct Q&A answers.
+const article = {
   "@type": "Article",
   headline: post.title,
   description: post.seoDescription ?? post.excerpt ?? "",
@@ -27,6 +29,30 @@ const schema = {
   publisher: { "@type": "Organization", name: config.name },
   author: { "@type": "Person", name: config.ownerName },
   ...(post.coverImage ? { image: [post.coverImage] } : {}),
+}
+const breadcrumb = {
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "Home", item: `https://${host}/` },
+    { "@type": "ListItem", position: 2, name: "Articles", item: `https://${host}/posts/` },
+    { "@type": "ListItem", position: 3, name: post.title, item: `https://${host}${path}` },
+  ],
+}
+const faqs = extractFaqs(post.content)
+const faqPage =
+  faqs.length >= 2
+    ? {
+        "@type": "FAQPage",
+        mainEntity: faqs.map((f) => ({
+          "@type": "Question",
+          name: f.question,
+          acceptedAnswer: { "@type": "Answer", text: f.answer },
+        })),
+      }
+    : null
+const schema = {
+  "@context": "https://schema.org",
+  "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : [])],
 }
 ---
 <Base
