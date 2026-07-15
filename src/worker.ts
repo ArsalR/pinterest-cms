@@ -41,6 +41,7 @@ import { frontendRoutes } from "./routes/frontend"
 import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms } from "./modules/app"
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
+import { processDuePins } from "./modules/pinterest"
 
 const app = new Hono<AppEnv>()
 
@@ -222,6 +223,12 @@ export default {
       ctx.waitUntil(runR2Gc(env))
     } else {
       await runScheduler(env)
+      // SaaS background work rides the existing */5 branch (no new cron string —
+      // gotcha #8). Inert unless saas_mode is on. Best-effort, off the critical
+      // path so a Pinterest hiccup never stalls the CMS scheduler.
+      if (env.SAAS_MODE === "1") {
+        ctx.waitUntil(processDuePins(env, Date.now()).then(() => undefined).catch(() => undefined))
+      }
     }
   },
 }

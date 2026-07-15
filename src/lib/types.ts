@@ -59,6 +59,11 @@ export interface CloudflareEnv {
   // "available soon" until the (weeks-long) Google verification clears.
   GOOGLE_CLIENT_ID?: string       // secret — Google OAuth client id (Search Console)
   GOOGLE_CLIENT_SECRET?: string   // secret — Google OAuth client secret
+  // Phase 8 — Pinterest traffic engine (K7). Platform-owned OAuth app; the
+  // Pinterest connect flow self-gates on these, staying "available soon" until
+  // Pinterest grants standard access (OAUTH_SETUP.md).
+  PINTEREST_APP_ID?: string       // secret — Pinterest OAuth app id
+  PINTEREST_APP_SECRET?: string   // secret — Pinterest OAuth app secret
 }
 
 export interface SiteConfig {
