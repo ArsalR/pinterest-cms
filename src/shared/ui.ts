@@ -20,6 +20,7 @@ export interface SaasLayoutInput {
 const NAV_ITEMS: Array<{ id: string; label: string; href: string }> = [
   { id: "home", label: "Overview", href: "/app" },
   { id: "sites", label: "Sites", href: "/app/sites" },
+  { id: "network", label: "Network", href: "/app/network" },
   { id: "connections", label: "Connections", href: "/app/connections" },
   { id: "account", label: "Account", href: "/app/account" },
 ]

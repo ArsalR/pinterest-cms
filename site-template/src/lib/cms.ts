@@ -127,3 +127,37 @@ export function formatPrice(cents: number, currency: string): string {
     return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`
   }
 }
+
+export interface FaqPair {
+  question: string
+  answer: string
+}
+
+const STRIP_TAGS = /<[^>]+>/g
+function textOf(html: string): string {
+  return html.replace(STRIP_TAGS, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim()
+}
+
+const QUESTION_WORDS = /^(how|what|why|when|where|which|who|can|do|does|is|are|should|will)\b/i
+
+/**
+ * Extract question/answer pairs from post HTML for FAQPage JSON-LD (K8/AEO):
+ * an h2/h3 phrased as a question, followed by the text up to the next heading.
+ * Best-effort and defensive — returns [] on anything unexpected.
+ */
+export function extractFaqs(html: string): FaqPair[] {
+  if (!html) return []
+  const pairs: FaqPair[] = []
+  // Split on h2/h3 boundaries, keeping the heading text.
+  const re = /<h[23][^>]*>([\s\S]*?)<\/h[23]>([\s\S]*?)(?=<h[23][^>]*>|$)/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    const q = textOf(m[1])
+    const a = textOf(m[2])
+    const isQuestion = q.endsWith("?") || QUESTION_WORDS.test(q)
+    if (isQuestion && q.length <= 200 && a.length >= 20) {
+      pairs.push({ question: q, answer: a.slice(0, 600) })
+    }
+  }
+  return pairs
+}
