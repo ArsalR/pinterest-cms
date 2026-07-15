@@ -69,7 +69,11 @@ export async function connectionsPageHandler(c: Context<AppEnv>): Promise<Respon
     ${stepGithub(c, byProvider.get("github"))}
     ${stepCloudflare(byProvider.get("cloudflare"))}
     ${stepDomains(byProvider.get("cloudflare"), zones)}
-    ${stepOptional(byProvider, !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET))}
+    ${stepOptional(
+      byProvider,
+      !!(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET),
+      !!(c.env.PINTEREST_APP_ID && c.env.PINTEREST_APP_SECRET)
+    )}
   `
   return c.html(
     renderSaasLayout({ title: "Connections", active: "connections", customer, bodyHtml: body }),
@@ -233,7 +237,7 @@ function zonePollScript(): string {
   </script>`
 }
 
-function stepOptional(byProvider: Map<string, ConnectionView>, gscAvailable: boolean): string {
+function stepOptional(byProvider: Map<string, ConnectionView>, gscAvailable: boolean, pinterestAvailable: boolean): string {
   const anthropic = byProvider.get("anthropic")
   const aConnected = anthropic?.status === "active"
   const aPreview = aConnected ? String(anthropic?.meta?.preview ?? "") : ""
@@ -257,8 +261,8 @@ function stepOptional(byProvider: Map<string, ConnectionView>, gscAvailable: boo
     <h3 style="font-size:14px;margin:18px 0 4px">Stripe ${stripeChip(byProvider)}</h3>
     ${stripeBlock(byProvider)}
 
-    <h3 style="font-size:14px;margin:18px 0 4px">Pinterest <span class="chip soon">Available soon</span></h3>
-    <p class="muted-sm">Auto-pin your posts on a drip schedule. Our Pinterest app is in review — this switches on automatically once approved.</p>
+    <h3 style="font-size:14px;margin:18px 0 4px">Pinterest ${pinterestChip(byProvider, pinterestAvailable)}</h3>
+    ${pinterestBlock(byProvider, pinterestAvailable)}
 
     <h3 style="font-size:14px;margin:14px 0 4px">Google Search Console ${gscChip(byProvider, gscAvailable)}</h3>
     ${gscBlock(byProvider, gscAvailable)}
@@ -267,6 +271,23 @@ function stepOptional(byProvider: Map<string, ConnectionView>, gscAvailable: boo
 
 function stripeChip(byProvider: Map<string, ConnectionView>): string {
   return byProvider.get("stripe")?.status === "active" ? `<span class="chip done">Connected</span>` : ""
+}
+
+function pinterestChip(byProvider: Map<string, ConnectionView>, available: boolean): string {
+  if (byProvider.get("pinterest")?.status === "active") return `<span class="chip done">Connected</span>`
+  return available ? "" : `<span class="chip soon">Available soon</span>`
+}
+
+function pinterestBlock(byProvider: Map<string, ConnectionView>, available: boolean): string {
+  if (byProvider.get("pinterest")?.status === "active") {
+    return `<p style="font-size:13px">Connected — schedule pins from any site's <a href="/app/sites" style="color:#93c5fd">Pinterest</a> tab. ${disconnectForm("pinterest")}</p>`
+  }
+  if (available) {
+    // OAuth start lives in the pinterest module; link only to avoid a cycle.
+    return `<p class="muted-sm">Auto-pin your posts on a drip schedule to your own boards.</p>
+      <a class="btn ghost" href="/app/connections/pinterest/start">Connect Pinterest</a>`
+  }
+  return `<p class="muted-sm">Auto-pin your posts on a drip schedule. Our Pinterest app is in review — this switches on automatically once approved.</p>`
 }
 
 function gscChip(byProvider: Map<string, ConnectionView>, available: boolean): string {

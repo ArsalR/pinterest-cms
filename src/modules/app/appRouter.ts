@@ -42,6 +42,12 @@ import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
 } from "../network"
+import {
+  pinterestPageHandler, pinterestQueueHandler,
+  pinterestStartHandler, pinterestCallbackHandler,
+} from "../pinterest"
+import { importPageHandler, importRunHandler } from "../importer"
+import { affiliatePageHandler, affiliateSaveHandler, affiliateApplyHandler } from "../affiliate"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
 
@@ -117,6 +123,18 @@ saasAppRoutes.get("/sites/:id/decay", prot(siteDecayPageHandler))
 saasAppRoutes.get("/sites/:id/aeo", prot(siteAeoPageHandler))
 saasAppRoutes.get("/connections/gsc/start", prot(gscStartHandler))
 saasAppRoutes.get("/connections/gsc/callback", prot(gscCallbackHandler))
+// Pinterest traffic engine (Phase 8, K7).
+saasAppRoutes.get("/sites/:id/pinterest", prot(pinterestPageHandler))
+saasAppRoutes.post("/sites/:id/pinterest/queue", prot(pinterestQueueHandler))
+saasAppRoutes.get("/connections/pinterest/start", prot(pinterestStartHandler))
+saasAppRoutes.get("/connections/pinterest/callback", prot(pinterestCallbackHandler))
+// WordPress import (Phase 8, K9).
+saasAppRoutes.get("/sites/:id/import", prot(importPageHandler))
+saasAppRoutes.post("/sites/:id/import", prot(importRunHandler))
+// Affiliate compliance (Phase 8, K10).
+saasAppRoutes.get("/sites/:id/affiliate", prot(affiliatePageHandler))
+saasAppRoutes.post("/sites/:id/affiliate", prot(affiliateSaveHandler))
+saasAppRoutes.post("/sites/:id/affiliate/apply", prot(affiliateApplyHandler))
 // Connections wizard (Phase 2).
 saasAppRoutes.get("/connections", prot(connectionsPageHandler))
 saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))
