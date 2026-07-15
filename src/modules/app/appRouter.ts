@@ -48,6 +48,10 @@ import {
 } from "../pinterest"
 import { importPageHandler, importRunHandler } from "../importer"
 import { affiliatePageHandler, affiliateSaveHandler, affiliateApplyHandler } from "../affiliate"
+import { clonePageHandler, cloneSubmitHandler, cloneGenesisHandler } from "../cloning"
+import {
+  agencyPanelHandler, agencySaveHandler, seatCreateHandler, seatDeleteHandler, clientPortalHandler,
+} from "../agency"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
 
@@ -80,6 +84,11 @@ export const saasRootHandler: MiddlewareHandler<AppEnv> = prot(saasHomeHandler)
 export const marketingHome: MiddlewareHandler<AppEnv> = pub(marketingHomeHandler)
 export const marketingPrivacy: MiddlewareHandler<AppEnv> = pub(marketingPrivacyHandler)
 export const marketingTerms: MiddlewareHandler<AppEnv> = pub(marketingTermsHandler)
+
+// Public, token-gated client report portal (K11) — root-mounted like the
+// marketing pages (Hono root-path gotcha #1). pub()-gated → falls through on
+// tenant hosts.
+export const clientPortal: MiddlewareHandler<AppEnv> = pub(clientPortalHandler)
 
 export const saasAppRoutes = new Hono<AppEnv>()
 
@@ -123,6 +132,15 @@ saasAppRoutes.get("/sites/:id/decay", prot(siteDecayPageHandler))
 saasAppRoutes.get("/sites/:id/aeo", prot(siteAeoPageHandler))
 saasAppRoutes.get("/connections/gsc/start", prot(gscStartHandler))
 saasAppRoutes.get("/connections/gsc/callback", prot(gscCallbackHandler))
+// Cloning (Phase 9, K6).
+saasAppRoutes.get("/sites/:id/clone", prot(clonePageHandler))
+saasAppRoutes.post("/sites/:id/clone", prot(cloneSubmitHandler))
+saasAppRoutes.post("/sites/:id/reseed", prot(cloneGenesisHandler))
+// Agency mode — white-label + seats (Phase 9, K11).
+saasAppRoutes.get("/agency", prot(agencyPanelHandler))
+saasAppRoutes.post("/agency", prot(agencySaveHandler))
+saasAppRoutes.post("/agency/seats", prot(seatCreateHandler))
+saasAppRoutes.post("/agency/seats/:seatId/delete", prot(seatDeleteHandler))
 // Pinterest traffic engine (Phase 8, K7).
 saasAppRoutes.get("/sites/:id/pinterest", prot(pinterestPageHandler))
 saasAppRoutes.post("/sites/:id/pinterest/queue", prot(pinterestQueueHandler))
