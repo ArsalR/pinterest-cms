@@ -10,7 +10,7 @@ import { ensureMasterSchema } from "../../shared"
 import { renderSaasLayout } from "../../shared"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, planGate, type Customer } from "../customers"
-import { importWordpress } from "./service"
+import { importWordpress, importWordpressRest, type ImportResult } from "./service"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 
@@ -53,12 +53,28 @@ export async function importPageHandler(c: Context<AppEnv>): Promise<Response> {
     ${done ? `<div class="banner" style="border-color:#14532d;color:#86efac;background:#0f1a14">${escapeHtml(done)}</div>` : ""}
     ${error ? `<div class="banner" style="border-color:#7f1d1d;color:#fca5a5;background:#1c1212">${escapeHtml(error)}</div>` : ""}
     <div class="card">
+      <h3 style="margin:0 0 8px;font-size:15px">Option A — from your live site (REST API)</h3>
+      <p class="muted" style="font-size:13px">Fastest if your old WordPress site is still online. We read its public REST API.</p>
       <form method="POST" action="/app/sites/${escapeAttr(site.id)}/import">
-        <textarea name="wxr" required rows="12" placeholder="Paste the contents of your WordPress export .xml here…"
+        <input type="hidden" name="mode" value="rest">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input name="url" type="url" required placeholder="https://your-old-site.com"
+            style="flex:1;min-width:260px;background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:10px;color:#fafafa;font-size:14px">
+          <button class="btn" type="submit">Import from URL</button>
+        </div>
+      </form>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:15px">Option B — paste a WXR export</h3>
+      <p class="muted" style="font-size:13px">WordPress → Tools → Export → All content, then paste the <code>.xml</code> below.</p>
+      <form method="POST" action="/app/sites/${escapeAttr(site.id)}/import">
+        <input type="hidden" name="mode" value="wxr">
+        <textarea name="wxr" required rows="10" placeholder="Paste the contents of your WordPress export .xml here…"
           style="width:100%;background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:12px;color:#fafafa;font-family:ui-monospace,monospace;font-size:12px"></textarea>
         <div style="margin-top:12px"><button class="btn" type="submit">Import as drafts</button></div>
       </form>
-    </div>`
+    </div>
+    <p class="muted" style="font-size:12px">Both options import posts as <strong>drafts</strong>, rehost images to your CDN, and set up 301 redirects from your old URLs so you keep your SEO.</p>`
   return c.html(renderSaasLayout({ title: "Import", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
 
@@ -77,14 +93,30 @@ export async function importRunHandler(c: Context<AppEnv>): Promise<Response> {
   if (!site.cms_site_id) return back({ error: "This site has no content workspace yet." })
 
   let form: FormData
-  try { form = await c.req.formData() } catch { return back({ error: "That upload didn't come through — paste the export again." }) }
-  const wxr = String(form.get("wxr") || "").trim()
-  if (!wxr.includes("<item")) return back({ error: "That doesn't look like a WordPress export — it should contain <item> entries." })
+  try { form = await c.req.formData() } catch { return back({ error: "That upload didn't come through — try again." }) }
+  const mode = String(form.get("mode") || "wxr")
 
   try {
-    const r = await importWordpress(c.env, site.cms_site_id, wxr)
-    await audit(master, customer.id, "site.wordpress_imported", site.domain, { imported: r.imported, existing: r.skippedExisting }).catch(() => {})
-    const msg = `Imported ${r.imported} post${r.imported === 1 ? "" : "s"} as drafts${r.skippedExisting ? `, skipped ${r.skippedExisting} already present` : ""}${r.skippedNonPost ? `, ignored ${r.skippedNonPost} non-post items` : ""}. Review them in Drafts & quality gate.`
+    let r: ImportResult
+    if (mode === "rest") {
+      const url = String(form.get("url") || "").trim()
+      if (!/^https?:\/\//i.test(url)) return back({ error: "Enter your old site's full URL (including https://)." })
+      const out = await importWordpressRest(c.env, site.cms_site_id, site.domain, url)
+      if ("error" in out) return back({ error: out.error })
+      r = out
+    } else {
+      const wxr = String(form.get("wxr") || "").trim()
+      if (!wxr.includes("<item")) return back({ error: "That doesn't look like a WordPress export — it should contain <item> entries." })
+      r = await importWordpress(c.env, site.cms_site_id, site.domain, wxr)
+    }
+    await audit(master, customer.id, "site.wordpress_imported", site.domain, { imported: r.imported, existing: r.skippedExisting, mode }).catch(() => {})
+    const extras = [
+      r.skippedExisting ? `skipped ${r.skippedExisting} already present` : "",
+      r.skippedNonPost ? `ignored ${r.skippedNonPost} non-post items` : "",
+      r.redirectsCreated ? `added ${r.redirectsCreated} redirect${r.redirectsCreated === 1 ? "" : "s"}` : "",
+      r.imagesRehosted ? `rehosted ${r.imagesRehosted} image${r.imagesRehosted === 1 ? "" : "s"}` : "",
+    ].filter(Boolean)
+    const msg = `Imported ${r.imported} post${r.imported === 1 ? "" : "s"} as drafts${extras.length ? " — " + extras.join(", ") : ""}. Review them in Drafts & quality gate.`
     return back({ done: msg })
   } catch (err) {
     console.error("wordpress import failed:", err instanceof Error ? err.message : err)

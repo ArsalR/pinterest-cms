@@ -13,6 +13,7 @@ import { getMasterDb } from "../../lib/turso"
 import { ensureMasterSchema } from "../../shared/masterMigrate"
 import { listConnections, getConnectionSecret } from "../connections"
 import { listCfZones } from "../connections"
+import { resolveAndCountClick } from "../affiliate"
 
 type ApiHandler = (c: Context<AppEnv>, customer: Customer) => Promise<Response>
 
@@ -85,3 +86,20 @@ saasApiRoutes.get(
     return c.json({ zones: zones.map((z) => ({ id: z.id, name: z.name, status: z.status, paused: z.paused })) })
   })
 )
+
+// GET /api/saas/go/:siteId?u=<target> — PUBLIC edge click counter (K10).
+// No auth (visitors on customer sites click these). Counts the click and 302s
+// to the target — but ONLY if the target host is one of the site's affiliate
+// domains (open-redirect guard inside resolveAndCountClick). Gated on saas
+// hostname like everything else, so it's invisible on tenant hosts.
+saasApiRoutes.get("/go/:siteId", async (c, next) => {
+  if (!saasActive(c)) return next()
+  const siteId = c.req.param("siteId")
+  const target = c.req.query("u") ?? ""
+  const master = getMasterDb(c.env)
+  await ensureMasterSchema(master)
+  const day = new Date().toISOString().slice(0, 10)
+  const dest = await resolveAndCountClick(master, siteId, target, day).catch(() => null)
+  // On a guard failure, bounce to the site root rather than an arbitrary URL.
+  return c.redirect(dest ?? "/", 302)
+})

@@ -42,6 +42,7 @@ import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketing
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 import { processDuePins } from "./modules/pinterest"
+import { runDeadLinkCron } from "./modules/affiliate"
 
 const app = new Hono<AppEnv>()
 
@@ -221,6 +222,11 @@ export default {
     if (event.cron === "0 4 * * *") {
       // Daily R2 GC — fire-and-forget so the cron tick completes promptly.
       ctx.waitUntil(runR2Gc(env))
+      // SaaS daily work rides this branch too (no new cron string — gotcha #8).
+      // The dead-link scan self-throttles to ~weekly per site. Gated + best-effort.
+      if (env.SAAS_MODE === "1") {
+        ctx.waitUntil(runDeadLinkCron(env, Date.now()).then(() => undefined).catch(() => undefined))
+      }
     } else {
       await runScheduler(env)
       // SaaS background work rides the existing */5 branch (no new cron string —

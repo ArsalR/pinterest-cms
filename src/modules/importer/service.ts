@@ -1,22 +1,35 @@
 // src/modules/importer/service.ts
 // Writes parsed WordPress posts into a customer site's CMS as DRAFTS
-// (published=0, source='wordpress'), so imported content still has to clear the
-// quality gate before it can go live. Slug collisions are skipped (idempotent
-// re-import). Categories are created on demand and the first one is linked.
+// (published=0, source='wordpress'), so imported content still clears the
+// quality gate before publishing. On the way in it also:
+//   • rehosts external images into R2 and rewrites their <img src> (K9 "→ R2");
+//   • records an edge redirect from each old permalink to the new /posts/slug/
+//     (K9 "edge redirects map"), so inbound links + SEO survive the migration.
+// Slug collisions are skipped (idempotent re-import). Everything is best-effort
+// per post — one failure never aborts the batch.
 
 import type { Client } from "@libsql/client/web"
 import type { CloudflareEnv } from "../../lib/types"
 import { getMasterDb, getSiteDb } from "../../lib/turso"
 import { ensureMasterSchema } from "../../shared"
+import { uploadToR2 } from "../../lib/r2"
 import { cuid } from "../../lib/utils"
-import { parseWxr, slugify, type WpPost } from "./wordpress"
+import {
+  parseWxr, parseRestPosts, slugify, originalPath, extractImageUrls, rewriteImageUrls, type WpPost,
+} from "./wordpress"
 
 export interface ImportResult {
   imported: number
   skippedExisting: number
   skippedNonPost: number
+  redirectsCreated: number
+  imagesRehosted: number
   total: number
 }
+
+// Cap remote image fetches per import run so a big migration can't blow the
+// Worker subrequest budget. Excess images keep their original URLs.
+const MAX_IMAGE_REHOSTS = 80
 
 async function siteDbFor(master: Client, cmsSiteId: string): Promise<Client | null> {
   const r = await master.execute({ sql: "SELECT turso_url, turso_token FROM sites WHERE id = ? LIMIT 1", args: [cmsSiteId] })
@@ -33,43 +46,142 @@ async function ensureCategory(siteDb: Client, name: string): Promise<string | nu
     await siteDb.execute({ sql: "INSERT INTO categories (id, name, slug) VALUES (?, ?, ?)", args: [id, name, slug] })
     return id
   } catch {
-    return null // race or constraint — non-fatal, post just imports uncategorized
+    return null
   }
 }
 
-/** Insert one post as a draft. Returns true if inserted, false if the slug exists. */
-async function importOne(siteDb: Client, p: WpPost): Promise<boolean> {
+/** Fetch external images, upload to R2, and rewrite the content's <img src>. */
+async function rehostImages(env: CloudflareEnv, hostname: string, html: string, budget: { left: number }): Promise<{ html: string; rehosted: number }> {
+  const urls = extractImageUrls(html)
+  if (!urls.length || budget.left <= 0) return { html, rehosted: 0 }
+  const map = new Map<string, string>()
+  for (const url of urls) {
+    if (budget.left <= 0) break
+    try {
+      const resp = await fetch(url)
+      if (!resp.ok) continue
+      const type = resp.headers.get("content-type") || "image/jpeg"
+      if (!type.startsWith("image/")) continue
+      const bytes = await resp.arrayBuffer()
+      if (bytes.byteLength > 10 * 1024 * 1024) continue // 10MB cap, mirrors upload API
+      const name = url.split("/").pop()?.split("?")[0] || "image"
+      const up = await uploadToR2(env, hostname, name, bytes, type)
+      map.set(url, up.url)
+      budget.left--
+    } catch {
+      // leave this image at its original URL
+    }
+  }
+  return { html: map.size ? rewriteImageUrls(html, map) : html, rehosted: map.size }
+}
+
+async function importOne(
+  env: CloudflareEnv,
+  siteDb: Client,
+  hostname: string,
+  p: WpPost,
+  budget: { left: number }
+): Promise<{ inserted: boolean; redirect: boolean; rehosted: number }> {
   const exists = await siteDb.execute({ sql: "SELECT 1 FROM posts WHERE slug = ? LIMIT 1", args: [p.slug] })
-  if (exists.rows.length) return false
+  if (exists.rows.length) return { inserted: false, redirect: false, rehosted: 0 }
+
+  const { html, rehosted } = await rehostImages(env, hostname, p.contentHtml, budget)
   const categoryId = p.categories.length ? await ensureCategory(siteDb, p.categories[0]) : null
   await siteDb.execute({
     sql: `INSERT INTO posts (id, title, slug, content, excerpt, published, type, source, category_id, seo_description)
           VALUES (?, ?, ?, ?, ?, 0, 'post', 'wordpress', ?, ?)`,
-    args: [cuid(), p.title || p.slug, p.slug, p.contentHtml, p.excerpt || null, categoryId, p.excerpt || null],
+    args: [cuid(), p.title || p.slug, p.slug, html, p.excerpt || null, categoryId, p.excerpt || null],
   })
-  return true
+
+  // Edge redirect map: old permalink → new post path (301). ON CONFLICT keeps
+  // re-import idempotent and never clobbers a manually-set redirect.
+  let redirect = false
+  const from = originalPath(p.originalUrl)
+  const to = `/posts/${p.slug}/`
+  if (from && from !== to) {
+    try {
+      await siteDb.execute({
+        sql: `INSERT INTO redirects (id, from_path, target, kind, match_type, message)
+              VALUES (?, ?, ?, '301', 'exact', 'Imported from WordPress')
+              ON CONFLICT(from_path) DO NOTHING`,
+        args: [cuid(), from, to],
+      })
+      redirect = true
+    } catch {
+      // non-fatal — the post still imported
+    }
+  }
+  return { inserted: true, redirect, rehosted }
 }
 
-/**
- * Parse a WXR export and import its posts as drafts into the site's CMS.
- * Best-effort per post — one failure never aborts the batch.
- */
-export async function importWordpress(env: CloudflareEnv, cmsSiteId: string, wxr: string): Promise<ImportResult> {
+async function importPosts(env: CloudflareEnv, cmsSiteId: string, hostname: string, posts: WpPost[], skippedNonPost: number): Promise<ImportResult> {
   const master = getMasterDb(env)
   await ensureMasterSchema(master)
   const siteDb = await siteDbFor(master, cmsSiteId)
-  const { posts, skipped } = parseWxr(wxr)
-  if (!siteDb) return { imported: 0, skippedExisting: 0, skippedNonPost: skipped, total: posts.length }
+  const res: ImportResult = { imported: 0, skippedExisting: 0, skippedNonPost, redirectsCreated: 0, imagesRehosted: 0, total: posts.length }
+  if (!siteDb) return res
 
-  let imported = 0
-  let skippedExisting = 0
+  const budget = { left: MAX_IMAGE_REHOSTS }
   for (const p of posts) {
     try {
-      if (await importOne(siteDb, p)) imported++
-      else skippedExisting++
+      const r = await importOne(env, siteDb, hostname, p, budget)
+      if (r.inserted) {
+        res.imported++
+        if (r.redirect) res.redirectsCreated++
+        res.imagesRehosted += r.rehosted
+      } else {
+        res.skippedExisting++
+      }
     } catch {
-      skippedExisting++ // treat an insert failure as "not imported", keep going
+      res.skippedExisting++
     }
   }
-  return { imported, skippedExisting, skippedNonPost: skipped, total: posts.length }
+  return res
+}
+
+/** Import from a pasted WXR export string. */
+export async function importWordpress(env: CloudflareEnv, cmsSiteId: string, hostname: string, wxr: string): Promise<ImportResult> {
+  const { posts, skipped } = parseWxr(wxr)
+  return importPosts(env, cmsSiteId, hostname, posts, skipped)
+}
+
+/**
+ * Import via the WordPress REST API of a live site. Best-effort, paginated;
+ * returns a friendly error string if the site isn't reachable / has REST off.
+ */
+export async function importWordpressRest(
+  env: CloudflareEnv,
+  cmsSiteId: string,
+  hostname: string,
+  siteUrl: string
+): Promise<ImportResult | { error: string }> {
+  let base: string
+  try {
+    base = new URL(siteUrl).origin
+  } catch {
+    return { error: "That doesn't look like a valid site URL." }
+  }
+  const all: WpPost[] = []
+  for (let page = 1; page <= 10; page++) {
+    let batch: WpPost[] = []
+    try {
+      const resp = await fetch(`${base}/wp-json/wp/v2/posts?per_page=100&page=${page}&_embed=1`, {
+        headers: { Accept: "application/json" },
+      })
+      if (resp.status === 400) break // past the last page
+      if (!resp.ok) {
+        if (page === 1) return { error: "Couldn't reach that site's WordPress REST API. Make sure the URL is right and the API isn't disabled." }
+        break
+      }
+      batch = parseRestPosts(await resp.json().catch(() => null))
+    } catch {
+      if (page === 1) return { error: "Couldn't connect to that site — check the URL and try again." }
+      break
+    }
+    if (!batch.length) break
+    all.push(...batch)
+    if (batch.length < 100) break
+  }
+  if (!all.length) return { error: "No posts found at that site's REST API." }
+  return importPosts(env, cmsSiteId, hostname, all, 0)
 }
