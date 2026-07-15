@@ -204,6 +204,23 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `ALTER TABLE customer_sites ADD COLUMN kind TEXT NOT NULL DEFAULT 'content'`,
     ],
   },
+  {
+    version: 7,
+    name: "007_site_metrics",
+    statements: [
+      // Phase 6: cached metric rollups (CWV RUM, uptime, 404s, GSC) so the
+      // dashboard doesn't hammer external APIs. One row per (site, day, source).
+      `CREATE TABLE IF NOT EXISTS site_metrics (
+         customer_site_id TEXT NOT NULL,
+         day              TEXT NOT NULL,
+         source           TEXT NOT NULL,
+         payload          TEXT NOT NULL DEFAULT '{}',
+         updated_at       TEXT DEFAULT (datetime('now')),
+         PRIMARY KEY (customer_site_id, day, source)
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_site_metrics_site ON site_metrics(customer_site_id, source)`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO

@@ -304,6 +304,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/drafts">Drafts &amp; quality gate</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/insights">Internal linking</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/pseo">Programmatic SEO</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/performance">Performance</a>
         ${site.repo_full_name ? `<a class="btn ghost" href="https://github.com/${escapeAttr(site.repo_full_name)}" target="_blank">Repository ↗</a>` : ""}` : ""}
     </div>
     ${buildHtml}

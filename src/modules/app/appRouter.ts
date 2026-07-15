@@ -33,6 +33,7 @@ import {
   sitesPageHandler, createSitePostHandler, siteDetailHandler, siteRetryHandler,
   sitePromptHandler, siteGenesisHandler, siteRollbackHandler,
 } from "../sites"
+import { performancePageHandler } from "../analytics"
 import { draftsPageHandler, publishDraftHandler, publishAllHandler } from "../publishing"
 import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
@@ -92,6 +93,8 @@ saasAppRoutes.post("/sites/:id/drafts/publish-all", prot(publishAllHandler))
 saasAppRoutes.get("/sites/:id/pseo", prot(pseoPageHandler))
 saasAppRoutes.post("/sites/:id/pseo", prot(pseoGenerateHandler))
 saasAppRoutes.get("/sites/:id/insights", prot(insightsPageHandler))
+// Performance / Core Web Vitals (Phase 6).
+saasAppRoutes.get("/sites/:id/performance", prot(performancePageHandler))
 // Connections wizard (Phase 2).
 saasAppRoutes.get("/connections", prot(connectionsPageHandler))
 saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))

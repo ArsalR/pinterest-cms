@@ -1,5 +1,6 @@
 ---
 import Base from "../../layouts/Base.astro"
+import Img from "../../components/Img.astro"
 import { loadConfig, fetchAllProducts, canonicalHost, formatPrice, type CmsProduct } from "../../lib/cms"
 
 export async function getStaticPaths() {
@@ -44,8 +45,8 @@ const schema = {
   <article>
     <p style="margin:0 0 1rem"><a href="/shop/">← Shop</a></p>
     {product.images[0] && (
-      <img src={product.images[0]} alt={product.title} width="800" height="800"
-           style="border-radius:8px;aspect-ratio:1/1;object-fit:cover" fetchpriority="high" />
+      <Img src={product.images[0]} alt={product.title} width={800} height={800}
+           priority={true} style="border-radius:8px;aspect-ratio:1/1;object-fit:cover" />
     )}
     <h1>{product.title}</h1>
     <p style="font-size:1.4rem;font-weight:700">{price}</p>

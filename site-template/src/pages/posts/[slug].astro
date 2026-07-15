@@ -1,5 +1,6 @@
 ---
 import Base from "../../layouts/Base.astro"
+import Img from "../../components/Img.astro"
 import { loadConfig, fetchAllPosts, canonicalHost, type CmsPost } from "../../lib/cms"
 
 export async function getStaticPaths() {
@@ -44,8 +45,8 @@ const schema = {
       </p>
     )}
     {post.coverImage && (
-      <img src={post.coverImage} alt={post.title} width="1200" height="675"
-           style="border-radius:8px" fetchpriority="high" />
+      <Img src={post.coverImage} alt={post.title} width={1200} height={675}
+           priority={true} style="border-radius:8px" />
     )}
     <div set:html={post.content} />
   </article>

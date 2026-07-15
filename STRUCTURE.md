@@ -46,6 +46,7 @@ src/modules/
   publishing/       gated publishing pipeline (gate → publish → rebuild) + drafts UI
   pseo/             programmatic-SEO factory: CSV + template → gated batch (K2)
   linking/          internal-linking engine: related-post scorer + orphan detection (K5)
+  analytics/        real-user Core Web Vitals + alerts + third-party script-cost (Phase 6)
   webhooks/         CMS rebuild bridge + contact-form relay
   app/              the SaaS HTTP surface: /app dashboard router + /api/saas router
 ```
@@ -67,5 +68,5 @@ src/modules/
 
 ## Reserved module slots (created when their phase lands)
 
-`analytics` (Phase 6), `billing` (Phase 9). Add the directory + `index.ts` when
-the code arrives; the lint picks it up automatically.
+`billing` (Phase 9). Add the directory + `index.ts` when the code arrives; the
+lint picks it up automatically.

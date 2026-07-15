@@ -214,3 +214,19 @@ export async function enableZoneProtection(
   }
   return { ok: true, problem: null }
 }
+
+/** Enable Cloudflare Web Analytics (RUM, cookie-free, zero-JS) for a zone so
+ *  Core Web Vitals from real visitors are collected automatically (P8).
+ *  Best-effort — not fatal to provisioning. */
+export async function enableWebAnalytics(
+  token: string,
+  accountId: string,
+  zoneTag: string,
+  host: string
+): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/accounts/${accountId}/rum/site_info`, {
+    method: "POST",
+    body: JSON.stringify({ zone_tag: zoneTag, auto_install: true, host }),
+  })
+  return r.ok ? { ok: true, problem: null } : { ok: false, problem: r.errorMessage ?? "Couldn't enable Web Analytics." }
+}
