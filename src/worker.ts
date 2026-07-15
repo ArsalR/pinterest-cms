@@ -38,11 +38,12 @@ import { redirectsAdminRoute } from "./routes/admin/redirects"
 
 import { frontendRoutes } from "./routes/frontend"
 
-import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms } from "./modules/app"
+import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms, clientPortal } from "./modules/app"
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 import { processDuePins } from "./modules/pinterest"
 import { runDeadLinkCron } from "./modules/affiliate"
+import { runMonthlyReports } from "./modules/agency"
 
 const app = new Hono<AppEnv>()
 
@@ -78,6 +79,7 @@ app.get("/app/", saasRootHandler)
 app.get("/", marketingHome)
 app.get("/privacy", marketingPrivacy)
 app.get("/terms", marketingTerms)
+app.get("/portal", clientPortal)
 app.route("/app", saasAppRoutes)
 app.route("/api/saas/hooks", saasHooksRoutes)
 app.route("/api/saas/forms", saasFormsRoutes)
@@ -226,6 +228,8 @@ export default {
       // The dead-link scan self-throttles to ~weekly per site. Gated + best-effort.
       if (env.SAAS_MODE === "1") {
         ctx.waitUntil(runDeadLinkCron(env, Date.now()).then(() => undefined).catch(() => undefined))
+        // Monthly client reports (K11) — self-throttled to ~monthly per seat.
+        ctx.waitUntil(runMonthlyReports(env, Date.now()).then(() => undefined).catch(() => undefined))
       }
     } else {
       await runScheduler(env)

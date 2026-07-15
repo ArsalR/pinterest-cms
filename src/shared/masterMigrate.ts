@@ -221,6 +221,34 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_site_metrics_site ON site_metrics(customer_site_id, source)`,
     ],
   },
+  {
+    version: 8,
+    name: "008_agency",
+    statements: [
+      // Phase 9 — agency mode (K11). White-label branding per customer…
+      `CREATE TABLE IF NOT EXISTS agency_settings (
+         customer_id  TEXT PRIMARY KEY,
+         enabled      INTEGER NOT NULL DEFAULT 0,
+         brand_name   TEXT,
+         brand_color  TEXT,
+         logo_url     TEXT,
+         reports_enabled INTEGER NOT NULL DEFAULT 0,
+         updated_at   TEXT DEFAULT (datetime('now'))
+       )`,
+      // …and client seats: a scoped, read-only view of assigned sites' reports,
+      // accessed by signed link (no password). site_ids is a JSON array.
+      `CREATE TABLE IF NOT EXISTS client_seats (
+         id           TEXT PRIMARY KEY,
+         customer_id  TEXT NOT NULL,
+         label        TEXT NOT NULL,
+         email        TEXT NOT NULL,
+         site_ids     TEXT NOT NULL DEFAULT '[]',
+         last_report_at TEXT,
+         created_at   TEXT DEFAULT (datetime('now'))
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_client_seats_customer ON client_seats(customer_id)`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO
