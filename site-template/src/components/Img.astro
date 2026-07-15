@@ -1,0 +1,34 @@
+---
+// Img.astro — the automatic image pipeline (Performance Covenant P3).
+// Wraps Astro's <Picture> so every CMS/R2 image ships as AVIF + WebP with a
+// responsive srcset, explicit width/height (zero CLS), lazy-loading below the
+// fold, and a priority hint on the LCP image. Editors never think about it.
+import { Picture } from "astro:assets"
+
+interface Props {
+  src: string
+  alt: string
+  width: number
+  height: number
+  priority?: boolean // set on the LCP image (above the fold)
+  class?: string
+  style?: string
+  sizes?: string
+}
+
+const { src, alt, width, height, priority = false, class: className, style, sizes = "(max-width: 700px) 100vw, 700px" } = Astro.props
+---
+<Picture
+  src={src}
+  alt={alt}
+  width={width}
+  height={height}
+  formats={["avif", "webp"]}
+  widths={[400, 800, 1200]}
+  sizes={sizes}
+  loading={priority ? "eager" : "lazy"}
+  fetchpriority={priority ? "high" : "auto"}
+  decoding={priority ? "sync" : "async"}
+  class={className}
+  style={style}
+/>

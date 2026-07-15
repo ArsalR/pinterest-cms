@@ -41,6 +41,7 @@ src/modules/
   connections/      BYO-infra credential storage + providers (github/cloudflare/anthropic) + wizard
   provisioning/     the idempotent, resumable site-provisioning pipeline
   sites/            prompt-to-build, genesis, rollback, site-management pages
+  analytics/        real-user Core Web Vitals + alerts + third-party script-cost (Phase 6)
   webhooks/         CMS rebuild bridge + contact-form relay
   app/              the SaaS HTTP surface: /app dashboard router + /api/saas router
 ```
@@ -62,6 +63,5 @@ src/modules/
 
 ## Reserved module slots (created when their phase lands)
 
-`publishing` + `quality-gate` (Phase 5), `analytics` (Phase 6), `ecommerce`
-(Phase 4.5b), `billing` (Phase 9). Add the directory + `index.ts` when the code
-arrives; the lint picks it up automatically.
+`publishing` + `quality-gate` (Phase 5), `billing` (Phase 9). Add the directory
++ `index.ts` when the code arrives; the lint picks it up automatically.

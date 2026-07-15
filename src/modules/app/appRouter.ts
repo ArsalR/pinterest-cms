@@ -33,6 +33,7 @@ import {
   sitesPageHandler, createSitePostHandler, siteDetailHandler, siteRetryHandler,
   sitePromptHandler, siteGenesisHandler, siteRollbackHandler,
 } from "../sites"
+import { performancePageHandler } from "../analytics"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
 
@@ -82,6 +83,8 @@ saasAppRoutes.post("/sites/:id/retry", prot(siteRetryHandler))
 saasAppRoutes.post("/sites/:id/prompt", prot(sitePromptHandler))
 saasAppRoutes.post("/sites/:id/genesis", prot(siteGenesisHandler))
 saasAppRoutes.post("/sites/:id/rollback", prot(siteRollbackHandler))
+// Performance / Core Web Vitals (Phase 6).
+saasAppRoutes.get("/sites/:id/performance", prot(performancePageHandler))
 // Connections wizard (Phase 2).
 saasAppRoutes.get("/connections", prot(connectionsPageHandler))
 saasAppRoutes.get("/connections/github/start", prot(githubStartHandler))

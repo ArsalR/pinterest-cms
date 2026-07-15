@@ -23,7 +23,7 @@ import {
   setRepoSecret, putRepoFile, dispatchWorkflow,
 } from "../connections"
 import {
-  workerScriptExists, attachWorkersDomain, disableWorkersDevSubdomain, enableZoneProtection,
+  workerScriptExists, attachWorkersDomain, disableWorkersDevSubdomain, enableZoneProtection, enableWebAnalytics,
   createTurnstileWidget,
 } from "../connections"
 
@@ -411,6 +411,14 @@ async function executeStep(
       const cfToken = await getConnectionSecret(db, env, site.customer_id, "cloudflare", `zone-protection:${site.domain}`)
       if (!cfToken || !site.zone_id) return { skipped: true, note: "Cloudflare details missing — enable Bot Fight Mode manually." }
       const r = await enableZoneProtection(cfToken, site.zone_id)
+      // Also enable Cloudflare Web Analytics (RUM) so real-visitor Core Web
+      // Vitals are collected automatically (P8) — best-effort, non-fatal.
+      const cf = await getConnection(db, site.customer_id, "cloudflare")
+      const accountId = String((JSON.parse(cf?.meta || "{}") as { accountId?: string }).accountId ?? "")
+      if (accountId) {
+        const host = site.canonical_host === "www" ? `www.${site.domain}` : site.domain
+        await enableWebAnalytics(cfToken, accountId, site.zone_id, host).catch(() => {})
+      }
       return r.ok ? {} : { skipped: true, note: r.problem ?? undefined }
     }
 

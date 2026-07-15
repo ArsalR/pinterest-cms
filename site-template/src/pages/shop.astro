@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro"
+import Img from "../components/Img.astro"
 import { loadConfig, fetchAllProducts, formatPrice } from "../lib/cms"
 
 const config = loadConfig()
@@ -14,8 +15,8 @@ const products = await fetchAllProducts(config)
     {products.map((p) => (
       <div>
         <a href={`/products/${p.slug}/`} style="text-decoration:none;color:inherit">
-          {p.images[0] && <img src={p.images[0]} alt={p.title} width="400" height="400"
-             loading="lazy" style="border-radius:8px;aspect-ratio:1/1;object-fit:cover" />}
+          {p.images[0] && <Img src={p.images[0]} alt={p.title} width={400} height={400}
+             style="border-radius:8px;aspect-ratio:1/1;object-fit:cover" />}
           <div style="font-weight:600;margin-top:.5rem">{p.title}</div>
         </a>
         <div style="color:#555">{formatPrice(p.priceCents, p.currency)}</div>

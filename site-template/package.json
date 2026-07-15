@@ -9,7 +9,7 @@
     "preview": "astro preview --port 4321",
     "check:zero-js": "node scripts/check-zero-js.mjs",
     "check:headers": "node scripts/check-headers.mjs",
-    "lhci": "lhci autorun"
+    "lhci": "node scripts/lhci-run.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.2.0",

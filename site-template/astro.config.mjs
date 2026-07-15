@@ -11,4 +11,12 @@ export default defineConfig({
   site: `https://${canonicalHost}`,
   integrations: [sitemap()],
   build: { inlineStylesheets: "always" }, // critical CSS inlined (P5)
+  image: {
+    // Image pipeline (Performance Covenant P3): remote CMS/R2 images are
+    // optimized at build time (sharp) into AVIF/WebP responsive srcset with
+    // explicit dimensions (zero CLS). Any https image host is allowed since
+    // the CMS R2 domain is per-deployment.
+    remotePatterns: [{ protocol: "https" }],
+    service: { entrypoint: "astro/assets/services/sharp" },
+  },
 })
