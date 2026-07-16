@@ -174,8 +174,15 @@ const MONTH_MS = 30 * 86_400_000
 export async function runMonthlyReports(env: CloudflareEnv, nowMs: number): Promise<{ sent: number }> {
   const master = getMasterDb(env)
   await ensureMasterSchema(master)
-  // Only customers who turned reports on.
-  const agencies = await master.execute({ sql: "SELECT customer_id FROM agency_settings WHERE reports_enabled = 1", args: [] })
+  // Only customers who turned reports on AND hold an active Agency plan
+  // (decision #3 — reports are the Agency-tier feature; a lapsed plan pauses
+  // sends without deleting seats, so upgrading resumes cleanly).
+  const agencies = await master.execute({
+    sql: `SELECT a.customer_id FROM agency_settings a
+          JOIN customers c ON c.id = a.customer_id
+          WHERE a.reports_enabled = 1 AND c.plan = 'agency' AND c.plan_status = 'active'`,
+    args: [],
+  })
   const period = new Date(nowMs).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
   let sent = 0
 

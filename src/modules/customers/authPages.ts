@@ -24,6 +24,7 @@ import {
   markEmailVerified,
   setCustomerPassword,
   customerIterations,
+  trialDaysFromEnv,
   audit,
 } from "./customers"
 import { allowRate, AUTH_LIMITS, clientIp, RATE_LIMIT_MESSAGE } from "../../shared/rateLimit"
@@ -107,7 +108,7 @@ export async function signupPostHandler(c: Context<AppEnv>): Promise<Response> {
     if (await findCustomerByEmail(db, email)) {
       return redirectTo("/app/login?error=" + encodeURIComponent("You already have an account with that email — sign in instead."))
     }
-    const customer = await createCustomer(db, email, password, name, customerIterations(c.env.SAAS_PBKDF2_ITERATIONS))
+    const customer = await createCustomer(db, email, password, name, customerIterations(c.env.SAAS_PBKDF2_ITERATIONS), trialDaysFromEnv(c.env.SAAS_TRIAL_DAYS))
     await audit(db, customer.id, "customer.signup")
 
     const token = await issueToken(db, customer.id, "verify")

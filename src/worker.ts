@@ -44,6 +44,7 @@ import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce
 import { processDuePins } from "./modules/pinterest"
 import { runDeadLinkCron } from "./modules/affiliate"
 import { runMonthlyReports } from "./modules/agency"
+import { platformBillingWebhookRoutes } from "./modules/billing"
 
 const app = new Hono<AppEnv>()
 
@@ -85,6 +86,7 @@ app.route("/api/saas/hooks", saasHooksRoutes)
 app.route("/api/saas/forms", saasFormsRoutes)
 app.route("/api/saas/checkout", saasCheckoutRoutes)
 app.route("/api/saas/stripe-webhook", saasStripeWebhookRoutes)
+app.route("/api/saas/billing-webhook", platformBillingWebhookRoutes)
 app.route("/api/saas", saasApiRoutes)
 
 // ───────────────────────── Admin ─────────────────────────────────

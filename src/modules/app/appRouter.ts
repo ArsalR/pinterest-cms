@@ -52,6 +52,7 @@ import { clonePageHandler, cloneSubmitHandler, cloneGenesisHandler } from "../cl
 import {
   agencyPanelHandler, agencySaveHandler, seatCreateHandler, seatDeleteHandler, clientPortalHandler,
 } from "../agency"
+import { billingPageHandler, billingCheckoutHandler, billingPortalHandler } from "../billing"
 
 type PageHandler = (c: Context<AppEnv>) => Promise<Response>
 
@@ -136,6 +137,10 @@ saasAppRoutes.get("/connections/gsc/callback", prot(gscCallbackHandler))
 saasAppRoutes.get("/sites/:id/clone", prot(clonePageHandler))
 saasAppRoutes.post("/sites/:id/clone", prot(cloneSubmitHandler))
 saasAppRoutes.post("/sites/:id/reseed", prot(cloneGenesisHandler))
+// Platform billing (Phase 9b, decision #3).
+saasAppRoutes.get("/billing", prot(billingPageHandler))
+saasAppRoutes.post("/billing/checkout", prot(billingCheckoutHandler))
+saasAppRoutes.post("/billing/portal", prot(billingPortalHandler))
 // Agency mode — white-label + seats (Phase 9, K11).
 saasAppRoutes.get("/agency", prot(agencyPanelHandler))
 saasAppRoutes.post("/agency", prot(agencySaveHandler))

@@ -10,6 +10,7 @@ import { ensureMasterSchema } from "../../shared"
 import { renderSaasLayout } from "../../shared"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, type Customer } from "../customers"
+import { hasAgencyFeatures } from "../billing"
 import { validateBrand, DEFAULT_BRAND } from "./branding"
 import { renderReportHtml, buildSiteReport } from "./reports"
 import {
@@ -34,6 +35,25 @@ async function customerSites(master: Awaited<ReturnType<typeof masterDb>>, custo
 
 export async function agencyPanelHandler(c: Context<AppEnv>): Promise<Response> {
   const customer = c.get("customer") as Customer
+
+  // Agency features are the Agency-tier upsell (decision #3). Existing seats
+  // and portal links keep working if a plan lapses — only MANAGEMENT is gated,
+  // so an agency's clients never lose report access mid-cycle.
+  if (!hasAgencyFeatures(customer.plan)) {
+    const body = `
+      <div class="card">
+        <h2 style="margin:0 0 4px;font-size:16px">Agency &amp; white-label</h2>
+        <p class="muted" style="font-size:13px">Brand client reports as your own, give each client a scoped report portal, and email them a monthly summary automatically.</p>
+        <ul style="padding-left:18px;margin:12px 0 16px">
+          <li style="font-size:13px;color:#d4d4d4;margin:3px 0">White-label branding (your name, color, logo)</li>
+          <li style="font-size:13px;color:#d4d4d4;margin:3px 0">Client seats with read-only report portals</li>
+          <li style="font-size:13px;color:#d4d4d4;margin:3px 0">Monthly auto-reports emailed to each client</li>
+        </ul>
+        <a class="btn" href="/app/billing">Upgrade to Agency</a>
+      </div>`
+    return c.html(renderSaasLayout({ title: "Agency", active: "agency", customer, bodyHtml: body }), 200, NO_STORE)
+  }
+
   const master = await masterDb(c)
   const url = new URL(c.req.url)
   const done = url.searchParams.get("done")
@@ -115,6 +135,9 @@ export async function agencyPanelHandler(c: Context<AppEnv>): Promise<Response> 
 
 export async function agencySaveHandler(c: Context<AppEnv>): Promise<Response> {
   const customer = c.get("customer") as Customer
+  if (!hasAgencyFeatures(customer.plan)) {
+    return new Response(null, { status: 302, headers: { Location: "/app/billing" } })
+  }
   const master = await masterDb(c)
   const back = (params: Record<string, string>) =>
     new Response(null, { status: 302, headers: { Location: `/app/agency?${new URLSearchParams(params)}` } })
@@ -140,6 +163,9 @@ export async function agencySaveHandler(c: Context<AppEnv>): Promise<Response> {
 
 export async function seatCreateHandler(c: Context<AppEnv>): Promise<Response> {
   const customer = c.get("customer") as Customer
+  if (!hasAgencyFeatures(customer.plan)) {
+    return new Response(null, { status: 302, headers: { Location: "/app/billing" } })
+  }
   const master = await masterDb(c)
   const back = (params: Record<string, string>) =>
     new Response(null, { status: 302, headers: { Location: `/app/agency?${new URLSearchParams(params)}` } })
