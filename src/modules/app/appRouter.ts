@@ -93,6 +93,30 @@ export const clientPortal: MiddlewareHandler<AppEnv> = pub(clientPortalHandler)
 
 export const saasAppRoutes = new Hono<AppEnv>()
 
+/**
+ * Security headers for the dashboard (finding — D9). Applied ONLY when the
+ * request is actually on the SaaS host (saasActive), so tenant-host responses
+ * that fall through remain byte-identical. frame-ancestors 'none' blocks
+ * clickjacking of the authenticated, state-changing dashboard; the CSP keeps
+ * 'unsafe-inline' because the dashboard ships inline styles + small inline
+ * scripts (e.g. the zone-activation poller) — still a real default-src lockdown.
+ */
+export const saasSecurityHeaders: MiddlewareHandler<AppEnv> = async (c, next) => {
+  await next()
+  if (!saasActive(c) || !c.res) return
+  const h = c.res.headers
+  h.set("X-Frame-Options", "DENY")
+  h.set("X-Content-Type-Options", "nosniff")
+  h.set("Referrer-Policy", "strict-origin-when-cross-origin")
+  h.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+  h.set(
+    "Content-Security-Policy",
+    "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; " +
+      "img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+  )
+}
+saasAppRoutes.use("*", saasSecurityHeaders)
+
 // Auth pages (no session).
 saasAppRoutes.get("/signup", pub(signupGetHandler))
 saasAppRoutes.post("/signup", pub(signupPostHandler))
