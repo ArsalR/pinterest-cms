@@ -34,6 +34,15 @@ export const adminAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) =>
   if (!payload || !payload.sub) {
     return redirectToLogin(c.req.url)
   }
+  // Token-confusion defense: admin session tokens are minted WITHOUT an `aud`
+  // claim (routes/admin/login.ts). SaaS tokens all carry `aud` (saas session,
+  // OAuth state, client-seat). Reject any aud-bearing token here so that even
+  // if an operator misconfigures JWT_SECRET === SAAS_JWT_SECRET, a customer's
+  // SaaS token can never be replayed as a tenant-admin cookie (which would
+  // otherwise slip through on the fail-open DB path below).
+  if (payload.aud !== undefined) {
+    return redirectToLogin(c.req.url)
+  }
 
   // Verify user still exists. On DB error, trust the valid JWT so a transient
   // connectivity failure doesn't lock the user out (fail-open on infra errors,
