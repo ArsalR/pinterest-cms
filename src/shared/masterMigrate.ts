@@ -249,6 +249,16 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_client_seats_customer ON client_seats(customer_id)`,
     ],
   },
+  {
+    version: 9,
+    name: "009_platform_billing",
+    statements: [
+      // Phase 9b — platform subscriptions. Additive columns; plan/plan_status/
+      // trial_ends_at exist since v1 and stay authoritative for gating.
+      `ALTER TABLE customers ADD COLUMN stripe_customer_id TEXT`,
+      `ALTER TABLE customers ADD COLUMN stripe_subscription_id TEXT`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO

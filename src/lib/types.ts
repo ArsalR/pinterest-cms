@@ -64,6 +64,14 @@ export interface CloudflareEnv {
   // Pinterest grants standard access (OAUTH_SETUP.md).
   PINTEREST_APP_ID?: string       // secret — Pinterest OAuth app id
   PINTEREST_APP_SECRET?: string   // secret — Pinterest OAuth app secret
+  // Phase 9b — platform billing (decision #3: $29 Starter / $79 Agency, 7-day
+  // trial). PLATFORM_* distinguishes OUR Stripe account from customers'
+  // BYO sell-side keys. Self-gates: billing UI shows "coming soon" until set.
+  PLATFORM_STRIPE_SECRET_KEY?: string     // secret — platform Stripe secret key
+  PLATFORM_STRIPE_WEBHOOK_SECRET?: string // secret — platform webhook signing secret
+  SAAS_PRICE_STARTER_CENTS?: string       // var — default 2900
+  SAAS_PRICE_AGENCY_CENTS?: string        // var — default 7900
+  SAAS_TRIAL_DAYS?: string                // var — signup trial length (default 7)
 }
 
 export interface SiteConfig {

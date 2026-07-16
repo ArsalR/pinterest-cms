@@ -11,7 +11,15 @@ import { hashPassword, verifyPassword, signJwt, verifyJwt, storedHashIterations 
 import { cuid } from "../../lib/utils"
 
 export const SAAS_SESSION_COOKIE = "saas_session"
-export const TRIAL_DAYS = 14
+// Decision #3: 7-day trial (was 14 pre-billing). Env-overridable at signup via
+// SAAS_TRIAL_DAYS without touching this default.
+export const TRIAL_DAYS = 7
+
+/** Resolve the signup trial length from env (falls back to TRIAL_DAYS). Pure. */
+export function trialDaysFromEnv(raw: string | undefined): number {
+  const n = parseInt(raw ?? "", 10)
+  return Number.isFinite(n) && n >= 1 && n <= 90 ? n : TRIAL_DAYS
+}
 
 const VERIFY_TTL_HOURS = 24
 const RESET_TTL_HOURS = 1
@@ -161,14 +169,15 @@ export async function createCustomer(
   email: string,
   password: string,
   name: string | null,
-  iterations: number = DEFAULT_CUSTOMER_ITERATIONS
+  iterations: number = DEFAULT_CUSTOMER_ITERATIONS,
+  trialDays: number = TRIAL_DAYS
 ): Promise<Customer> {
   const id = cuid()
   const passwordHash = await hashPassword(password, iterations)
   await db.execute({
     sql: `INSERT INTO customers (id, email, password, name, trial_ends_at)
           VALUES (?, ?, ?, ?, ?)`,
-    args: [id, email, passwordHash, name, trialEnd(new Date())],
+    args: [id, email, passwordHash, name, trialEnd(new Date(), trialDays)],
   })
   const created = await findCustomerById(db, id)
   if (!created) throw new Error("customer insert did not persist")
