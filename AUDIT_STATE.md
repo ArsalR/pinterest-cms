@@ -16,10 +16,10 @@ Branch: `final-audit` (from `main` @ 9c56416). Resume by reading this file.
 - **D Security** — STRONG PASS w/ 2 fixes. auth boundary fixed; cookie flags OK; vault already covered; IDOR scoping proven; SQL parameterized (no string-built queries found); no-secret-logging scan clean; SSRF = Workers-sandbox LOW.
 - **E Money/failure** — PARTIAL. Provisioning resume state-machine tested (Phase-10). Billing idempotent (SET). Free-tier arithmetic ESTIMATED not measured. Kill-at-every-step not exhaustively run.
 - **F E2E journey** — NOT RUN as a single harness. Individual legs are unit-tested; no end-to-end artifact log produced. RECOMMENDED before launch.
-- **G Template cold build** — gate WIRING verified (deploy.yml runs zero-js/headers/seo/lhci as blocking steps; scripts exist). Cold `npm install && build` + deliberate-break NOT executed (template deps absent here). Owner/CI must confirm on first publish.
+- **G Template cold build** — DONE (executed). Cold `npm install && npm run build` succeeds; empty-site (stub CMS `total:0`) builds a full valid site; full SEO set emitted (404/_headers/robots/rss/llms.txt/sitemap/manifest + 7 trust pages). All 3 gates PASS on clean dist AND each returns exit 1 when deliberately broken (injected `<script>`, dropped header, deleted robots.txt) then green when restored. Ecommerce kind builds; `/cart.js` is the ONLY client island; zero-js gate passes. Missing-key / CMS-unreachable hard-fail is the documented design ("a silent empty site is worse than a red build", `cms.ts:62`). LHCI budget run NOT executed (needs Chromium+preview server); budgets asserted static in `src/lib/audit.test.ts`.
 
 ## Remaining for a continuation session
-1. Part B: line-by-line covenant matrix.
+1. Part B: line-by-line covenant matrix (spot-checked; locked decisions all VERIFIED).
 2. Part E4: real subrequest/CPU count for worst-case provisioning step + report cron.
 3. Part F: build a mocked full-lifecycle integration test.
-4. Part G: cold-clone the template, run gates, break each, confirm each blocks.
+4. Part G LHCI: run the Lighthouse budget assertions with Chromium (rest of G done).
