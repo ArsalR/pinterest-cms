@@ -16,10 +16,13 @@ const KEY_DOMAINS = "affiliate_domains"
 const KEY_DISCLOSURE = "affiliate_disclosure"
 const KEY_CLICKTRACK = "affiliate_click_tracking"
 
-// A weekly-ish dead-link cadence and per-run caps so the cron stays cheap.
+// A weekly-ish dead-link cadence and per-run caps. Bounds are sized for
+// Cloudflare's FREE tier: ≤50 subrequests per invocation. One site per tick ×
+// ≤40 link probes keeps the whole cron invocation under that ceiling (the daily
+// tick also runs R2 GC + the report cron, which share the same budget).
 const DEADLINK_INTERVAL_MS = 7 * 86_400_000
-const MAX_LINKS_PER_SCAN = 150
-const MAX_SITES_PER_CRON = 20
+const MAX_LINKS_PER_SCAN = 40
+const MAX_SITES_PER_CRON = 1
 
 async function siteDbFor(master: Client, cmsSiteId: string): Promise<Client | null> {
   const r = await master.execute({ sql: "SELECT turso_url, turso_token FROM sites WHERE id = ? LIMIT 1", args: [cmsSiteId] })

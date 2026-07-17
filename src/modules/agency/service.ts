@@ -185,18 +185,28 @@ export async function runMonthlyReports(env: CloudflareEnv, nowMs: number): Prom
   })
   const period = new Date(nowMs).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
   let sent = 0
+  // Free-tier subrequest budget: each site report costs ~5 subrequests (GSC
+  // refresh + search queries) and each seat ~1 email. Cap the sites processed
+  // per invocation so this daily-cron task stays well under 50 subrequests
+  // (shared with R2 GC + the dead-link cron). Monthly per-seat throttling means
+  // unsent seats are simply picked up on the next daily tick.
+  const MAX_SITES_PER_RUN = 6
+  let sitesProcessed = 0
 
   for (const arow of agencies.rows) {
+    if (sitesProcessed >= MAX_SITES_PER_RUN) break
     const customerId = String(arow.customer_id)
     const brand = await loadBrand(master, customerId)
     const seats = await listSeats(master, customerId)
     for (const seat of seats) {
+      if (sitesProcessed >= MAX_SITES_PER_RUN) break
       if (seat.lastReportAt) {
         const t = Date.parse(String(seat.lastReportAt).replace(" ", "T") + "Z")
         if (!Number.isNaN(t) && nowMs - t < MONTH_MS) continue // sent within the month
       }
       const sites = await loadSites(master, customerId, seat.siteIds)
       if (!sites.length) continue
+      sitesProcessed += sites.length
       const cards: string[] = []
       for (const s of sites) {
         const metrics = await gatherSiteMetrics(master, env, customerId, s, nowMs).catch(() => null)

@@ -111,6 +111,53 @@ has no per-IP limit; clicks can be spammed to inflate a site's own affiliate tot
 - Prompt key-scrub: `dispatchPrompt` refuses key-bearing prompts before any write/dispatch
   (`sites/security.test.ts`).
 
+## Part E4 — free-tier limits (MEASURED)
+
+Cloudflare free tier: **50 subrequests + 10ms CPU per invocation** (a `fetch`
+handler and its `waitUntil` work share one budget; each Turso `execute` and each
+external API call is one subrequest). Counts below are from the code.
+
+**FINDING E4-A — HIGH (launch-blocking on free tier): provisioning exceeds the
+per-invocation budget.** `runProvisioning` (`provisionSite.ts`) loops **all 11
+steps in one `waitUntil` invocation**. Per-step it makes external calls (GitHub
+repo/secret/dispatch, CF domain/turnstile/analytics, Turso) *plus* ~4 master-DB
+subrequests for step tracking (`setStep`×2 + `getSite` + `getConnection`).
+Measured totals for one full run:
+- `cms_site` alone previously ran the ~40-statement site schema one-execute-at-a-
+  time (~40 subrequests) + 2× PBKDF2(100k) (~10–16ms CPU) → **exceeded BOTH
+  limits by itself**.
+- Full run ≈ **~100 subrequests** (≈40 external + ≈44 master-tracking + schema),
+  ≈2× 50-subrequest limit; CPU dominated by 2× PBKDF2 + 6× RSA (installation-token
+  signing, once per GitHub step).
+- **Mitigation landed:** schema now applies as **one `batch()`** (40→1
+  subrequest, `provision.ts`, tested). This fixes the standalone network-admin
+  `createSite` (used by the frozen CMS path) and removes the single worst spike.
+- **Still required (NOT landed — owner-decision):** the *driver* must run **one
+  step per invocation** so no single invocation exceeds ~15 subrequests. Two
+  viable designs: (1) **self-continuation** — after each step, if more remain,
+  `waitUntil(fetch(<self>/api/saas/_provision/:id?t=<signed>))` starts the next
+  step in a fresh invocation (fast, free-tier-safe; adds 1 subrequest/step;
+  needs a signed internal endpoint); (2) **cron-advance** — the */5 tick advances
+  each in-progress site by one step (trivial, but ~55min to fully provision).
+  Recommendation: self-continuation. **Or** move to Workers Paid ($5/mo →
+  1000 subrequests, 30s CPU), which removes E4 entirely. This is the single
+  decision that gates a free-tier launch.
+
+**FINDING E4-B — MEDIUM (mitigated): background crons exceeded the budget.**
+- Dead-link cron did **up to 40 sites × 150 link probes = ~3000 subrequests** in
+  one daily invocation. **Fixed:** capped to 1 site × 40 probes per tick (weekly-
+  throttled; remainder next tick).
+- Monthly-report cron was **unbounded** (seats×sites × ~5 subrequests each).
+  **Fixed:** capped to 6 sites per invocation (monthly-throttled).
+- Note: R2 GC + dead-link + report all ride the **same daily `0 4 * * *`
+  invocation** and share its 50-subrequest budget; the caps keep the sum safe
+  (GC + 40 + ~30). If more background work is added, split it across cron strings.
+
+**PBKDF2 CPU (E4-C — proposed):** `createSite` hashes the admin password AND the
+API key with PBKDF2(100k). API keys are high-entropy (`cms_live_<32hex>`) and do
+not need password-stretching — a single SHA-256 would be cryptographically
+sufficient and ~free, halving `cms_site` CPU. Touches the frozen API-key verify
+path (existing keys), so **owner-decision**, not changed here.
 ## Part G — template cold build (EXECUTED, PASS)
 Cold-cloned the template, `npm install && npm run build` against a stub CMS:
 - **G1** build succeeds; **G6** empty-site (`total:0`) builds a full valid site. Missing
