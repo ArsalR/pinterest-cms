@@ -243,6 +243,43 @@ export async function repositoryDispatch(
   })
 }
 
+// ─────────────── preview-window PR ops (approve / discard) ───────────────
+
+export interface OpenPr {
+  number: number
+  headRef: string
+  title: string
+  htmlUrl: string
+}
+
+/** Open PRs whose head branch starts with `claude/` — the pending preview edits. */
+export async function listClaudePreviewPrs(token: string, fullName: string): Promise<OpenPr[]> {
+  const r = await ghInst<Array<{ number: number; head: { ref: string }; title: string; html_url: string }>>(
+    token,
+    `/repos/${fullName}/pulls?state=open&per_page=20`
+  )
+  return (r.body ?? [])
+    .filter((p) => p.head?.ref?.startsWith("claude/"))
+    .map((p) => ({ number: p.number, headRef: p.head.ref, title: p.title, htmlUrl: p.html_url }))
+}
+
+/** Merge a preview PR to main (approve → the covenant-gated deploy takes it live). */
+export async function mergePullRequest(token: string, fullName: string, number: number): Promise<boolean> {
+  const r = await ghInst<{ merged?: boolean }>(
+    token,
+    `/repos/${fullName}/pulls/${number}/merge`,
+    { method: "PUT", body: JSON.stringify({ merge_method: "squash" }) },
+    [405, 409]
+  )
+  return r.status === 200 && !!r.body?.merged
+}
+
+/** Close a preview PR (discard) and delete its branch. Best-effort on the branch. */
+export async function closePullRequest(token: string, fullName: string, number: number, headRef: string): Promise<void> {
+  await ghInst(token, `/repos/${fullName}/pulls/${number}`, { method: "PATCH", body: JSON.stringify({ state: "closed" }) }, [404, 422])
+  await ghInst(token, `/repos/${fullName}/git/refs/heads/${headRef}`, { method: "DELETE" }, [404, 422]).catch(() => {})
+}
+
 // ─────────────── Phase 4: prompt runs, commits, rollback ───────────────
 
 export interface WorkflowRunInfo {
