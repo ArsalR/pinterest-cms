@@ -18,6 +18,84 @@ import {
 import { dispatchPrompt, promptRuns, genesisPrompt } from "./prompts"
 import { installationToken, listCommits, rollbackToCommit } from "../connections"
 import { audit } from "../customers"
+import {
+  PRESETS, TONES, LAYOUTS, isPreset, isLayout, isTone, toneDirective,
+  DEFAULT_PRESET, DEFAULT_TONE, type SiteKindId,
+} from "../design"
+
+/** Preset swatch cards + kind-aware layout radios + tone — for the create form.
+ *  Dashboard-side inline CSS/JS (the zero-JS covenant governs the SITES, not
+ *  this panel). Layout groups for non-selected kinds are disabled so only the
+ *  active kind's layout submits. */
+function designOptionsHtml(): string {
+  const presetCards = PRESETS.map(
+    (p) => `<label style="cursor:pointer;display:block">
+      <input type="radio" name="preset" value="${escapeAttr(p.id)}" ${p.id === DEFAULT_PRESET ? "checked" : ""} style="position:absolute;opacity:0" onchange="dsel(this)">
+      <span class="dcard" style="display:block;border:2px solid #404040;border-radius:10px;overflow:hidden">
+        <span style="display:block;height:44px;background:${p.swatch.bg};position:relative">
+          <span style="position:absolute;left:10px;top:12px;width:20px;height:20px;border-radius:5px;background:${p.swatch.accent}"></span>
+          <span style="position:absolute;left:34px;top:14px;width:44px;height:8px;border-radius:4px;background:${p.swatch.fg};opacity:.85"></span>
+          <span style="position:absolute;left:34px;top:26px;width:30px;height:6px;border-radius:3px;background:${p.swatch.fg};opacity:.4"></span>
+        </span>
+        <span style="display:block;padding:7px 9px;background:#171717">
+          <span style="font-size:13px;font-weight:600">${escapeHtml(p.label)}</span>
+          <span class="muted" style="display:block;font-size:11px">${escapeHtml(p.mood)}</span>
+        </span>
+      </span>
+    </label>`
+  ).join("")
+
+  const layoutGroups = (Object.keys(LAYOUTS) as SiteKindId[])
+    .map(
+      (k) => `<div class="layout-group" data-kind="${k}" style="display:${k === "content" ? "flex" : "none"};gap:10px;flex-wrap:wrap">
+        ${LAYOUTS[k]
+          .map(
+            (l, i) => `<label style="flex:1;min-width:150px;border:1px solid #404040;border-radius:8px;padding:9px;cursor:pointer;font-size:13px">
+              <input type="radio" name="layout" value="${escapeAttr(l.id)}" ${i === 0 ? "checked" : ""} ${k === "content" ? "" : "disabled"}> ${escapeHtml(l.label)}
+              <span class="muted" style="display:block;font-size:11px;margin-left:20px">${escapeHtml(l.hint)}</span>
+            </label>`
+          )
+          .join("")}
+      </div>`
+    )
+    .join("")
+
+  const tones = TONES.map(
+    (t, i) => `<label style="flex:1;min-width:140px;border:1px solid #404040;border-radius:8px;padding:9px;cursor:pointer;font-size:13px">
+      <input type="radio" name="tone" value="${escapeAttr(t.id)}" ${t.id === DEFAULT_TONE ? "checked" : ""}> ${escapeHtml(t.label)}
+      <span class="muted" style="display:block;font-size:11px;margin-left:20px">${escapeHtml(t.hint)}</span>
+    </label>`
+  ).join("")
+
+  return `
+    <style>
+      .dgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin:6px 0 4px}
+      input[name="preset"]:checked + .dcard{border-color:#fafafa}
+      input[name="layout"]:checked,input[name="tone"]:checked{accent-color:#fafafa}
+    </style>
+    <label style="margin-top:16px">Design preset</label>
+    <div class="dgrid">${presetCards}</div>
+    <p class="muted" style="font-size:12px;margin:0 0 8px">Change it later anytime — with a visual before/after preview.</p>
+    <label>Homepage layout</label>
+    <div id="layout-wrap">${layoutGroups}</div>
+    <label style="margin-top:12px">Content tone</label>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">${tones}</div>
+    <script>
+      function dsel(){}
+      (function(){
+        var kind=document.getElementById('kind');
+        if(!kind)return;
+        kind.addEventListener('change',function(){
+          document.querySelectorAll('.layout-group').forEach(function(g){
+            var on=g.getAttribute('data-kind')===kind.value;
+            g.style.display=on?'flex':'none';
+            var rs=g.querySelectorAll('input[type=radio]');
+            rs.forEach(function(r,i){r.disabled=!on; if(on&&i===0)r.checked=true;});
+          });
+        });
+      })();
+    </script>`
+}
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 
@@ -125,8 +203,9 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
              </div>
              <label for="name">Site name</label>
              <input class="wide" id="name" name="name" required maxlength="80" placeholder="BrewCraft">
-             <label for="niche">Niche (one line — guides the design and trust pages)</label>
+             <label for="niche">Niche (one line — guides content and trust pages)</label>
              <input class="wide" id="niche" name="niche" required maxlength="200" placeholder="Home espresso gear and technique">
+             ${designOptionsHtml()}
              <button class="btn" type="submit" style="margin-top:16px">Create site</button>
              <p class="muted" style="margin-top:8px;font-size:12px">Creates a repository in your GitHub, deploys to your Cloudflare, connects your domain — typically live in under 10 minutes.</p>
            </form>`
@@ -162,6 +241,13 @@ export async function createSitePostHandler(c: Context<AppEnv>): Promise<Respons
   const niche = String(form.get("niche") || "").trim()
   const kindRaw = String(form.get("kind") || "content")
   const kind = isSiteKind(kindRaw) ? kindRaw : "content"
+  // Design options (V1.1) — validated against the catalog, never free-form.
+  const presetRaw = String(form.get("preset") || "")
+  const preset = isPreset(presetRaw) ? presetRaw : DEFAULT_PRESET
+  const layoutRaw = String(form.get("layout") || "")
+  const layout = isLayout(kind, layoutRaw) ? layoutRaw : "classic"
+  const toneRaw = String(form.get("tone") || "")
+  const tone = isTone(toneRaw) ? toneRaw : DEFAULT_TONE
 
   if (!zoneId || !domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) return fail("Pick a domain from the list.")
   if (!name) return fail("Give the site a name.")
@@ -177,6 +263,9 @@ export async function createSitePostHandler(c: Context<AppEnv>): Promise<Respons
     niche,
     zoneId,
     kind,
+    preset,
+    layout,
+    tone,
   })
   c.executionCtx.waitUntil(
     runProvisioning(db, c.env, siteId).catch((err) => console.error("provisioning crashed:", err))
@@ -301,6 +390,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
       <h2 style="margin:0 0 4px;font-size:16px">${escapeHtml(site.domain)} ${chip(site.status)}</h2>
       <p class="muted">${escapeHtml(site.name)}${site.niche ? " · " + escapeHtml(site.niche) : ""} · canonical: ${escapeHtml(canonicalHost)}</p>
       ${site.status === "active" ? `<a class="btn" href="https://${escapeAttr(canonicalHost)}/" target="_blank">Open site ↗</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/design">Design</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/preview">Preview &amp; approve</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/drafts">Drafts &amp; quality gate</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/insights">Internal linking</a>
@@ -382,7 +472,7 @@ export async function siteGenesisHandler(c: Context<AppEnv>): Promise<Response> 
     return siteRedirect(siteId, { error: "Your trial has ended — prompt-edits are paused until you subscribe." })
   }
   const db = await masterDb(c)
-  const result = await dispatchPrompt(db, c.env, site, genesisPrompt(site.name, site.niche ?? "", site.kind ?? "content"), "direct", "genesis")
+  const result = await dispatchPrompt(db, c.env, site, genesisPrompt(site.name, site.niche ?? "", site.kind ?? "content", toneDirective(site.tone ?? "professional")), "direct", "genesis")
   return result.ok
     ? siteRedirect(siteId, { notice: "Genesis started — design plus 10 seed articles. This usually finishes within 15 minutes." })
     : siteRedirect(siteId, { error: result.problem ?? "Couldn't start genesis." })

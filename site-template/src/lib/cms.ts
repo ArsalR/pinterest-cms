@@ -7,6 +7,10 @@ export interface SiteConfig {
   name: string
   niche: string
   kind?: "content" | "ecommerce" | "local-business" | "portfolio"
+  /** Design preset (V1.1) — CSS-variable token set; see src/lib/presets.ts. */
+  preset?: string
+  /** Homepage layout variant (V1.1) — per-kind static switch. */
+  layout?: string
   domain: string
   canonicalHost: "apex" | "www"
   cmsApiUrl: string
