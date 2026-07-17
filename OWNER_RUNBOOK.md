@@ -97,6 +97,37 @@ npm run check:zero-js && npm run check:headers && node scripts/check-seo-files.m
 Then deliberately break one gate (add a `<script>` to a page, drop a header from
 `public/_headers`, delete `sitemap` generation) and confirm the matching CI step FAILS.
 
+**Every preset is covenant-checked automatically.** The template ships a
+`.github/workflows/preset-matrix.yml` that builds the site once per design preset
+(modern / editorial / bold / calm / warm / tech) against a stub CMS and runs the
+zero-JS + security-header + SEO gates on each. Nothing to do — just confirm the
+"Preset covenant matrix" check is green on the template repo's Actions tab after
+you publish it. Adding a new preset later requires adding it to that matrix (the
+platform's `design.test.ts` enforces this).
+
+## 6b. Four demo sites (also your permanent end-to-end smoke test)
+
+Once `SAAS_MODE` is on and provisioning works (§8), create **four** demo sites
+through the **real dashboard flow** — one per kind, each on a different preset —
+on platform-owned subdomains. These are what the public `/examples` gallery links
+to, and they double as your standing smoke test.
+
+| Subdomain | Kind | Preset |
+|---|---|---|
+| `demo-blog.arsal.app` | Blog / content | editorial |
+| `demo-shop.arsal.app` | Online store | modern |
+| `demo-local.arsal.app` | Local business | warm |
+| `demo-folio.arsal.app` | Portfolio | bold |
+
+1. Add each subdomain as a zone/route on the platform's own Cloudflare account.
+2. In the dashboard (signed in as a platform-owned account), **Add site** → pick the
+   kind, preset, and a layout for each; let genesis run.
+
+**Verify:** each demo builds green through its covenant gates and is live at its
+subdomain; the four gallery cards on `https://arsal.app/examples` link to working
+demos. **Re-run this after any platform deploy** — re-genesis one demo and confirm
+it still goes live cleanly; that's the fastest full-pipeline health check you have.
+
 ## 7. OAuth verification status (Google / Pinterest)
 
 Start both submissions now (weeks of review). Add yourself as a Google **test user** so
