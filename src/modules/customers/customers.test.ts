@@ -65,14 +65,14 @@ describe("planGate (decision B: trial expiry = read-only, sites stay live)", () 
 })
 
 describe("customerIterations (config-driven work factor, decision #6)", () => {
-  it("defaults to 100k when unset or garbage", () => {
-    expect(customerIterations(undefined)).toBe(100_000)
-    expect(customerIterations("")).toBe(100_000)
-    expect(customerIterations("not-a-number")).toBe(100_000)
+  it("defaults to the paid-tier target (600k, OWASP-2023) when unset or garbage", () => {
+    expect(customerIterations(undefined)).toBe(600_000)
+    expect(customerIterations("")).toBe(600_000)
+    expect(customerIterations("not-a-number")).toBe(600_000)
   })
-  it("rejects dangerously low values", () => {
-    expect(customerIterations("500")).toBe(100_000)
-    expect(customerIterations("9999")).toBe(100_000)
+  it("rejects dangerously low values (falls back to the default target)", () => {
+    expect(customerIterations("500")).toBe(600_000)
+    expect(customerIterations("9999")).toBe(600_000)
   })
   it("accepts explicit overrides in both directions", () => {
     expect(customerIterations("50000")).toBe(50_000)   // free-tier tuning down

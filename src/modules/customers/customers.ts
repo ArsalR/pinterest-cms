@@ -28,7 +28,12 @@ const RESET_TTL_HOURS = 1
 // SAAS_PBKDF2_ITERATIONS env var overrides; the pbkdf2$<iters>$… envelope is
 // self-describing, so raising the value later strengthens hashes LAZILY on
 // next successful login (rehash-on-login below) — no data migration.
-const DEFAULT_CUSTOMER_ITERATIONS = 100_000
+// Paid-tier target (decision: on Workers Paid the 10ms free-tier CPU cap is
+// gone, so we raise PBKDF2-HMAC-SHA256 to the OWASP-2023 recommendation of
+// 600k). The pbkdf2$<iters>$… envelope + rehash-on-login (verifyCustomerPassword)
+// upgrades existing customers on their next sign-in — no data migration.
+// SAAS_PBKDF2_ITERATIONS still overrides if ever needed.
+const DEFAULT_CUSTOMER_ITERATIONS = 600_000
 
 export function customerIterations(envValue: string | undefined): number {
   const n = parseInt(envValue ?? "", 10)

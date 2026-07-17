@@ -42,6 +42,7 @@ import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketing
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 import { processDuePins } from "./modules/pinterest"
+import { runUptimeChecks } from "./modules/analytics"
 import { runDeadLinkCron } from "./modules/affiliate"
 import { runMonthlyReports } from "./modules/agency"
 import { platformBillingWebhookRoutes } from "./modules/billing"
@@ -240,6 +241,8 @@ export default {
       // path so a Pinterest hiccup never stalls the CMS scheduler.
       if (env.SAAS_MODE === "1") {
         ctx.waitUntil(processDuePins(env, Date.now()).then(() => undefined).catch(() => undefined))
+        // Uptime monitoring at the 5-minute cadence (un-deferred on Workers Paid).
+        ctx.waitUntil(runUptimeChecks(env, Date.now()).then(() => undefined).catch(() => undefined))
       }
     }
   },
