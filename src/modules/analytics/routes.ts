@@ -12,6 +12,7 @@ import { renderSaasLayout } from "../../shared"
 import { getConnectionSecret } from "../connections"
 import { audit, type Customer } from "../customers"
 import { fetchCwv, cwvAlerts, rateLcp, rateCls, rateInp, type Cwv, type Rating } from "./cwv"
+import { loadUptime, uptimePct } from "./uptime"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 
@@ -67,6 +68,13 @@ export async function performancePageHandler(c: Context<AppEnv>): Promise<Respon
     }
   }
 
+  const uptime = await loadUptime(master, siteId).catch(() => null)
+  const uptimeHtml = uptime
+    ? `<div class="card"><h3 style="margin:0 0 6px;font-size:15px">Uptime (today)</h3>
+        <div style="font-size:22px;font-weight:700;color:${uptimePct(uptime) >= 99 ? "#86efac" : uptimePct(uptime) >= 95 ? "#fcd34d" : "#fca5a5"}">${uptimePct(uptime)}%</div>
+        <p class="muted" style="font-size:12px;margin:4px 0 0">${uptime.checks} check${uptime.checks === 1 ? "" : "s"} · last ${uptime.lastStatus || "—"}${uptime.lastLatencyMs ? ` in ${uptime.lastLatencyMs}ms` : ""} · monitored every 5 min</p></div>`
+    : `<div class="card"><p class="muted" style="font-size:13px">Uptime monitoring runs every 5 minutes — first result appears shortly after the site goes live.</p></div>`
+
   const alerts = current ? cwvAlerts(current, previous) : []
   const alertsHtml = alerts.length
     ? `<div class="card" style="border-color:#7f1d1d">${alerts.map((a) => `<p style="margin:4px 0;color:#fca5a5">⚠ ${escapeHtml(a.message)} <a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">ask Claude to fix it</a></p>`).join("")}</div>`
@@ -87,7 +95,8 @@ export async function performancePageHandler(c: Context<AppEnv>): Promise<Respon
       <p class="muted" style="font-size:13px">Core Web Vitals measured from actual visits via Cloudflare Web Analytics (cookie-free, zero performance cost).</p>
     </div>
     ${alertsHtml}
-    <div class="card">${metricsHtml}</div>`
+    <div class="card">${metricsHtml}</div>
+    ${uptimeHtml}`
   await audit(master, customer.id, "site.performance_viewed", site.domain).catch(() => {})
   return c.html(renderSaasLayout({ title: "Performance", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
