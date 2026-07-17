@@ -174,6 +174,66 @@ Cold-cloned the template, `npm install && npm run build` against a stub CMS:
 - LHCI budget run not executed here (needs Chromium + preview server); budgets asserted
   statically in `src/lib/audit.test.ts` and wired deploy-blocking in `deploy.yml`.
 
+## Appendix C — Part B conformance matrix (line-by-line)
+
+Status: **V**erified (file:line) · **P**artial · **M**issing · **D**eviated (justified).
+
+### Performance covenant (P1–P9)
+| # | Item | St | Evidence / note |
+|---|---|---|---|
+| P1 | Zero-JS by default | V | `check-zero-js.mjs` gate binds (Part G); ecommerce cart is the only island |
+| P2 | Lighthouse budget gate (deploy-blocking) | P | budgets in `lighthouserc.json` + `deploy.yml` step + static assert (`audit.test.ts`); **actual LHCI run not executed here** — owner/CI on first publish |
+| P3 | Image pipeline (R2, AVIF/WebP srcset, dims) | V | `site-template/src/components/Img.astro`, `astro.config.mjs` sharp service |
+| P4 | Font discipline (system stack, swap, self-host) | V | template base styles; no Google Fonts requests |
+| P5 | CSS discipline (<20KB, critical inline) | P | Astro inlines; the <20KB ceiling is not separately gated |
+| P6 | Edge everything (immutable cache, HTTP/3, Brotli) | V | `public/_headers`; Cloudflare-served |
+| P7 | Third-party script firewall + wire-cost UX | P | `analytics/scriptCost.ts` estimate + warning built; the interactive "add anyway?" override flow is not a wired dashboard moment |
+| P8 | Continuous RUM + degradation alerts | V | `analytics/cwv.ts` + performance page + `cwvAlerts` |
+| P9 | PageSpeed badge (optional) | M | not built — spec marks it optional ("may") |
+
+### Security covenant (S1–S5)
+| # | Item | St | Evidence |
+|---|---|---|---|
+| S1 | Static = no attack surface | V | template is static; no origin DB/admin |
+| S2 | Security headers in CI (fail=block) | V | `check-headers.mjs` gate binds (Part G break-test) |
+| S3 | CF WAF/bot/DDoS via API at provisioning | V | `enableZoneProtection` in `provisionSite.ts` zone_protection step |
+| S4 | Tokens encrypted per-tenant, never logged, sigs verified, dispatch rate-limited, audit log | V | vault (`vault.test.ts`), no-secret-log scan, webhook verify, `PROMPT_DISPATCH_LIMIT`, `audit()` on every decrypt |
+| S5 | Git backup + one-click rollback | V | `rollbackToCommit` (forward-revert, `githubApi.test.ts`) |
+
+### Killer features (K1–K13)
+| # | Feature | St | Evidence / gap |
+|---|---|---|---|
+| K1 | One-prompt genesis + 7 trust pages + Turnstile contact form | V | `sites/prompts.ts` genesis; `[trust].astro` (Part G: 7 pages); `webhooks/forms.ts` |
+| K2 | Programmatic SEO through the gate | V | `pseo/generate.ts` + `quality-gate` |
+| K3 | Network brain: GSC, uptime, **404 monitor** | P | GSC (`network/gsc.ts`) V; uptime (`analytics/uptime.ts`) V; **404 monitor MISSING** (finding B-1) |
+| K4 | Decay radar + refresh | V | `network/decay.ts` + "Refresh with Claude" |
+| K5 | Internal linking + orphan detection | V | `linking/scorer.ts` + `orphans.ts` |
+| K6 | Cloning (marketplace later) | V/D | clone flow `cloning/` V; marketplace deferred by spec ("Later") |
+| K7 | Pinterest drip + pin-image generation | P | OAuth + drip queue V (`pinterest/`); **auto-generating 2–3 pin images DEVIATED** — pins use the post's cover image (finding B-2) |
+| K8 | AEO: llms.txt, schema, per-post checklist | V | `llms.txt.ts`, `@graph` schema, `network/aeo.ts` |
+| K9 | WP import → R2 + edge redirects | V/D | WXR+REST, R2 rehost, 301 map (`importer/`); "→ markdown" DEVIATED — content stored as HTML (CMS-native), documented |
+| K10 | Affiliate: cloaked links, dead-link cron, edge clicks | P | dead-link cron + edge click counter V; **named cloaked short-link manager PARTIAL** (finding B-3) |
+| K11 | Agency: white-label, seats, monthly reports | V | `agency/` (branding, seats, report cron), tier-gated |
+| K12 | Preview/rollback safety net | V | preview mode + `rollbackToCommit` |
+| K13 | Site kinds + ecommerce (Amendment 2) | V | 4 kinds; ecommerce cart-only island, BYO-Stripe, server-side checkout (Part G) |
+
+### Non-negotiables + Amendment 3
+| Item | St | Evidence |
+|---|---|---|
+| Endpoints byte-identical / all behind saas_mode | V | fall-through gating; Part C; `securityHeaders.test.ts` tenant no-op |
+| Covenants deploy-blocking | V | Part G break-tests |
+| Idempotent, resumable provisioning | V | `resume.test.ts` |
+| No plaintext secrets | V | vault + scan |
+| Plain-language errors | V | sampled throughout; gate detail strings (Part F) |
+| Structure covenant (modular, no cycles, barrel-only) | V | `lint:structure` CI, 22 modules |
+| Full SEO file set gate | V | `check-seo-files.mjs` (Part G break-test) |
+
+### Part B findings (all MEDIUM/LOW — none launch-blocking)
+- **B-1 (MEDIUM) — K3 404 monitor not built.** Spec: "404 monitor (top 404 paths from CF analytics, one-click add redirect)". The `redirects` table + frontend redirect handler exist (used by WP import), so the fix is additive: read top 404s from CF analytics + an "add redirect" button. Proposed, not built.
+- **B-2 (LOW/DEVIATED) — K7 pin-image generation.** Pins are created from the post's existing cover image, not 2–3 template-generated images. Reasonable deviation (image generation in Workers is heavy); functional pinning works. Recordable as a post-launch enhancement.
+- **B-3 (LOW/PARTIAL) — K10 cloaked short links.** The edge redirect + per-link click counting exist; the human-named `/go/product-x` central link manager (update-once-across-N-sites) is not built.
+- **P2/P7/P5 partials** noted in the table (LHCI live run, script-override UX moment, CSS-size gate) — enhancements, not blockers.
+
 ## NOT-VERIFIED (do before launch — see runbook)
 - Part B full line-by-line covenant matrix (spot-checked; locked decisions VERIFIED).
 - Part E4 real subrequest/CPU measurement for worst-case provisioning + report cron.
