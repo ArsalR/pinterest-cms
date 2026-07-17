@@ -308,6 +308,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/search">Search Console</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/decay">Decay radar</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/aeo">AI visibility</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/404s">404 monitor</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/pinterest">Pinterest</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/affiliate">Affiliate</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/import">Import from WP</a>

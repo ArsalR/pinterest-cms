@@ -3,5 +3,6 @@
 export * from "./gsc"
 export * from "./decay"
 export * from "./aeo"
+export * from "./notfound"
 export * from "./service"
 export * from "./routes"
