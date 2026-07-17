@@ -15,8 +15,9 @@ import { ensureMasterSchema } from "../../shared"
 import { renderSaasLayout } from "../../shared"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { signJwt, verifyJwt } from "../../lib/auth"
-import { audit, type Customer } from "../customers"
-import { saveConnection } from "../connections"
+import { audit, planGate, type Customer } from "../customers"
+import { saveConnection, getConnectionSecret } from "../connections"
+import { fetchTop404s, addRedirect, existingRedirectPaths, isValidTarget, normalizeFromPath, type NotFoundPath } from "./notfound"
 import {
   googleConfigured, gscAuthUrl, gscRedirectUri, exchangeGscCode, siteUrlForDomain, submitSitemap,
 } from "./gsc"
@@ -415,4 +416,99 @@ async function autoSubmitSitemaps(master: Awaited<ReturnType<typeof masterDb>>, 
     if (!s.domain) continue
     await submitSitemap(accessToken, siteUrlForDomain(s.domain), `https://${s.domain}/sitemap.xml`).catch(() => false)
   }
+}
+
+// ─────────────────────── 404 monitor + add-redirect (K3, B-1) ───────────────────────
+
+function nowSqlite(): string {
+  return new Date().toISOString().replace("T", " ").slice(0, 19)
+}
+
+/** Load a site incl. zone_id (needed for CF zone analytics). */
+async function loadSiteWithZone(master: Awaited<ReturnType<typeof masterDb>>, siteId: string, customerId: string) {
+  const r = await master.execute({
+    sql: "SELECT id, cms_site_id, domain, zone_id FROM customer_sites WHERE id = ? AND customer_id = ? LIMIT 1",
+    args: [siteId, customerId],
+  })
+  return r.rows.length ? (r.rows[0] as unknown as { id: string; cms_site_id: string | null; domain: string; zone_id: string | null }) : null
+}
+
+export async function notFoundPageHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSiteWithZone(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const url = new URL(c.req.url)
+  const done = url.searchParams.get("done")
+  const error = url.searchParams.get("error")
+
+  const header = `
+    <div class="card">
+      <p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">404 monitor</h2>
+      <p class="muted" style="font-size:13px">The most-hit missing URLs on your site (last 7 days, from Cloudflare). Add a 301 with one click so visitors and link-equity land on the right page.</p>
+    </div>`
+
+  let rows: NotFoundPath[] | null = null
+  const cfToken = await getConnectionSecret(master, c.env, customer.id, "cloudflare", "404-monitor").catch(() => null)
+  if (cfToken && site.zone_id) {
+    const until = new Date().toISOString()
+    const since = new Date(Date.now() - 7 * 864e5).toISOString()
+    rows = await fetchTop404s(cfToken, site.zone_id, since, until).catch(() => null)
+  }
+
+  if (!cfToken || !site.zone_id) {
+    return c.html(
+      renderSaasLayout({ title: "404 monitor", active: "sites", customer, bodyHtml: `${header}<div class="card"><p class="muted">Connect Cloudflare (Connections) and finish this site's domain setup to see its 404s.</p></div>` }),
+      200, NO_STORE
+    )
+  }
+
+  const seen = site.cms_site_id ? await existingRedirectPaths(master, site.cms_site_id).catch(() => new Set<string>()) : new Set<string>()
+  const open = (rows ?? []).filter((r) => !seen.has(normalizeFromPath(r.path)))
+
+  const list = open.length
+    ? open
+        .map(
+          (r) => `<div class="card" style="padding:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <div><code style="font-size:13px">${escapeHtml(r.path)}</code> <span class="muted" style="font-size:12px">· ${r.count} hit${r.count === 1 ? "" : "s"}</span></div>
+          <form method="POST" action="/app/sites/${escapeAttr(siteId)}/404s/redirect" style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="hidden" name="from" value="${escapeAttr(r.path)}">
+            <input name="to" required placeholder="/target-page/ or https://…" value="/" style="width:220px;background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:8px;color:#fafafa;font-size:13px">
+            <button class="btn ghost" type="submit">Add 301</button>
+          </form>
+        </div>
+      </div>`
+        )
+        .join("")
+    : `<div class="card"><p class="muted">${rows === null ? "Couldn't reach Cloudflare analytics just now — try again shortly." : "No unhandled 404s in the last 7 days 🎉"}</p></div>`
+
+  await audit(master, customer.id, "site.notfound_viewed", site.domain).catch(() => {})
+  return c.html(renderSaasLayout({ title: "404 monitor", active: "sites", customer, bodyHtml: header + list, banner: done ? escapeHtml(done) : error ? escapeHtml(error) : undefined }), 200, NO_STORE)
+}
+
+export async function addRedirectHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSiteWithZone(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (params: Record<string, string>) =>
+    new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/404s?${new URLSearchParams(params)}` } })
+
+  if (planGate(customer, nowSqlite()) === "read_only") return back({ error: "Your trial has ended — subscribe to edit the site." })
+  if (!site.cms_site_id) return back({ error: "This site has no content workspace yet." })
+
+  let form: FormData
+  try { form = await c.req.formData() } catch { return back({ error: "That form didn't come through — try again." }) }
+  const from = String(form.get("from") || "").trim()
+  const to = String(form.get("to") || "").trim()
+  if (!from.startsWith("/")) return back({ error: "That source path looks wrong." })
+  if (!isValidTarget(to)) return back({ error: "Target must be an internal path (/page/) or an https:// URL." })
+
+  const ok = await addRedirect(master, site.cms_site_id, from, to).catch(() => false)
+  await audit(master, customer.id, "site.redirect_added", site.domain, { from, to }).catch(() => {})
+  return back(ok ? { done: `301 added: ${from} → ${to}. It goes live on the next rebuild.` } : { error: "Couldn't save the redirect — please try again." })
 }

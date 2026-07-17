@@ -41,6 +41,7 @@ import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler } 
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
+  notFoundPageHandler, addRedirectHandler,
 } from "../network"
 import {
   pinterestPageHandler, pinterestQueueHandler,
@@ -155,6 +156,8 @@ saasAppRoutes.get("/sites/:id/search", prot(siteSearchPageHandler))
 saasAppRoutes.post("/sites/:id/search/sitemap", prot(submitSitemapHandler))
 saasAppRoutes.get("/sites/:id/decay", prot(siteDecayPageHandler))
 saasAppRoutes.get("/sites/:id/aeo", prot(siteAeoPageHandler))
+saasAppRoutes.get("/sites/:id/404s", prot(notFoundPageHandler))
+saasAppRoutes.post("/sites/:id/404s/redirect", prot(addRedirectHandler))
 saasAppRoutes.get("/connections/gsc/start", prot(gscStartHandler))
 saasAppRoutes.get("/connections/gsc/callback", prot(gscCallbackHandler))
 // Cloning (Phase 9, K6).
