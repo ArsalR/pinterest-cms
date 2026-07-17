@@ -166,7 +166,7 @@ export async function createSite(
 
 // Inlined schema — avoids runtime dependency on GitHub availability.
 // Keep in sync with src/schemas/site.sql (source of truth for documentation).
-const SITE_SCHEMA_STATEMENTS: readonly string[] = [
+export const SITE_SCHEMA_STATEMENTS: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, name TEXT, role TEXT DEFAULT 'admin', created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_hash TEXT UNIQUE NOT NULL, key_preview TEXT NOT NULL, permissions TEXT DEFAULT '["read","write"]', last_used_at TEXT, usage_count INTEGER DEFAULT 0, active INTEGER DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
   `CREATE TABLE IF NOT EXISTS api_logs (id TEXT PRIMARY KEY, api_key_id TEXT, endpoint TEXT NOT NULL, method TEXT NOT NULL, status INTEGER NOT NULL, post_id TEXT, created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (api_key_id) REFERENCES api_keys(id) ON DELETE SET NULL)`,
@@ -207,11 +207,12 @@ const SITE_SCHEMA_STATEMENTS: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_retry ON webhook_deliveries(status, next_retry_at) WHERE status = 'failed'`,
 ]
 
-/** Apply the site schema to a freshly created Turso database. */
+/** Apply the site schema to a freshly created Turso database. Uses a single
+ *  batch (one HTTP round-trip / subrequest) instead of ~40 sequential executes
+ *  — critical on Cloudflare's free tier (50 subrequests per invocation), and
+ *  atomic besides. Behavior-identical: same statements, same order. */
 async function runSchema(siteDb: ReturnType<typeof getSiteDb>): Promise<void> {
-  for (const stmt of SITE_SCHEMA_STATEMENTS) {
-    await siteDb.execute(stmt)
-  }
+  await siteDb.batch(SITE_SCHEMA_STATEMENTS as string[], "write")
 }
 
 /** Add a CNAME for hostname → workers.dev domain via Cloudflare API. */
