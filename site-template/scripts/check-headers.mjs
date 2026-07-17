@@ -23,4 +23,18 @@ if (missing.length) {
   console.error("SECURITY-HEADER GATE FAILED — missing:", missing.join(", "))
   process.exit(1)
 }
-console.log("security-header gate: OK")
+
+// Production must be UNFRAMEABLE. The dashboard's preview-window feature relaxes
+// frame-ancestors on the *preview* worker only (claude.yml preview step); this
+// gate runs on the production deploy path (deploy.yml) and blocks any build
+// whose framing protection was weakened — a preview-flavored _headers can never
+// reach production.
+if (!headers.includes("frame-ancestors 'none'")) {
+  console.error("SECURITY-HEADER GATE FAILED — production CSP must keep frame-ancestors 'none' (found a relaxed/preview value).")
+  process.exit(1)
+}
+if (!headers.includes("X-Frame-Options: DENY")) {
+  console.error("SECURITY-HEADER GATE FAILED — production must keep X-Frame-Options: DENY.")
+  process.exit(1)
+}
+console.log("security-header gate: OK (incl. production-unframeable assertion)")

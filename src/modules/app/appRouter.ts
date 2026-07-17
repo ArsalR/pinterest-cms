@@ -32,6 +32,7 @@ import {
 import {
   sitesPageHandler, createSitePostHandler, siteDetailHandler, siteRetryHandler,
   sitePromptHandler, siteGenesisHandler, siteRollbackHandler,
+  previewPageHandler, previewApproveHandler, previewDiscardHandler,
 } from "../sites"
 import { performancePageHandler } from "../analytics"
 import { draftsPageHandler, publishDraftHandler, publishAllHandler } from "../publishing"
@@ -113,7 +114,10 @@ export const saasSecurityHeaders: MiddlewareHandler<AppEnv> = async (c, next) =>
   h.set(
     "Content-Security-Policy",
     "default-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; " +
-      "img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+      "img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; " +
+      // The preview window embeds the customer's live site + throwaway preview
+      // worker (both https). The dashboard itself stays frame-ancestors 'none'.
+      "frame-src https:"
   )
 }
 saasAppRoutes.use("*", saasSecurityHeaders)
@@ -141,6 +145,10 @@ saasAppRoutes.post("/sites/:id/retry", prot(siteRetryHandler))
 saasAppRoutes.post("/sites/:id/prompt", prot(sitePromptHandler))
 saasAppRoutes.post("/sites/:id/genesis", prot(siteGenesisHandler))
 saasAppRoutes.post("/sites/:id/rollback", prot(siteRollbackHandler))
+// Visual preview window (K12).
+saasAppRoutes.get("/sites/:id/preview", prot(previewPageHandler))
+saasAppRoutes.post("/sites/:id/preview/approve", prot(previewApproveHandler))
+saasAppRoutes.post("/sites/:id/preview/discard", prot(previewDiscardHandler))
 // Gated publishing + content tools (Phase 5).
 saasAppRoutes.get("/sites/:id/drafts", prot(draftsPageHandler))
 saasAppRoutes.post("/sites/:id/drafts/:postId/publish", prot(publishDraftHandler))

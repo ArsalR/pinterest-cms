@@ -180,6 +180,13 @@ export async function createTurnstileWidget(
   return { sitekey: r.result.sitekey, secret: r.result.secret }
 }
 
+/** The account's workers.dev subdomain (e.g. "acme" → *.acme.workers.dev).
+ *  Used to derive a site's preview-worker URL for the dashboard preview window. */
+export async function getWorkersSubdomain(token: string, accountId: string): Promise<string | null> {
+  const r = await cfFetch<{ subdomain?: string }>(token, `/accounts/${accountId}/workers/subdomain`)
+  return r.ok ? r.result?.subdomain ?? null : null
+}
+
 /** Verify a Turnstile response token (contact-form relay). */
 export async function verifyTurnstileToken(secret: string, responseToken: string, ip?: string): Promise<boolean> {
   try {

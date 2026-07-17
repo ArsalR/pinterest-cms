@@ -141,6 +141,13 @@ jobs:
         run: |
           npm ci || npm install
           npm run build
+          # Preview-ONLY framing exception: the dashboard embeds this preview in
+          # an iframe for the visual before/after review. Production keeps
+          # frame-ancestors 'none' + X-Frame-Options DENY (asserted by
+          # check-headers.mjs on the deploy.yml path) — this rewrite touches only
+          # the throwaway preview worker's dist, never main.
+          sed -i "s#frame-ancestors 'none'#frame-ancestors https://arsal.app#" dist/_headers
+          sed -i '/^  X-Frame-Options: DENY$/d' dist/_headers
           printf '\n/*\n  X-Robots-Tag: noindex\n' >> dist/_headers
           NAME=$(grep '^name' wrangler.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
           npx wrangler deploy --name "${NAME}-preview"
