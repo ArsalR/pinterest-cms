@@ -15,11 +15,11 @@ Branch: `final-audit` (from `main` @ 9c56416). Resume by reading this file.
 - **C Contract** — VERIFIED: disabled endpoint → 404 (`posts.ts:218`); discovery-list parity test (`src/lib/audit.test.ts`); crons exact-match (2 strings); webhook idempotency (ecommerce `INSERT OR IGNORE`, billing SET). SAAS on/off both green (277 base).
 - **D Security** — STRONG PASS w/ 2 fixes. auth boundary fixed; cookie flags OK; vault already covered; IDOR scoping proven; SQL parameterized (no string-built queries found); no-secret-logging scan clean; SSRF = Workers-sandbox LOW.
 - **E Money/failure** — E4 MEASURED (report §Part E4). Provisioning driver exceeds free tier (~100 subreq/invocation) → HIGH E4-A, mitigation landed (schema batch) + driver rewrite proposed (owner-decision). Cron subrequest blowups fixed (dead-link, report). Billing idempotent. E1/E2 resume + replay covered by Phase-10 tests.
-- **F E2E journey** — DONE. `src/modules/app/lifecycle.test.ts` drives signup→verify→connections(+vault roundtrip)→provisioning-plan→quality-gate→billing-upgrade→agency-gate→trial-expiry→cancel/lapse against REAL in-memory SQLite (real migration runner), external HTTP stubbed. 9 steps, artifact log emitted.
-- **G Template cold build** — gate WIRING verified (deploy.yml runs zero-js/headers/seo/lhci as blocking steps; scripts exist). Cold `npm install && build` + deliberate-break NOT executed (template deps absent here). Owner/CI must confirm on first publish.
+- **F E2E journey** — DONE. `src/modules/app/lifecycle.test.ts` drives the full lifecycle against REAL in-memory SQLite, external HTTP stubbed. 9 steps, artifact log emitted.
+- **G Template cold build** — DONE (executed). Cold `npm install && npm run build` succeeds; empty-site (stub CMS `total:0`) builds a full valid site; full SEO set emitted (404/_headers/robots/rss/llms.txt/sitemap/manifest + 7 trust pages). All 3 gates PASS on clean dist AND each returns exit 1 when deliberately broken (injected `<script>`, dropped header, deleted robots.txt) then green when restored. Ecommerce kind builds; `/cart.js` is the ONLY client island; zero-js gate passes. Missing-key / CMS-unreachable hard-fail is the documented design ("a silent empty site is worse than a red build", `cms.ts:62`). LHCI budget run NOT executed (needs Chromium+preview server); budgets asserted static in `src/lib/audit.test.ts`.
 
 ## Remaining for a continuation session
-1. Part B: line-by-line covenant matrix.
+1. Part B: line-by-line covenant matrix (spot-checked; locked decisions all VERIFIED).
 2. Part E4: real subrequest/CPU count for worst-case provisioning step + report cron.
 3. Part F: build a mocked full-lifecycle integration test.
-4. Part G: cold-clone the template, run gates, break each, confirm each blocks.
+4. Part G LHCI: run the Lighthouse budget assertions with Chromium (rest of G done).

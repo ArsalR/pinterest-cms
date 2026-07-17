@@ -158,12 +158,27 @@ API key with PBKDF2(100k). API keys are high-entropy (`cms_live_<32hex>`) and do
 not need password-stretching — a single SHA-256 would be cryptographically
 sufficient and ~free, halving `cms_site` CPU. Touches the frozen API-key verify
 path (existing keys), so **owner-decision**, not changed here.
+## Part G — template cold build (EXECUTED, PASS)
+Cold-cloned the template, `npm install && npm run build` against a stub CMS:
+- **G1** build succeeds; **G6** empty-site (`total:0`) builds a full valid site. Missing
+  key / CMS-unreachable hard-fail is the documented design (`cms.ts:62`).
+- **G2** gates BIND: on the clean dist all three pass (exit 0); each returns **exit 1**
+  when deliberately broken — injected `<script>` (zero-js), dropped `X-Frame-Options`
+  from `_headers` (headers), deleted `robots.txt` (seo) — then green again when restored.
+- **G3** all 7 trust pages render with config values (the "placeholder" text is the sample
+  `site.config.json` niche, literally "overwritten by provisioning").
+- **G4** ecommerce kind builds; the ONLY client script in the built HTML is `/cart.js`
+  (the scoped cart island); zero-js gate passes.
+- **G5** `dist/404.html` present. Full SEO set emitted: 404, _headers, _redirects, robots,
+  rss.xml, llms.txt, sitemap-index + sitemap-0, site.webmanifest, favicon.
+- LHCI budget run not executed here (needs Chromium + preview server); budgets asserted
+  statically in `src/lib/audit.test.ts` and wired deploy-blocking in `deploy.yml`.
 
 ## NOT-VERIFIED (do before launch — see runbook)
-- Part B full line-by-line covenant matrix (spot-checked only).
+- Part B full line-by-line covenant matrix (spot-checked; locked decisions VERIFIED).
 - Part E4 real subrequest/CPU measurement for worst-case provisioning + report cron.
 - Part F single end-to-end lifecycle artifact log.
-- Part G cold template build + deliberate-break of each gate.
+- Part G LHCI Lighthouse budget run (rest of G executed above).
 
 ---
 
