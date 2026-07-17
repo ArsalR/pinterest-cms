@@ -1,0 +1,49 @@
+# preset-matrix.yml — covenant safety for EVERY design preset (V1.1).
+# On each change, build the site once per preset against a stub CMS and run the
+# same deploy-blocking gates (zero-JS, security headers incl. the production-
+# unframeable assertion, full SEO file set). A preset that breaks any covenant
+# fails here, before it can ever reach a customer's genesis. Purely a check —
+# does not deploy.
+name: Preset covenant matrix
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  presets:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [modern, editorial, bold, calm, warm, tech]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: npm ci || npm install
+
+      - name: Build with preset "${{ matrix.preset }}"
+        env:
+          CMS_API_KEY: ci-stub
+        run: |
+          node scripts/ci-stub-cms.mjs &
+          sleep 1
+          node -e '
+            const fs = require("fs");
+            const c = JSON.parse(fs.readFileSync("site.config.json", "utf8"));
+            c.cmsApiUrl = "http://localhost:8799/api/public/v1";
+            c.preset = process.env.PRESET;
+            fs.writeFileSync("site.config.json", JSON.stringify(c, null, 2));
+          '
+          npm run build
+
+      - name: "Gate: zero-JS"
+        run: npm run check:zero-js
+      - name: "Gate: security headers (incl. production-unframeable)"
+        run: npm run check:headers
+      - name: "Gate: full SEO file set"
+        run: node scripts/check-seo-files.mjs
+    env:
+      PRESET: ${{ matrix.preset }}

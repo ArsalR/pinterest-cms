@@ -45,6 +45,12 @@ describe("platform catalog stays in sync with the template preset tokens", () =>
       expect(tpl, `template presets.ts missing "${p.id}"`).toMatch(new RegExp(`\\b${p.id}:\\s*\\{`))
     }
   })
+  it("every preset is covered by the template's covenant build matrix", () => {
+    const matrix = read("site-template/.github/workflows/preset-matrix.yml")
+    for (const p of PRESETS) {
+      expect(matrix, `preset-matrix.yml must build "${p.id}"`).toMatch(new RegExp(`\\b${p.id}\\b`))
+    }
+  })
   it("platform swatch bg/accent hexes match the template token values", () => {
     for (const p of PRESETS) {
       // The template line for this preset must carry the same bg + accent hex.
