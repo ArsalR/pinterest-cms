@@ -2,6 +2,7 @@
 // Base layout — zero client JS (P1), system font stack (P4), critical CSS
 // inlined by Astro (P5), semantic HTML + JSON-LD (K8/AEO).
 import { loadConfig, canonicalHost } from "../lib/cms"
+import { presetRootCss, resolvePreset } from "../lib/presets"
 
 interface Props {
   title: string
@@ -33,7 +34,7 @@ const year = new Date().getFullYear()
       modern browsers; genesis adds branded .ico/apple-touch PNGs per niche. */}
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <link rel="manifest" href="/site.webmanifest" />
-  <meta name="theme-color" content="#0a6152" />
+  <meta name="theme-color" content={resolvePreset(config.preset).accent} />
 
   {/* Open Graph + Twitter (social + AI-answer surfaces). */}
   <meta property="og:type" content={ogType} />
@@ -48,24 +49,25 @@ const year = new Date().getFullYear()
   {ogImage && <meta name="twitter:image" content={ogImage} />}
 
   {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
-  <style>
-    /* System font stack — no webfont requests (P4). Total CSS budget < 20KB (P5). */
-    :root { --fg:#1a1a1a; --muted:#555; --bg:#ffffff; --accent:#0a6152; --maxw:44rem; }
+  <style set:html={`
+    /* Design preset tokens (V1.1) — CSS variables only, zero JS (P1); system
+       fonts only (P4); total CSS budget < 20KB (P5). */
+    ${presetRootCss(config.preset)}
     * { box-sizing: border-box; }
-    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-           color:var(--fg); background:var(--bg); line-height:1.65; }
+    body { margin:0; font-family: var(--font-body); color:var(--fg); background:var(--bg); line-height:1.65; }
     header, main, footer { max-width:var(--maxw); margin:0 auto; padding:0 1.25rem; }
     header { padding-top:1.5rem; padding-bottom:1rem; }
-    header a.brand { font-weight:800; font-size:1.15rem; color:var(--fg); text-decoration:none; letter-spacing:-0.02em; }
+    header a.brand { font-weight:800; font-size:1.15rem; color:var(--fg); text-decoration:none; letter-spacing:-0.02em; font-family:var(--font-head); }
     main { padding-bottom:3rem; }
     a { color:var(--accent); }
     img { max-width:100%; height:auto; }
-    footer { border-top:1px solid #e5e5e5; padding-top:1.25rem; padding-bottom:2.5rem;
+    footer { border-top:1px solid var(--border); padding-top:1.25rem; padding-bottom:2.5rem;
              font-size:0.85rem; color:var(--muted); }
     footer nav { display:flex; flex-wrap:wrap; gap:0.9rem; margin-bottom:0.75rem; }
     footer nav a { color:var(--muted); text-decoration:none; }
+    h1, h2, h3 { font-family:var(--font-head); }
     h1 { font-size:1.9rem; letter-spacing:-0.02em; line-height:1.25; }
-  </style>
+  `} />
 </head>
 <body>
   <header style="display:flex;justify-content:space-between;align-items:center">

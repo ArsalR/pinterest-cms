@@ -38,7 +38,8 @@ import { performancePageHandler } from "../analytics"
 import { draftsPageHandler, publishDraftHandler, publishAllHandler } from "../publishing"
 import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
-import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler } from "../marketing"
+import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
+import { designPageHandler, designApplyHandler } from "../design"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -87,6 +88,7 @@ export const saasRootHandler: MiddlewareHandler<AppEnv> = prot(saasHomeHandler)
 export const marketingHome: MiddlewareHandler<AppEnv> = pub(marketingHomeHandler)
 export const marketingPrivacy: MiddlewareHandler<AppEnv> = pub(marketingPrivacyHandler)
 export const marketingTerms: MiddlewareHandler<AppEnv> = pub(marketingTermsHandler)
+export const marketingExamples: MiddlewareHandler<AppEnv> = pub(marketingExamplesHandler)
 
 // Public, token-gated client report portal (K11) — root-mounted like the
 // marketing pages (Hono root-path gotcha #1). pub()-gated → falls through on
@@ -145,6 +147,9 @@ saasAppRoutes.post("/sites/:id/retry", prot(siteRetryHandler))
 saasAppRoutes.post("/sites/:id/prompt", prot(sitePromptHandler))
 saasAppRoutes.post("/sites/:id/genesis", prot(siteGenesisHandler))
 saasAppRoutes.post("/sites/:id/rollback", prot(siteRollbackHandler))
+// Design options — change preset/layout later (V1.1).
+saasAppRoutes.get("/sites/:id/design", prot(designPageHandler))
+saasAppRoutes.post("/sites/:id/design", prot(designApplyHandler))
 // Visual preview window (K12).
 saasAppRoutes.get("/sites/:id/preview", prot(previewPageHandler))
 saasAppRoutes.post("/sites/:id/preview/approve", prot(previewApproveHandler))

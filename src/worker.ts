@@ -38,7 +38,7 @@ import { redirectsAdminRoute } from "./routes/admin/redirects"
 
 import { frontendRoutes } from "./routes/frontend"
 
-import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms, clientPortal } from "./modules/app"
+import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms, marketingExamples, clientPortal } from "./modules/app"
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 import { processDuePins } from "./modules/pinterest"
@@ -81,6 +81,7 @@ app.get("/app/", saasRootHandler)
 app.get("/", marketingHome)
 app.get("/privacy", marketingPrivacy)
 app.get("/terms", marketingTerms)
+app.get("/examples", marketingExamples)
 app.get("/portal", clientPortal)
 app.route("/app", saasAppRoutes)
 app.route("/api/saas/hooks", saasHooksRoutes)

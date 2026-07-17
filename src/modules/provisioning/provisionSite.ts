@@ -71,6 +71,9 @@ export interface CustomerSiteRow {
   name: string
   niche: string | null
   kind: string
+  design_preset: string | null
+  layout_variant: string | null
+  tone: string | null
   status: string
 }
 
@@ -89,14 +92,14 @@ function randomHex(bytes: number): string {
 export async function createProvisioningPlan(
   db: Client,
   customer: Customer,
-  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string; kind: string }
+  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string; kind: string; preset?: string; layout?: string; tone?: string }
 ): Promise<string> {
   const id = cuid()
   const slug = siteSlug(input.domain)
   await db.execute({
-    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, kind, repo_full_name, worker_name)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, input.kind, `site-${slug}`],
+    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, kind, design_preset, layout_variant, tone, repo_full_name, worker_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, input.kind, input.preset ?? null, input.layout ?? null, input.tone ?? null, `site-${slug}`],
   })
   for (let i = 0; i < PROVISION_STEPS.length; i++) {
     await db.execute({
@@ -314,6 +317,9 @@ async function executeStep(
         ownerName: String(customerRow.rows[0]?.name ?? "") || site.name,
         ownerEmail: String(customerRow.rows[0]?.email ?? ""),
         generatedAt: new Date().toISOString().slice(0, 10),
+        // V1.1 design options — absent falls back to the template defaults.
+        ...(site.design_preset ? { preset: String(site.design_preset) } : {}),
+        ...(site.layout_variant ? { layout: String(site.layout_variant) } : {}),
         ...(sitekey
           ? {
               turnstileSitekey: sitekey,

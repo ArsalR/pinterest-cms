@@ -13,6 +13,19 @@
 import type { Context } from "hono"
 import type { AppEnv } from "../../lib/types"
 import { escapeHtml } from "../../lib/utils"
+import { PRESETS, LAYOUTS, type SiteKindId } from "../design"
+
+// Four permanent live demo sites (one per kind), each provisioned through the
+// REAL production pipeline on a platform subdomain and each on a different
+// preset. They double as our permanent end-to-end smoke sites (see PLAN.md).
+// Owner-provisioned; the gallery links kind cards to the matching demo.
+const DEMOS: Record<SiteKindId, { url: string; label: string; preset: string }> = {
+  content: { url: "https://demo-blog.arsal.app", label: "Blog", preset: "editorial" },
+  ecommerce: { url: "https://demo-shop.arsal.app", label: "Store", preset: "modern" },
+  "local-business": { url: "https://demo-local.arsal.app", label: "Local business", preset: "warm" },
+  portfolio: { url: "https://demo-folio.arsal.app", label: "Portfolio", preset: "bold" },
+}
+const KIND_LABELS: Record<SiteKindId, string> = { content: "Blog / content", ecommerce: "Online store", "local-business": "Local business", portfolio: "Portfolio" }
 
 const PRODUCT = "SiteNetwork OS"
 const CONTACT_EMAIL = "support@arsal.app"
@@ -115,6 +128,56 @@ export async function marketingHomeHandler(c: Context<AppEnv>): Promise<Response
       "Build, publish, and monitor a portfolio of high-quality content sites on your own GitHub, Cloudflare, and domains.",
       body
     ),
+    200,
+    STORE
+  )
+}
+
+/** A token-accurate preview card for one preset, rendered from the REAL swatch
+ *  values (no hand-drawn mockup that could drift from the template). */
+function presetCard(p: (typeof PRESETS)[number]): string {
+  return `<div style="border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+    <div style="background:${p.swatch.bg};padding:16px">
+      <div style="font-weight:800;font-size:15px;color:${p.swatch.fg}">${escapeHtml(p.label)}</div>
+      <div style="height:8px"></div>
+      <div style="background:${p.swatch.surface};border:1px solid ${p.swatch.accent}22;border-radius:8px;padding:10px">
+        <div style="height:8px;width:70%;background:${p.swatch.fg};opacity:.85;border-radius:4px"></div>
+        <div style="height:6px;width:90%;background:${p.swatch.fg};opacity:.35;border-radius:3px;margin-top:6px"></div>
+        <div style="display:inline-block;margin-top:10px;background:${p.swatch.accent};color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px">Read more</div>
+      </div>
+    </div>
+    <div style="padding:8px 12px;background:#fff;font-size:12px;color:#6b7280">${escapeHtml(p.mood)} · ${escapeHtml(p.font)}</div>
+  </div>`
+}
+
+export async function marketingExamplesHandler(c: Context<AppEnv>): Promise<Response> {
+  const kinds = Object.keys(LAYOUTS) as SiteKindId[]
+  const presetGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin:14px 0 28px">${PRESETS.map(presetCard).join("")}</div>`
+
+  const kindSections = kinds
+    .map((k) => {
+      const demo = DEMOS[k]
+      return `<div class="feature">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <h3 style="margin:0">${escapeHtml(KIND_LABELS[k])}</h3>
+          <a class="btn" href="${escapeHtml(demo.url)}" style="padding:8px 14px">View live demo — ${escapeHtml(demo.preset)} preset ↗</a>
+        </div>
+        <p class="muted" style="margin:6px 0 0">${LAYOUTS[k].map((l) => escapeHtml(l.label)).join(" · ")} layouts, any of the ${PRESETS.length} presets above.</p>
+      </div>`
+    })
+    .join("")
+
+  const body = `
+    <h1>Every site, your way.</h1>
+    <p class="lede">Pick from ${PRESETS.length} professionally-designed presets and per-kind layouts at creation — then change your mind anytime with a live preview. Every combination stays inside the same speed &amp; security guarantees.</p>
+    <h2>Design presets</h2>
+    <p class="muted">Real token sets — the exact colors, fonts, and spacing your site ships with.</p>
+    ${presetGrid}
+    <h2>By site kind</h2>
+    ${kindSections}
+    <a class="btn" href="/app/signup" style="margin-top:8px">Start building</a>`
+  return c.html(
+    renderMarketingPage(`Examples — ${PRODUCT}`, "Design presets and live demo sites for every kind of site SiteNetwork OS builds.", body),
     200,
     STORE
   )

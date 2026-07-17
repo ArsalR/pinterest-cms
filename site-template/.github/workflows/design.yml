@@ -1,0 +1,97 @@
+# design.yml — apply a design preset/layout change (V1.1).
+# Platform-dispatched, DETERMINISTIC (no Anthropic): patches the preset/layout in
+# site.config.json and flows through the same preview-then-approve path as
+# claude.yml. The platform validates preset/layout against its catalog before
+# dispatching, so inputs here are already trusted enum values — but we still only
+# ever write those two fields, never arbitrary config.
+name: Design change
+
+on:
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: "design preset id"
+        required: true
+      layout:
+        description: "homepage layout id"
+        required: true
+      mode:
+        description: "preview (branch + PR + preview URL) or direct (push to main)"
+        required: false
+        default: "preview"
+      job_id:
+        description: "dashboard job id (also the preview branch name)"
+        required: true
+
+jobs:
+  design:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+
+      - name: Patch site.config.json (preset + layout ONLY)
+        env:
+          PRESET: ${{ inputs.preset }}
+          LAYOUT: ${{ inputs.layout }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const c = JSON.parse(fs.readFileSync("site.config.json", "utf8"));
+            c.preset = process.env.PRESET;
+            c.layout = process.env.LAYOUT;
+            fs.writeFileSync("site.config.json", JSON.stringify(c, null, 2) + "\n");
+            console.log("site.config.json: preset=" + c.preset + " layout=" + c.layout);
+          '
+          git config user.name "SiteNetwork"
+          git config user.email "bot@arsal.app"
+          git add site.config.json
+
+      - name: No-op guard
+        id: commit
+        run: |
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "design: ${{ inputs.job_id }} (preset=${{ inputs.preset }}, layout=${{ inputs.layout }})"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Direct mode — push to main (covenant-gated deploy takes over)
+        if: inputs.mode == 'direct' && steps.commit.outputs.changed == 'true'
+        run: git push origin "HEAD:main"
+
+      - name: Preview mode — push branch + open PR
+        if: inputs.mode == 'preview' && steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push origin "claude/${{ inputs.job_id }}"
+          gh pr create --head "claude/${{ inputs.job_id }}" \
+            --title "Design change: ${{ inputs.preset }} / ${{ inputs.layout }}" \
+            --body "Platform-authored design change. Review the before/after preview and merge to go live." || true
+
+      - name: Preview mode — build + deploy noindexed preview worker
+        if: inputs.mode == 'preview' && steps.commit.outputs.changed == 'true'
+        env:
+          CMS_API_KEY: ${{ secrets.CMS_API_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+        run: |
+          npm ci || npm install
+          npm run build
+          # Preview-ONLY framing exception (same as claude.yml): lets the
+          # dashboard iframe the preview. Production stays frame-ancestors 'none'
+          # (asserted by check-headers.mjs on the deploy.yml path).
+          sed -i "s#frame-ancestors 'none'#frame-ancestors https://arsal.app#" dist/_headers
+          sed -i '/^  X-Frame-Options: DENY$/d' dist/_headers
+          printf '\n/*\n  X-Robots-Tag: noindex\n' >> dist/_headers
+          NAME=$(grep '^name' wrangler.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          npx wrangler deploy --name "${NAME}-preview"
+          echo "Preview deployed as ${NAME}-preview" >> "$GITHUB_STEP_SUMMARY"

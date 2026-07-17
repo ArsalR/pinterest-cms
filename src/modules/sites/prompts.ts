@@ -35,15 +35,17 @@ export interface PromptJob {
 /** Genesis prompt (K1) — one prompt, whole site. Kind-aware (amendment 2):
  *  the shared core (design within the covenants, no protected-file edits, zero
  *  client JS) is constant; the content brief branches by site kind. */
-export function genesisPrompt(name: string, niche: string, kind: string = "content"): string {
+export function genesisPrompt(name: string, niche: string, kind: string = "content", toneLine = ""): string {
   const header = [
     `SITE GENESIS for "${name}" — a brand-new ${kindLabel(kind)} about: ${niche}.`,
     ``,
-    `Design: adjust colors and typography in src/layouts/Base.astro to fit the niche`,
-    `(keep the system font stack, keep total CSS small, keep ZERO client JavaScript).`,
-    `Do NOT touch protected files (.github/**, site.config.json, wrangler.toml, scripts/**).`,
+    `Design is ALREADY SET by the site's chosen design preset (CSS-variable tokens in`,
+    `src/lib/presets.ts, applied via site.config.json) — do NOT change colors, fonts, or`,
+    `the layout system, and do NOT touch protected files (.github/**, site.config.json,`,
+    `wrangler.toml, scripts/**). Focus entirely on content. Keep ZERO client JavaScript.`,
     ``,
     `Content — do ALL of the following via the CMS API (see the rules above for how to call it).`,
+    ...(toneLine ? [`TONE: ${toneLine}`] : []),
     `Create each item as a DRAFT (published: false) — it will pass through the quality gate in the`,
     `dashboard before going live, so launch content is held to the same bar as everything else.`,
     `Give each a descriptive title, a 1–2 sentence excerpt, a category, and specific, practical copy`,

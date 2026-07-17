@@ -259,6 +259,18 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `ALTER TABLE customers ADD COLUMN stripe_subscription_id TEXT`,
     ],
   },
+  {
+    version: 10,
+    name: "010_design_options",
+    statements: [
+      // V1.1 — genesis design options. Additive columns; written into the site's
+      // site.config.json at provisioning and consumed by the template's preset/
+      // layout token system. NULL/absent falls back to the template defaults.
+      `ALTER TABLE customer_sites ADD COLUMN design_preset TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN layout_variant TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN tone TEXT`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO

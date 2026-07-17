@@ -293,3 +293,19 @@ Found by reconciling v1 against the spec content now available:
 ---
 
 *Unrelated but pending from earlier: the `/admin/` 404 fix is merged to `main` but production deploy is still blocked — `CF_API_TOKEN`/`CF_ACCOUNT_ID` were added as GitHub **environment variables**; the workflow needs them as **repository secrets** (Settings → Secrets and variables → Actions → Secrets tab).*
+
+---
+
+## V1.1 — GENESIS DESIGN OPTIONS (post-launch)
+
+Customers pick a real visual identity at genesis (and change it later), all inside the covenants.
+
+- **Presets** — 6 curated CSS-variable token sets in the template (`site-template/src/lib/presets.ts`): modern, editorial, bold, calm, warm, tech. Zero-JS untouched (pure `:root` custom properties emitted from `site.config.json`); system fonts only (P4 — no external requests). Platform mirrors names + swatch hexes in `src/modules/design/catalog.ts` (drift-guarded by a test).
+- **Layouts** — 2 homepage variants per kind (content: classic/magazine implemented; ecommerce/local/portfolio catalogued), static switch read from `site.config.json`.
+- **Tone** — professional/friendly/expert feeds the genesis prompt (`toneDirective`). Design is now preset-owned, so genesis focuses on content.
+- **Storage** — `customer_sites` += `design_preset`, `layout_variant`, `tone` (migration v10), written into `site.config.json` at the provisioning `site_config` step.
+- **Change later** — `/app/sites/:id/design`: platform-authored, enum-validated, audit-logged change dispatched to a deterministic `design.yml` workflow (NO Claude) that patches `site.config.json` and flows through the existing preview-then-approve window. `claude.yml`'s protected-path guard is unchanged (it guards Claude's output, not the platform).
+- **Gallery** — public `/examples` on arsal.app: token-accurate preset cards (rendered from the real swatch values) for every kind × preset, linking to four live demo sites.
+
+### The four demo sites are our permanent E2E smoke sites
+`demo-blog` / `demo-shop` / `demo-local` / `demo-folio` `.arsal.app` — one per kind, each on a different preset, **provisioned through the real production pipeline** (not per-combo; exactly four). They double as the standing end-to-end smoke test: after any platform deploy, re-provision or re-genesis one and confirm it still builds green through every covenant gate. Owner-provisioned (see OWNER_RUNBOOK); the gallery links to them.
