@@ -6,6 +6,23 @@
 // CMS as DRAFTS, so everything still flows through the quality gate before it
 // can publish.
 
+/** Normalized SEO metadata lifted from a Yoast or Rank Math install (S2, K9).
+ *  Every field is optional — absent keys leave the imported draft's SEO blank
+ *  (exactly as a plain import does today). */
+export interface WpSeoMeta {
+  seoTitle?: string
+  seoDescription?: string
+  focusKeyword?: string
+  canonicalUrl?: string
+  noindex?: boolean
+  nofollow?: boolean
+  ogTitle?: string
+  ogDescription?: string
+  ogImage?: string
+  /** Which plugin the meta came from, for reporting. */
+  source?: "yoast" | "rankmath"
+}
+
 export interface WpPost {
   title: string
   slug: string
@@ -15,6 +32,8 @@ export interface WpPost {
   publishedAt: string | null // ISO, from wp:post_date_gmt when present
   categories: string[]
   originalUrl: string   // the old permalink — drives the edge redirect map
+  /** Yoast / Rank Math SEO meta, when the export carried it. */
+  seo?: WpSeoMeta
 }
 
 function decodeEntities(s: string): string {
@@ -48,6 +67,73 @@ function categoriesOf(itemXml: string): string[] {
     if (name && !out.includes(name)) out.push(name)
   }
   return out
+}
+
+/** Parse every <wp:postmeta> key/value pair of an item into a flat map. Pure. */
+export function postMeta(itemXml: string): Map<string, string> {
+  const out = new Map<string, string>()
+  const re = /<wp:postmeta>([\s\S]*?)<\/wp:postmeta>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(itemXml)) !== null) {
+    const key = tagText(m[1], "wp:meta_key")
+    if (!key) continue
+    out.set(key, tagText(m[1], "wp:meta_value"))
+  }
+  return out
+}
+
+/** Rank Math stores robots as a serialized PHP array; Yoast as "1"/"2". A
+ *  substring test is enough to detect a directive in either. Pure. */
+function hasDirective(value: string | undefined, name: string): boolean {
+  return !!value && value.toLowerCase().includes(name)
+}
+
+/**
+ * Map a post's WordPress SEO-plugin meta (Yoast OR Rank Math) into our
+ * normalized WpSeoMeta. Yoast wins if both are present (it's the more common
+ * export). Returns undefined when neither plugin left any usable meta, so a
+ * plain WordPress export imports exactly as before. Pure — unit-tested.
+ */
+export function extractSeoMeta(meta: Map<string, string>): WpSeoMeta | undefined {
+  const g = (k: string) => {
+    const v = meta.get(k)
+    return v && v.trim() ? v.trim() : undefined
+  }
+  const yoast: WpSeoMeta = {
+    source: "yoast",
+    seoTitle: g("_yoast_wpseo_title"),
+    seoDescription: g("_yoast_wpseo_metadesc"),
+    focusKeyword: g("_yoast_wpseo_focuskw"),
+    canonicalUrl: g("_yoast_wpseo_canonical"),
+    ogTitle: g("_yoast_wpseo_opengraph-title"),
+    ogDescription: g("_yoast_wpseo_opengraph-description"),
+    ogImage: g("_yoast_wpseo_opengraph-image"),
+    noindex: meta.get("_yoast_wpseo_meta-robots-noindex") === "1" || undefined,
+    nofollow: meta.get("_yoast_wpseo_meta-robots-nofollow") === "1" || undefined,
+  }
+  const rank: WpSeoMeta = {
+    source: "rankmath",
+    seoTitle: g("rank_math_title"),
+    seoDescription: g("rank_math_description"),
+    focusKeyword: g("rank_math_focus_keyword"),
+    canonicalUrl: g("rank_math_canonical_url"),
+    ogTitle: g("rank_math_facebook_title"),
+    ogDescription: g("rank_math_facebook_description"),
+    ogImage: g("rank_math_facebook_image"),
+    noindex: hasDirective(meta.get("rank_math_robots"), "noindex") || undefined,
+    nofollow: hasDirective(meta.get("rank_math_robots"), "nofollow") || undefined,
+  }
+  const chosen = hasAnySeo(yoast) ? yoast : hasAnySeo(rank) ? rank : undefined
+  if (!chosen) return undefined
+  // Drop the source-only object if every real field is empty.
+  return chosen
+}
+
+function hasAnySeo(m: WpSeoMeta): boolean {
+  return !!(
+    m.seoTitle || m.seoDescription || m.focusKeyword || m.canonicalUrl ||
+    m.ogTitle || m.ogDescription || m.ogImage || m.noindex || m.nofollow
+  )
 }
 
 function toIso(wpDate: string): string | null {
@@ -102,6 +188,7 @@ export function parseWxr(xml: string): ParseResult {
         publishedAt: toIso(tagText(item, "wp:post_date_gmt") || tagText(item, "wp:post_date")),
         categories: categoriesOf(item),
         originalUrl: tagText(item, "link"),
+        seo: extractSeoMeta(postMeta(item)),
       })
     } catch {
       skipped++

@@ -24,6 +24,8 @@ export interface ImportResult {
   skippedNonPost: number
   redirectsCreated: number
   imagesRehosted: number
+  /** How many imported drafts carried Yoast / Rank Math SEO meta (S2). */
+  seoMapped: number
   total: number
 }
 
@@ -81,16 +83,34 @@ async function importOne(
   hostname: string,
   p: WpPost,
   budget: { left: number }
-): Promise<{ inserted: boolean; redirect: boolean; rehosted: number }> {
+): Promise<{ inserted: boolean; redirect: boolean; rehosted: number; seoMapped: boolean }> {
   const exists = await siteDb.execute({ sql: "SELECT 1 FROM posts WHERE slug = ? LIMIT 1", args: [p.slug] })
-  if (exists.rows.length) return { inserted: false, redirect: false, rehosted: 0 }
+  if (exists.rows.length) return { inserted: false, redirect: false, rehosted: 0, seoMapped: false }
 
   const { html, rehosted } = await rehostImages(env, hostname, p.contentHtml, budget)
   const categoryId = p.categories.length ? await ensureCategory(siteDb, p.categories[0]) : null
+  // Yoast / Rank Math SEO meta (S2), when the export carried it. Imports as a
+  // DRAFT (published=0), so a mapped noindex stays inert until the post is
+  // published through the pipeline — no live page is deindexed by an import.
+  const s = p.seo
   await siteDb.execute({
-    sql: `INSERT INTO posts (id, title, slug, content, excerpt, published, type, source, category_id, seo_description)
-          VALUES (?, ?, ?, ?, ?, 0, 'post', 'wordpress', ?, ?)`,
-    args: [cuid(), p.title || p.slug, p.slug, html, p.excerpt || null, categoryId, p.excerpt || null],
+    sql: `INSERT INTO posts
+            (id, title, slug, content, excerpt, published, type, source, category_id,
+             seo_title, seo_description, seo_keywords, og_title, og_description, og_image,
+             canonical_url, no_index, nofollow)
+          VALUES (?, ?, ?, ?, ?, 0, 'post', 'wordpress', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      cuid(), p.title || p.slug, p.slug, html, p.excerpt || null, categoryId,
+      s?.seoTitle || null,
+      s?.seoDescription || p.excerpt || null,
+      s?.focusKeyword || null,
+      s?.ogTitle || null,
+      s?.ogDescription || null,
+      s?.ogImage || null,
+      s?.canonicalUrl || null,
+      s?.noindex ? 1 : 0,
+      s?.nofollow ? 1 : 0,
+    ],
   })
 
   // Edge redirect map: old permalink → new post path (301). ON CONFLICT keeps
@@ -111,14 +131,14 @@ async function importOne(
       // non-fatal — the post still imported
     }
   }
-  return { inserted: true, redirect, rehosted }
+  return { inserted: true, redirect, rehosted, seoMapped: !!p.seo }
 }
 
 async function importPosts(env: CloudflareEnv, cmsSiteId: string, hostname: string, posts: WpPost[], skippedNonPost: number): Promise<ImportResult> {
   const master = getMasterDb(env)
   await ensureMasterSchema(master)
   const siteDb = await siteDbFor(master, cmsSiteId)
-  const res: ImportResult = { imported: 0, skippedExisting: 0, skippedNonPost, redirectsCreated: 0, imagesRehosted: 0, total: posts.length }
+  const res: ImportResult = { imported: 0, skippedExisting: 0, skippedNonPost, redirectsCreated: 0, imagesRehosted: 0, seoMapped: 0, total: posts.length }
   if (!siteDb) return res
 
   const budget = { left: MAX_IMAGE_REHOSTS }
@@ -128,6 +148,7 @@ async function importPosts(env: CloudflareEnv, cmsSiteId: string, hostname: stri
       if (r.inserted) {
         res.imported++
         if (r.redirect) res.redirectsCreated++
+        if (r.seoMapped) res.seoMapped++
         res.imagesRehosted += r.rehosted
       } else {
         res.skippedExisting++

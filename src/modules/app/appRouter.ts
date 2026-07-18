@@ -40,7 +40,7 @@ import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
 import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
 import { designPageHandler, designApplyHandler } from "../design"
-import { seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler } from "../seo"
+import { seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler } from "../seo"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -154,6 +154,8 @@ saasAppRoutes.get("/assets/seo-cockpit.js", pub(seoCockpitJsHandler))
 saasAppRoutes.get("/sites/:id/posts", prot(seoPostsHandler))
 saasAppRoutes.get("/sites/:id/posts/:postId/seo", prot(seoCockpitHandler))
 saasAppRoutes.post("/sites/:id/posts/:postId/seo", prot(seoSaveHandler))
+saasAppRoutes.get("/sites/:id/images", prot(imageSeoHandler))
+saasAppRoutes.post("/sites/:id/images", prot(imageSeoSaveHandler))
 saasAppRoutes.get("/sites/:id/design", prot(designPageHandler))
 saasAppRoutes.post("/sites/:id/design", prot(designApplyHandler))
 // Visual preview window (K12).

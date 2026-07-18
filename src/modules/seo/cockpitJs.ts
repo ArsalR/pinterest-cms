@@ -1,9 +1,10 @@
 // src/modules/seo/cockpitJs.ts
 // The SEO cockpit's client script, served verbatim from a dashboard route (no
-// build step — the dashboard has none). Hand-written vanilla JS: 3 tabs, live
-// SERP + social previews (pixel-width truncation mirrored from analyze.ts),
-// FAQ builder, fetch-based save with an undo-less success toast, and the
-// slug→redirect offer. Keyboard-navigable (native inputs + focusable tabs).
+// build step — the dashboard has none). Hand-written vanilla JS: 4 tabs, live
+// SERP + social previews (pixel-width truncation mirrored from analyze.ts), a
+// live Content-analysis tab (S2 — mirrors content.ts + the quality gate's own
+// rules), FAQ builder, fetch-based save with an undo-less success toast, and
+// the slug→redirect offer. Keyboard-navigable (native inputs + focusable tabs).
 
 export const SEO_COCKPIT_JS = String.raw`(function () {
   var root = document.getElementById("seo-cockpit");
@@ -26,7 +27,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
 
   root.innerHTML =
     '<div class="card"><div id="seo-tabs" style="display:flex;gap:6px;border-bottom:1px solid #262626;margin-bottom:14px">'+
-      ['Snippet','Social','Advanced'].map(function(t,i){return '<button type="button" class="seo-tab" data-tab="'+i+'" style="background:none;border:none;border-bottom:2px solid '+(i===0?'#fafafa':'transparent')+';color:'+(i===0?'#fafafa':'#a3a3a3')+';padding:8px 10px;font-size:13px;cursor:pointer;font-family:inherit">'+t+'</button>';}).join("")+'</div>'+
+      ['Snippet','Social','Advanced','Content'].map(function(t,i){return '<button type="button" class="seo-tab" data-tab="'+i+'" style="background:none;border:none;border-bottom:2px solid '+(i===0?'#fafafa':'transparent')+';color:'+(i===0?'#fafafa':'#a3a3a3')+';padding:8px 10px;font-size:13px;cursor:pointer;font-family:inherit">'+t+'</button>';}).join("")+'</div>'+
       // Snippet
       '<div class="seo-pane" data-pane="0">'+
         field("Meta title","f-metaTitle",d.metaTitle,"Defaults to “"+esc(d.title)+" — "+esc(d.siteName)+"”")+bar("b-title")+
@@ -59,6 +60,12 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
         '<label style="display:block;font-size:13px;margin:10px 0 4px">Schema type</label><select id="f-schemaType" style="background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px">'+schemaOpts+'</select>'+
         '<div style="margin-top:14px"><div style="font-size:13px;margin-bottom:6px">FAQ (emits FAQPage schema)</div><div id="faq-list"></div><button type="button" id="faq-add" class="btn ghost" style="margin-top:6px">+ Add question</button></div>'+
       '</div>'+
+      // Content — live analysis sharing the quality gate's rules (S2).
+      '<div class="seo-pane" data-pane="3" style="display:none">'+
+        field("Focus keyword","f-focusKeyword",d.focusKeyword||"","The phrase you want this post to rank for (optional)")+
+        '<div style="display:flex;align-items:center;gap:10px;margin:12px 0 4px"><div id="ca-score" style="font-weight:700;font-size:22px">–</div><div class="muted" style="font-size:12px">Live check — same rules as the publish quality gate.</div></div>'+
+        '<div id="content-checks"></div>'+
+      '</div>'+
       '<div style="display:flex;align-items:center;gap:12px;margin-top:16px;border-top:1px solid #262626;padding-top:12px"><button type="button" id="seo-save" class="btn">Save</button><span id="seo-toast" class="muted" style="font-size:13px"></span></div>'+
     '</div>';
 
@@ -72,6 +79,46 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     root.querySelectorAll(".seo-pane").forEach(function(p){p.style.display=p.getAttribute("data-pane")===b.getAttribute("data-tab")?"block":"none";});
   });});
 
+  // ── Content analysis (mirrors src/modules/seo/content.ts + the quality gate).
+  // minWords 300 is the gate's own threshold — keep in sync with DEFAULT_GATE_CONFIG.
+  function stripTags(h){return (h||"").replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/&[a-z]+;/gi," ").replace(/\s+/g," ").trim();}
+  function wc(h){var t=stripTags(h);return t?t.split(/\s+/).length:0;}
+  function count(hay,needle){if(!needle)return 0;var h=hay.toLowerCase(),n=needle.toLowerCase(),i=0,c=0,at;while((at=h.indexOf(n,i))>=0){c++;i=at+n.length;}return c;}
+  function caChecks(){
+    var MINW=300, out=[];
+    var title=($("f-metaTitle").value||d.title||"").trim();
+    var meta=($("f-metaDescription").value||d.excerpt||"").trim();
+    var html=d.content||""; var text=stripTags(html); var words=wc(html);
+    var kw=($("f-focusKeyword").value||"").trim();
+    out.push({s:words>=MINW?"good":words>=MINW/2?"warn":"bad",l:"Content length",d:words+" words (gate minimum "+MINW+")"});
+    var tt=trunc(title,TITLE_PX);
+    out.push({s:!title?"bad":tt.cut?"warn":"good",l:"SEO title",d:!title?"missing title":tt.cut?"will be truncated in search":"good length"});
+    out.push({s:meta.length<20?"bad":"good",l:"Meta description",d:meta.length<20?"missing or too short (needs ≥ 20 chars)":"good length"});
+    var hs=(html.match(/<h[2-6][^>]*>/gi)||[]).length;
+    out.push({s:hs>=1?"good":"warn",l:"Subheadings",d:hs>=1?hs+" subheading(s)":"no H2–H6 subheadings"});
+    var links=(html.match(/<a\b[^>]*\bhref\s*=/gi)||[]).length;
+    out.push({s:links>=1?"good":"warn",l:"Links",d:links>=1?links+" link(s)":"no links in the content"});
+    var imgs=(html.match(/<img\b/gi)||[]).length;
+    if(imgs>0){var miss=0;var re=/<img\b[^>]*>/gi,m;while((m=re.exec(html))){var a=/\balt\s*=\s*["']([^"']*)["']/i.exec(m[0]);if(!a||!a[1].trim())miss++;}
+      out.push({s:miss===0?"good":"bad",l:"Image alt text",d:miss===0?"every image has alt text":miss+" of "+imgs+" images missing alt text"});}
+    if(kw){
+      out.push({s:count(title,kw)>0?"good":"warn",l:"Keyword in title",d:count(title,kw)>0?"present":"not in the title"});
+      var firstP=(/<p[^>]*>([\s\S]*?)<\/p>/i.exec(html)||[])[1]||html.slice(0,500);
+      out.push({s:count(stripTags(firstP),kw)>0?"good":"warn",l:"Keyword in intro",d:count(stripTags(firstP),kw)>0?"appears early":"missing from the first paragraph"});
+      var occ=count(text,kw);var dens=words>0?(occ*kw.split(/\s+/).length)/words:0;var pct=Math.round(dens*1000)/10;
+      out.push({s:dens===0?"warn":dens>0.035?"bad":dens<0.003?"warn":"good",l:"Keyword density",d:pct+"% ("+occ+"×) — aim for 0.3–3%"});
+    }
+    return out;
+  }
+  function caRender(){
+    var checks=caChecks();var w={good:1,warn:0.5,bad:0};
+    var score=checks.length?Math.round(checks.reduce(function(s,c){return s+w[c.s];},0)/checks.length*100):100;
+    var color=score>=80?"#86efac":score>=50?"#fcd34d":"#fca5a5";
+    var se=$("ca-score");if(se){se.textContent=score;se.style.color=color;}
+    var dot={good:"#86efac",warn:"#fcd34d",bad:"#fca5a5"};
+    $("content-checks").innerHTML=checks.map(function(c){return '<div style="display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid #1a1a1a"><span style="color:'+dot[c.s]+'">●</span><div><div style="font-size:13px">'+esc(c.l)+'</div><div class="muted" style="font-size:12px">'+esc(c.d)+'</div></div></div>';}).join("");
+  }
+
   function refresh(){
     var t=trunc($("f-metaTitle").value|| (d.title+" — "+d.siteName),TITLE_PX);
     $("serp-title").textContent=t.t; $("b-title").style.width=Math.min(100,t.px/TITLE_PX*100)+"%"; $("b-title").style.background=t.cut?"#fca5a5":"#86efac";
@@ -84,8 +131,9 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     var img=$("f-ogImage").value||d.coverImage;
     if(img){$("og-img").style.backgroundImage='url("'+img.replace(/"/g,'')+'")';$("og-img").textContent="";}else{$("og-img").style.backgroundImage="";$("og-img").textContent="no image";}
     $("slug-redirect").style.display=(d.published && $("f-slug").value!==d.slug)?"block":"none";
+    caRender();
   }
-  ["f-metaTitle","f-metaDescription","f-slug","f-ogTitle","f-ogDescription","f-ogImage"].forEach(function(id){$(id).addEventListener("input",refresh);});
+  ["f-metaTitle","f-metaDescription","f-slug","f-ogTitle","f-ogDescription","f-ogImage","f-focusKeyword"].forEach(function(id){$(id).addEventListener("input",refresh);});
 
   // FAQ builder
   function faqRow(q,a){var row=document.createElement("div");row.className="faq-row";row.style.cssText="display:flex;gap:6px;margin:5px 0";
@@ -97,7 +145,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
   $("seo-save").addEventListener("click",function(){
     var btn=$("seo-save");btn.disabled=true;$("seo-toast").textContent="Saving…";
     var faq=[].map.call($("faq-list").querySelectorAll(".faq-row"),function(r){return{question:r.querySelector(".faq-q").value,answer:r.querySelector(".faq-a").value};});
-    var payload={metaTitle:$("f-metaTitle").value,metaDescription:$("f-metaDescription").value,slug:$("f-slug").value,
+    var payload={metaTitle:$("f-metaTitle").value,metaDescription:$("f-metaDescription").value,slug:$("f-slug").value,focusKeyword:$("f-focusKeyword").value,
       ogTitle:$("f-ogTitle").value,ogDescription:$("f-ogDescription").value,ogImage:$("f-ogImage").value,
       canonicalUrl:$("f-canonicalUrl").value,noIndex:$("f-noIndex").checked,nofollow:$("f-nofollow").checked,
       sitemapExclude:$("f-sitemapExclude").checked,schemaType:$("f-schemaType").value,faq:faq,
