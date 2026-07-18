@@ -63,6 +63,8 @@ export interface CmsPost {
   schemaType?: string | null
   faq?: Array<{ question: string; answer: string }> | null
   authorId?: string | null
+  llmsExclude?: boolean
+  focusKeyword?: string | null
 }
 
 /** Canonical robots-directive rule (mirrors src/modules/seo/analyze.ts).
@@ -193,6 +195,40 @@ export function scriptTagsFor(s: SeoSettings): string {
 /** Is a V1.3 SEO profile enabled for this site? Absent settings ⇒ false. */
 export function profileOn(s: SeoSettings, id: string): boolean {
   return s.profiles.includes(id)
+}
+
+// ─────────────── AI-SEO profile (V1.3 P5) — AEO blocks ───────────────
+// Mirrors src/modules/seo/aeo.ts: content blocks are plain-HTML conventions
+// (.aeo-tldr / .aeo-definition / .aeo-stat) turned into matching schema.
+
+export interface AeoBlocks {
+  tldr: string[]
+  definitions: Array<{ term: string; definition: string }>
+}
+
+const AEO_STRIP = /<[^>]+>/g
+const aeoText = (html: string) => html.replace(AEO_STRIP, " ").replace(/\s+/g, " ").trim()
+
+export function extractAeoBlocks(html: string): AeoBlocks {
+  const out: AeoBlocks = { tldr: [], definitions: [] }
+  if (!html) return out
+  const tldr = /<div class="aeo-tldr">([\s\S]*?)<\/div>/i.exec(html)
+  if (tldr) {
+    const liRe = /<li[^>]*>([\s\S]*?)<\/li>/gi
+    let m: RegExpExecArray | null
+    while ((m = liRe.exec(tldr[1])) !== null) out.tldr.push(aeoText(m[1]))
+  }
+  const defRe = /<div class="aeo-definition">([\s\S]*?)<\/div>/gi
+  let d: RegExpExecArray | null
+  while ((d = defRe.exec(html)) !== null) {
+    const term = /<dfn[^>]*>([\s\S]*?)<\/dfn>/i.exec(d[1])
+    if (!term) continue
+    const full = aeoText(d[1])
+    const termText = aeoText(term[1])
+    const definition = full.startsWith(termText) ? full.slice(termText.length).replace(/^[\s—–:-]+/, "") : full
+    if (termText && definition) out.definitions.push({ term: termText, definition })
+  }
+  return out
 }
 
 // ─────────────── Image SEO profile (V1.3 P4) ───────────────
@@ -568,7 +604,7 @@ async function mergeSeoOverrides(config: SiteConfig, posts: CmsPost[]): Promise<
   try {
     const resp = await fetch(`${config.cmsApiUrl}/seo`, { headers: { Authorization: `Bearer ${key}` } })
     if (!resp.ok) return
-    const data = (await resp.json()) as { seo?: Array<{ id: string; nofollow?: boolean; schemaType?: string | null; faq?: Array<{ question: string; answer: string }> | null; authorId?: string | null }> }
+    const data = (await resp.json()) as { seo?: Array<{ id: string; nofollow?: boolean; schemaType?: string | null; faq?: Array<{ question: string; answer: string }> | null; authorId?: string | null; llmsExclude?: boolean; focusKeyword?: string | null }> }
     const byId = new Map((data.seo ?? []).map((s) => [s.id, s]))
     for (const p of posts) {
       const o = byId.get(p.id)
@@ -577,6 +613,8 @@ async function mergeSeoOverrides(config: SiteConfig, posts: CmsPost[]): Promise<
       p.schemaType = o.schemaType ?? null
       p.faq = o.faq ?? null
       p.authorId = o.authorId ?? null
+      p.llmsExclude = o.llmsExclude ?? false
+      p.focusKeyword = o.focusKeyword ?? null
     }
   } catch {
     // absent overrides = today's output

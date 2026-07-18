@@ -103,6 +103,9 @@ export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
   if (active.has("ecommerce")) {
     jobs.push({ href: "merchant", title: "Merchant SEO", desc: "Brand/GTIN/condition per product, shipping & returns for rich results, and your Merchant Center feed URL." })
   }
+  if (active.has("ai")) {
+    jobs.push({ href: "seo-settings", title: "AI visibility", desc: "One-choice preset (visible in AI answers vs protected from training) applied at robots + edge together; llms-full.txt ships automatically; the cockpit's Content tab gains the AI checklist." })
+  }
   const cards = jobs.map((j) => `
     <a href="/app/sites/${escapeAttr(siteId)}/${j.href}" style="display:block;text-decoration:none;color:inherit">
       <div class="card" style="height:100%">
@@ -191,6 +194,8 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
   // ✨ assists light up only when the customer's Anthropic key is in the vault.
   const assist = await assistAvailable(master, customer.id).catch(() => false)
   const authors = await listAuthors(master, site.cms_site_id).catch(() => [])
+  const cockpitSettings = await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS)
+  const aiProfile = cockpitSettings.profiles.includes("ai")
   // Seed the client with the current values as JSON (read by seo-cockpit.js).
   const seed = {
     siteName: site.name, url, baseUrl: `https://${site.domain}/posts/`,
@@ -202,6 +207,7 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
     canonicalUrl: post.canonicalUrl ?? "", noIndex: post.noIndex, sitemapExclude: post.sitemapExclude,
     nofollow: post.nofollow, schemaType: post.schemaType ?? "", faq: post.faq,
     authorId: post.authorId ?? "", authors: authors.map((a) => ({ id: a.id, name: a.name })),
+    llmsExclude: post.llmsExclude, aiProfile,
   }
 
   const body = `
@@ -238,7 +244,7 @@ export async function seoSaveHandler(c: Context<AppEnv>): Promise<Response> {
     metaTitle: str("metaTitle"), metaDescription: str("metaDescription"), slug: str("slug"), focusKeyword: str("focusKeyword"),
     ogTitle: str("ogTitle"), ogDescription: str("ogDescription"), ogImage: str("ogImage"),
     canonicalUrl: str("canonicalUrl"), noIndex: bool("noIndex"), sitemapExclude: bool("sitemapExclude"),
-    nofollow: bool("nofollow"), schemaType: str("schemaType"), faq, authorId: str("authorId"), addRedirectOnSlugChange: bool("addRedirect"),
+    nofollow: bool("nofollow"), schemaType: str("schemaType"), faq, authorId: str("authorId"), llmsExclude: bool("llmsExclude"), addRedirectOnSlugChange: bool("addRedirect"),
     typedOverride: str("typedOverride"),
   }
   const r = await savePostSeo(c.env, customer.id, site.cms_site_id, site.repo_full_name, postId, update, master)
@@ -393,6 +399,11 @@ function edgeBlock(siteId: string, edge: EdgeBotState | undefined, edgeNotice?: 
       <div style="font-size:13px">Bot Fight Mode ${bfmOn ? `<span style="color:#86efac;font-size:11px">● on</span>` : edge.botFightMode === null ? `<span class="muted" style="font-size:11px">unknown</span>` : `<span class="muted" style="font-size:11px">off</span>`}
         <div class="muted" style="font-size:11px">Cloudflare challenges known malicious bots zone-wide (doesn't affect search engines).</div></div>
       ${btn(bfmOn ? "bfm_off" : "bfm_on", bfmOn ? "Turn off" : "Turn on")}
+    </div>
+    <div style="border-top:1px solid #262626;margin-top:10px;padding-top:10px">
+      <div style="font-size:13px;margin-bottom:4px">AI visibility — one choice, applied at both levels</div>
+      <div class="muted" style="font-size:11px;margin-bottom:8px">The tradeoff, plainly: <strong>visible</strong> means ChatGPT/Perplexity/AI Overviews can read and cite your content (traffic from AI answers, and your words may train models). <strong>Protected</strong> means they can't (no AI-answer visibility, no training). Applies robots.txt AND the edge rule together so they can't contradict.</div>
+      ${btn("preset_visible", "Visible in AI answers")} ${btn("preset_protect", "Protect from AI training")}
     </div></div>`
 }
 
@@ -508,6 +519,26 @@ export async function seoSettingsEdgeHandler(c: Context<AppEnv>): Promise<Respon
       r = await setBotFightMode(token, site.zone_id, false)
       done = "✓ Bot Fight Mode is off."
       break
+    case "preset_visible": {
+      // AI-SEO preset: visible in AI answers — allow AI crawlers at BOTH levels.
+      if (site.cms_site_id) {
+        const cur = await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS)
+        await saveSeoSettings(c.env, customer.id, site.cms_site_id, site.repo_full_name, { ...cur, blockAiBots: false }, master).catch(() => {})
+      }
+      r = await setAiBotWafRule(token, site.zone_id, false, aiBotWafExpression(AI_BOTS))
+      done = "✓ Preset applied: AI crawlers ALLOWED (robots.txt + edge together). Your content can appear in ChatGPT, Perplexity and AI Overviews."
+      break
+    }
+    case "preset_protect": {
+      // AI-SEO preset: protect content — block AI crawlers at BOTH levels.
+      if (site.cms_site_id) {
+        const cur = await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS)
+        await saveSeoSettings(c.env, customer.id, site.cms_site_id, site.repo_full_name, { ...cur, blockAiBots: true }, master).catch(() => {})
+      }
+      r = await setAiBotWafRule(token, site.zone_id, true, aiBotWafExpression(AI_BOTS))
+      done = "✓ Preset applied: AI crawlers BLOCKED (robots.txt asks + the edge enforces). Your content stays out of AI training and AI answers."
+      break
+    }
     default:
       return back("Unknown action.")
   }

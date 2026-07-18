@@ -1,7 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro"
 import Img from "../../components/Img.astro"
-import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, fetchSeoSettings, profileOn, fetchAuthors, personLd, imageObjectLd, type CmsPost } from "../../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, fetchSeoSettings, profileOn, fetchAuthors, personLd, imageObjectLd, extractAeoBlocks, type CmsPost } from "../../lib/cms"
 
 export async function getStaticPaths() {
   const config = loadConfig()
@@ -27,6 +27,11 @@ const newsOn = profileOn(seoSettings, "news")
 // Image profile (V1.3 P4): ImageObject with license/creator for the cover
 // image — licensable-images eligibility. Null unless configured.
 const coverImageLd = profileOn(seoSettings, "image") && post.coverImage ? imageObjectLd(post.coverImage, seoSettings) : null
+// AI profile (V1.3 P5): AEO content blocks become schema — the TL;DR feeds the
+// article's abstract, definitions become DefinedTerm nodes, and the focus
+// keyword becomes the article's "about" entity. Absent = today's graph.
+const aiOn = profileOn(seoSettings, "ai")
+const aeo = aiOn ? extractAeoBlocks(post.content) : { tldr: [], definitions: [] }
 const authors = await fetchAuthors(config)
 const author = post.authorId ? authors.find((a) => a.id === post.authorId) : undefined
 const article = {
@@ -41,7 +46,10 @@ const article = {
     ? { "@type": "Person", name: author.name, url: `https://${host}/authors/${author.slug}/` }
     : { "@type": "Person", name: config.ownerName },
   ...(post.coverImage ? { image: [post.coverImage] } : {}),
+  ...(aiOn && aeo.tldr.length ? { abstract: aeo.tldr.join(" ") } : {}),
+  ...(aiOn && post.focusKeyword ? { about: { "@type": "Thing", name: post.focusKeyword } } : {}),
 }
+const definedTerms = aiOn ? aeo.definitions.map((d) => ({ "@type": "DefinedTerm", name: d.term, description: d.definition })) : []
 const breadcrumb = {
   "@type": "BreadcrumbList",
   itemListElement: [
@@ -66,7 +74,7 @@ const faqPage =
     : null
 const schema = {
   "@context": "https://schema.org",
-  "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : []), ...(author ? [personLd(author, `https://${host}/`)] : []), ...(coverImageLd ? [coverImageLd] : [])],
+  "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : []), ...(author ? [personLd(author, `https://${host}/`)] : []), ...(coverImageLd ? [coverImageLd] : []), ...definedTerms],
 }
 // Robots directive from the cockpit's index/follow toggles. Absent (both off)
 // emits no robots meta at all — exactly today's behavior (rail #3).

@@ -59,6 +59,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
         '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0"><input type="checkbox" id="f-noIndex" '+(d.noIndex?"checked":"")+'> No-index this page <span class="muted">(hides it from search)</span></label>'+
         '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0"><input type="checkbox" id="f-nofollow" '+(d.nofollow?"checked":"")+'> No-follow this page’s links</label>'+
         '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0"><input type="checkbox" id="f-sitemapExclude" '+(d.sitemapExclude?"checked":"")+'> Exclude from sitemap</label>'+
+        (d.aiProfile?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0"><input type="checkbox" id="f-llmsExclude" '+(d.llmsExclude?"checked":"")+'> Keep out of llms-full.txt <span class="muted">(the full-content file AI assistants read)</span></label>':'')+
         field("Canonical URL override","f-canonicalUrl",d.canonicalUrl,"https://… (leave blank for the default)")+
         '<label style="display:block;font-size:13px;margin:10px 0 4px">Schema type</label><select id="f-schemaType" style="background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px">'+schemaOpts+'</select>'+
         '<label style="display:block;font-size:13px;margin:10px 0 4px">Author <span class="muted">(byline + Person schema — manage authors in SEO → Authors)</span></label><select id="f-authorId" style="background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px"><option value="">No author</option>'+((d.authors||[]).map(function(a){return '<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>';}).join(""))+'</select>'+
@@ -69,6 +70,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
         field("Focus keyword","f-focusKeyword",d.focusKeyword||"","The phrase you want this post to rank for (optional)")+
         '<div style="display:flex;align-items:center;gap:10px;margin:12px 0 4px"><div id="ca-score" style="font-weight:700;font-size:22px">–</div><div class="muted" style="font-size:12px">Live check — same rules as the publish quality gate.</div></div>'+
         '<div id="content-checks"></div>'+
+        (d.aiProfile?'<h4 style="margin:14px 0 4px;font-size:13px">AI visibility</h4><div class="muted" style="font-size:11px;margin-bottom:6px">Will AI answers quote this page? (mirrors the server checklist)</div><div id="ai-checks"></div>':'')+
       '</div>'+
       '<div id="seo-override" style="display:none;margin-top:12px;border:1px solid #b45309;border-radius:8px;padding:10px;background:#1c1104">'+
         '<div id="seo-override-msg" style="font-size:13px;color:#fcd34d;margin-bottom:6px"></div>'+
@@ -129,6 +131,23 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     }
     return out;
   }
+  function aiChecks(){
+    if(!d.aiProfile)return [];
+    var html=d.content||"";var out=[];
+    var tldr=/<div class="aeo-tldr">/i.test(html);
+    var ex=($("f-metaDescription").value||d.excerpt||"").trim();
+    var hasSummary=tldr||(ex.length>=40&&ex.length<=300);
+    out.push({s:hasSummary?"good":"warn",l:"Quotable summary",d:hasSummary?"AI engines can lift a clean summary":"Add a TL;DR block or a 40-300 char excerpt"});
+    var heads=[];var hr=/<h[23][^>]*>([\s\S]*?)<\/h[23]>/gi,hm;while((hm=hr.exec(html)))heads.push(hm[1].replace(/<[^>]+>/g," ").trim());
+    var q=heads.filter(function(h){return /\?$/.test(h)||/^(how|what|why|when|where|which|who|can|do|does|is|are|should|will)\b/i.test(h);}).length;
+    out.push({s:(heads.length===0||q>0)?"good":"warn",l:"Question-shaped headings",d:heads.length===0?"no subheadings to shape":q>0?q+" of "+heads.length+" answer a question":"phrase headings as the questions people ask"});
+    var nums=/\d[\d,.]*\s*(%|percent|million|billion|\$)/i.test(html.replace(/<[^>]+>/g," "));
+    var sourced=/<div class="aeo-stat">[\s\S]*?href/i.test(html);
+    out.push({s:(!nums||sourced)?"good":"warn",l:"Stats carry sources",d:!nums?"no statistics to source":sourced?"sourced":"link a source next to each statistic"});
+    var hasAuthor=$("f-authorId")&&$("f-authorId").value;
+    out.push({s:hasAuthor?"good":"warn",l:"Author attributed",d:hasAuthor?"byline set":"assign an author (Advanced tab)"});
+    return out;
+  }
   function caRender(){
     var checks=caChecks();var w={good:1,warn:0.5,bad:0};
     var score=checks.length?Math.round(checks.reduce(function(s,c){return s+w[c.s];},0)/checks.length*100):100;
@@ -136,6 +155,8 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     var se=$("ca-score");if(se){se.textContent=score;se.style.color=color;}
     var dot={good:"#86efac",warn:"#fcd34d",bad:"#fca5a5"};
     $("content-checks").innerHTML=checks.map(function(c){return '<div style="display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid #1a1a1a"><span style="color:'+dot[c.s]+'">●</span><div><div style="font-size:13px">'+esc(c.l)+'</div><div class="muted" style="font-size:12px">'+esc(c.d)+'</div></div></div>';}).join("");
+    var ai=$("ai-checks");
+    if(ai){ai.innerHTML=aiChecks().map(function(c){return '<div style="display:flex;gap:8px;align-items:baseline;padding:6px 0;border-top:1px solid #1a1a1a"><span style="color:'+dot[c.s]+'">●</span><div><div style="font-size:13px">'+esc(c.l)+'</div><div class="muted" style="font-size:12px">'+esc(c.d)+'</div></div></div>';}).join("");}
   }
 
   function refresh(){
@@ -190,7 +211,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     return {metaTitle:$("f-metaTitle").value,metaDescription:$("f-metaDescription").value,slug:$("f-slug").value,focusKeyword:$("f-focusKeyword").value,
       ogTitle:$("f-ogTitle").value,ogDescription:$("f-ogDescription").value,ogImage:$("f-ogImage").value,
       canonicalUrl:$("f-canonicalUrl").value,noIndex:$("f-noIndex").checked,nofollow:$("f-nofollow").checked,
-      sitemapExclude:$("f-sitemapExclude").checked,schemaType:$("f-schemaType").value,authorId:$("f-authorId")?$("f-authorId").value:"",faq:faq,
+      sitemapExclude:$("f-sitemapExclude").checked,schemaType:$("f-schemaType").value,authorId:$("f-authorId")?$("f-authorId").value:"",llmsExclude:$("f-llmsExclude")?$("f-llmsExclude").checked:false,faq:faq,
       addRedirect:$("f-addRedirect")?$("f-addRedirect").checked:false,
       typedOverride:$("f-typedOverride")?$("f-typedOverride").value:""};
   }
@@ -202,7 +223,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     $("f-metaTitle").value=p.metaTitle;$("f-metaDescription").value=p.metaDescription;$("f-slug").value=p.slug;$("f-focusKeyword").value=p.focusKeyword;
     $("f-ogTitle").value=p.ogTitle;$("f-ogDescription").value=p.ogDescription;$("f-ogImage").value=p.ogImage;
     $("f-canonicalUrl").value=p.canonicalUrl;$("f-noIndex").checked=p.noIndex;$("f-nofollow").checked=p.nofollow;
-    $("f-sitemapExclude").checked=p.sitemapExclude;$("f-schemaType").value=p.schemaType;if($("f-authorId"))$("f-authorId").value=p.authorId||"";
+    $("f-sitemapExclude").checked=p.sitemapExclude;$("f-schemaType").value=p.schemaType;if($("f-authorId"))$("f-authorId").value=p.authorId||"";if($("f-llmsExclude"))$("f-llmsExclude").checked=!!p.llmsExclude;
     $("faq-list").innerHTML="";(p.faq||[]).forEach(function(f){$("faq-list").appendChild(faqRow(f.question,f.answer));});
     refresh();
   }
