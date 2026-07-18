@@ -79,3 +79,18 @@ Say "continue" and resume from the Work-remaining list below. Branch series
   AUDIT_REPORT.md.
 - Job 3: LAUNCH_CHECKLIST.md consolidating OWNER_RUNBOOK + V1.3 additions
   (WAF token permission, IndexNow key, Merchant feed submission, assists).
+
+
+---
+
+# V1.3 JOB 2 — AUDIT COMPLETE (see AUDIT_REPORT.md "V1.3 FULL-SYSTEM AUDIT")
+
+Verdict GO. 454 tests green from clean install; frozen contract diff empty;
+determinism byte-proven; all 4 covenant gates verified blocking (incl. the new
+script-budget gate); worst-case 500-post all-profiles build 3.3s/514 pages;
+LHCI live run EXECUTED and passing (perf/SEO/BP 1.0) — clears the old owner
+condition. Fixed this branch: robots-vs-edge silent contradiction (UI now says
+which wins) + composition test suite + audit-grade stub knobs. Open: M-1
+byte-identity re-baseline note, L-1..L-5 (see report).
+
+Remaining: Job 3 — LAUNCH_CHECKLIST.md (docs PR).

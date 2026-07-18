@@ -371,7 +371,7 @@ function lines(v: unknown): string[] {
 
 /** The "Edge enforcement" block inside the Crawlers card (V1.3 decision #3).
  *  edge === undefined → Cloudflare not connected / no zone (teach state). */
-function edgeBlock(siteId: string, edge: EdgeBotState | undefined, edgeNotice?: string): string {
+function edgeBlock(siteId: string, edge: EdgeBotState | undefined, edgeNotice?: string, robotsBlocksAi?: boolean): string {
   const head = `<div style="margin-top:14px;border-top:1px solid #262626;padding-top:10px">
     <h4 style="margin:0 0 4px;font-size:13px">Edge enforcement <span class="muted" style="font-weight:400">— robots.txt asks politely; these BLOCK at Cloudflare's edge before a request reaches your site</span></h4>`
   if (!edge) {
@@ -384,12 +384,20 @@ function edgeBlock(siteId: string, edge: EdgeBotState | undefined, edgeNotice?: 
       : ""
   const aiOn = !!edge.aiRule?.enabled
   const bfmOn = edge.botFightMode === true
+  // Never let the two levels contradict SILENTLY (V1.3 audit): when robots.txt
+  // and the edge rule disagree, say exactly which one wins.
+  const contradiction =
+    robotsBlocksAi && !aiOn
+      ? `<p style="font-size:12px;color:#fcd34d;margin:6px 0">Heads up: robots.txt asks AI crawlers to stay out, but the edge rule is off — polite bots comply, others can ignore it. Use "Enforce" (or the preset below) to make it stick.</p>`
+      : !robotsBlocksAi && aiOn
+        ? `<p style="font-size:12px;color:#fcd34d;margin:6px 0">Heads up: robots.txt allows AI crawlers but the edge rule blocks them — <strong>the edge wins</strong>, so they are blocked. Use a preset below to align both levels.</p>`
+        : ""
   const btn = (action: string, label: string) =>
     `<form method="post" action="/app/sites/${escapeAttr(siteId)}/seo-settings/edge" style="display:inline;margin:0">
        <input type="hidden" name="action" value="${action}" />
        <button type="submit" class="btn ghost" style="font-size:12px">${label}</button></form>`
   return `${head}
-    ${notice}
+    ${notice}${contradiction}
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:8px 0">
       <div style="font-size:13px">AI-crawler block (WAF rule) ${aiOn ? `<span style="color:#86efac;font-size:11px">● enforcing</span>` : `<span class="muted" style="font-size:11px">off</span>`}
         <div class="muted" style="font-size:11px">Blocks GPTBot, ClaudeBot, CCBot &amp; co. at the edge — even crawlers that ignore robots.txt.</div></div>
@@ -455,7 +463,7 @@ function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opt
       </div>
       <div class="card" style="display:flex;justify-content:flex-end"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save settings</button></div>
     </form>
-    <div class="card">${edgeBlock(siteId, opts.edge, opts.edgeNotice)}</div>`
+    <div class="card">${edgeBlock(siteId, opts.edge, opts.edgeNotice, s.blockAiBots)}</div>`
 }
 
 /** Live edge state for the bot section; undefined = CF/zone not set up. */
