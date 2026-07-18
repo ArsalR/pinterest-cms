@@ -20,6 +20,7 @@ import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, type SeoSettings } 
 import { loadSeoSettings, saveSeoSettings } from "./settingsService"
 import { detectChains, isBrandedLink, toRedirectsCsv, type RedirectKind, type RedirectMatch, type RedirectRow } from "./redirects"
 import { listRedirects, upsertRedirect, deleteRedirect, importRedirectsCsv } from "./redirectsService"
+import { indexOverview, bulkInspect, BULK_INSPECT_CAP } from "./indexingService"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -460,6 +461,88 @@ export async function redirectsExportHandler(c: Context<AppEnv>): Promise<Respon
       "Cache-Control": "no-store, private",
     },
   })
+}
+
+// ─────────────────────── Indexing ops (S5, GSC-powered) ───────────────────────
+// Sitemap coverage + deindex watch on page load (cheap: one sitemaps.list call);
+// per-URL inspection runs only when the operator clicks "Check index status"
+// (the URL Inspection API is quota-limited, so it's opt-in and capped).
+
+const STATUS_COLORS: Record<string, string> = {
+  indexed: "#86efac", not_indexed: "#fcd34d", excluded_noindex: "#fcd34d",
+  excluded_canonical: "#fcd34d", blocked: "#fca5a5", error: "#fca5a5", unknown: "#a3a3a3",
+}
+
+export async function indexingHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+
+  const overview = await indexOverview(master, c.env, customer.id, site.domain).catch(() => ({ connected: false, property: "", coverage: null, sitemaps: [] }))
+  const checking = c.req.query("check") === "1"
+
+  const header = `
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">Indexing</h2>
+      <p class="muted" style="font-size:13px">How much of your site Google has actually indexed, straight from Search Console.</p>
+    </div>`
+
+  if (!overview.connected) {
+    return c.html(renderSaasLayout({ title: "Indexing", active: "sites", customer, bodyHtml: `${header}
+      <div class="card"><p class="muted" style="font-size:13px">Connect Google Search Console on the <a href="/app/connections" style="color:#93c5fd">Connections</a> page to see index coverage and per-page status.</p></div>` }), 200, NO_STORE)
+  }
+
+  // Coverage summary + deindex watch (rail #2's monitoring counterpart).
+  const cov = overview.coverage
+  const covHtml = cov && cov.submitted > 0
+    ? `<div class="card${cov.deindexRisk ? `" style="border-color:#7f1d1d;background:#2a0d0d` : ""}">
+        <div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap">
+          <div><div style="font-size:26px;font-weight:700;color:${cov.deindexRisk ? "#fca5a5" : "#86efac"}">${Math.round(cov.coverage * 100)}%</div><div class="muted" style="font-size:12px">indexed</div></div>
+          <div><div style="font-size:18px;font-weight:600">${cov.indexed} / ${cov.submitted}</div><div class="muted" style="font-size:12px">pages in the sitemap Google has indexed</div></div>
+        </div>
+        ${cov.deindexRisk ? `<p style="margin:10px 0 0;font-size:13px;color:#fca5a5"><strong>Deindex watch:</strong> coverage has dropped below 70%. This usually means an accidental site-wide noindex, a robots.txt block, or a broken deploy — check <a href="/app/sites/${escapeAttr(siteId)}/seo-settings" style="color:#93c5fd">SEO settings</a> and the checks below.</p>` : ""}
+      </div>`
+    : `<div class="card"><p class="muted" style="font-size:13px">No sitemap data in Search Console yet — it can take a few days after a sitemap is first submitted.</p></div>`
+
+  const smRows = overview.sitemaps.length
+    ? overview.sitemaps.map((s) => `<tr style="border-top:1px solid #1f2937">
+        <td style="padding:6px;font-size:12px"><code>${escapeHtml(s.path)}</code></td>
+        <td style="padding:6px;font-size:12px">${s.indexed}/${s.submitted}</td>
+        <td style="padding:6px;font-size:12px">${s.isPending ? `<span class="muted">pending</span>` : s.errors ? `<span style="color:#fca5a5">${s.errors} error${s.errors === 1 ? "" : "s"}</span>` : `<span style="color:#86efac">ok</span>`}</td>
+      </tr>`).join("")
+    : `<tr><td colspan="3" class="muted" style="padding:8px 6px">No sitemaps submitted yet.</td></tr>`
+  const smHtml = `<div class="card"><h3 style="margin:0 0 6px;font-size:14px">Sitemaps</h3>
+      <table style="width:100%;border-collapse:collapse"><thead><tr class="muted" style="font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Sitemap</th><th style="text-align:left;padding:4px 6px">Indexed</th><th style="text-align:left;padding:4px 6px">Status</th></tr></thead><tbody>${smRows}</tbody></table></div>`
+
+  // Per-URL checks — opt-in (quota-capped).
+  let urlsHtml: string
+  if (checking) {
+    const res = await bulkInspect(master, c.env, customer.id, site.cms_site_id ?? "", site.domain).catch(() => null)
+    const rows = res?.rows ?? []
+    const rowHtml = rows.length
+      ? rows.map((r) => {
+          const d = r.diagnosis
+          const color = d ? (STATUS_COLORS[d.status] ?? "#a3a3a3") : "#a3a3a3"
+          return `<tr style="border-top:1px solid #1f2937">
+            <td style="padding:8px 6px;font-size:12px"><code>${escapeHtml(r.url.replace(`https://${site.domain}`, ""))}</code></td>
+            <td style="padding:8px 6px;font-size:12px"><span style="color:${color}">●</span> ${escapeHtml(d?.label ?? "Couldn't check (quota or API error)")}</td>
+            <td style="padding:8px 6px;font-size:12px">${d?.recommendation ? escapeHtml(d.recommendation) + " " : ""}<a href="${escapeAttr(r.deepLink)}" target="_blank" rel="noopener" style="color:#93c5fd">${d && !d.indexed ? "Request indexing ↗" : "Inspect ↗"}</a></td>
+          </tr>`
+        }).join("")
+      : `<tr><td colspan="3" class="muted" style="padding:8px 6px">No published posts to check.</td></tr>`
+    urlsHtml = `<div class="card"><h3 style="margin:0 0 6px;font-size:14px">Page-by-page status</h3>
+        ${res?.capped ? `<p class="muted" style="font-size:12px;margin:0 0 6px">Showing the ${BULK_INSPECT_CAP} most recently updated of ${res.total} published posts (Google limits how many checks we can run at once).</p>` : ""}
+        <table style="width:100%;border-collapse:collapse"><thead><tr class="muted" style="font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:4px 6px">Page</th><th style="text-align:left;padding:4px 6px">Status</th><th style="text-align:left;padding:4px 6px">Action</th></tr></thead><tbody>${rowHtml}</tbody></table></div>`
+  } else {
+    urlsHtml = `<div class="card"><h3 style="margin:0 0 6px;font-size:14px">Page-by-page status</h3>
+        <p class="muted" style="font-size:12px;margin:0 0 10px">Checks your ${BULK_INSPECT_CAP} most recent posts against Google's index and tells you exactly why any page isn't showing (uses your Search Console quota, so it runs on demand).</p>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/indexing?check=1">Check index status</a></div>`
+  }
+
+  await audit(master, customer.id, "site.indexing_viewed", site.domain, { checked: checking }).catch(() => {})
+  return c.html(renderSaasLayout({ title: "Indexing", active: "sites", customer, bodyHtml: header + covHtml + smHtml + urlsHtml }), 200, NO_STORE)
 }
 
 /** Serve the cockpit's vanilla JS (no build step). Public — it's just a script. */
