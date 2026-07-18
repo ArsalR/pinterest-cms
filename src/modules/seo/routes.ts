@@ -100,6 +100,9 @@ export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
   if (active.has("news")) {
     jobs.push({ href: "authors", title: "Authors & bylines", desc: "Author pages with real bios and Person schema — the E-E-A-T backbone. Fast-indexing pings fire automatically on publish." })
   }
+  if (active.has("ecommerce")) {
+    jobs.push({ href: "merchant", title: "Merchant SEO", desc: "Brand/GTIN/condition per product, shipping & returns for rich results, and your Merchant Center feed URL." })
+  }
   const cards = jobs.map((j) => `
     <a href="/app/sites/${escapeAttr(siteId)}/${j.href}" style="display:block;text-decoration:none;color:inherit">
       <div class="card" style="height:100%">

@@ -192,6 +192,92 @@ export function profileOn(s: SeoSettings, id: string): boolean {
   return s.profiles.includes(id)
 }
 
+// ─────────────── Ecommerce SEO profile (V1.3 P3) — merchant ───────────────
+
+export interface MerchantExtras {
+  config: {
+    shippingRateCents?: number | null
+    shippingCurrency?: string
+    shipCountry?: string
+    handlingDaysMax?: number | null
+    transitDaysMax?: number | null
+    returnDays?: number | null
+    returnFees?: string
+  } | null
+  products: Array<{
+    id: string; slug: string; brand: string | null; gtin: string | null
+    mpn: string | null; condition: string | null
+    ratingValue: number | null; ratingCount: number | null
+  }>
+}
+
+let _merchantCache: MerchantExtras | null = null
+
+/** Merchant config + per-product extras (memoized). Empty when the ecommerce
+ *  profile is off — product pages keep today's exact base schema. */
+export async function fetchMerchant(config: SiteConfig): Promise<MerchantExtras> {
+  if (_merchantCache) return _merchantCache
+  const key = process.env.CMS_API_KEY
+  const settings = await fetchSeoSettings(config)
+  if (!key || !profileOn(settings, "ecommerce")) return (_merchantCache = { config: null, products: [] })
+  try {
+    const resp = await fetch(`${config.cmsApiUrl}/merchant`, { headers: { Authorization: `Bearer ${key}` } })
+    if (!resp.ok) return (_merchantCache = { config: null, products: [] })
+    const data = (await resp.json()) as { config?: MerchantExtras["config"]; products?: MerchantExtras["products"] }
+    _merchantCache = { config: data.config ?? null, products: Array.isArray(data.products) ? data.products : [] }
+    return _merchantCache
+  } catch {
+    return (_merchantCache = { config: null, products: [] })
+  }
+}
+
+const CONDITION_SCHEMA: Record<string, string> = {
+  new: "https://schema.org/NewCondition",
+  refurbished: "https://schema.org/RefurbishedCondition",
+  used: "https://schema.org/UsedCondition",
+}
+
+/** Merchant-depth schema additions for one product (mirrors
+ *  src/modules/seo/merchant.ts — only real values are emitted). */
+export function merchantExtrasFor(m: MerchantExtras, productId: string): { product: Record<string, unknown>; offer: Record<string, unknown> } {
+  const product: Record<string, unknown> = {}
+  const offer: Record<string, unknown> = {}
+  const x = m.products.find((p) => p.id === productId)
+  const cfg = m.config
+  if (x) {
+    if (x.brand) product.brand = { "@type": "Brand", name: x.brand }
+    if (x.gtin) product.gtin = x.gtin
+    if (x.mpn) product.mpn = x.mpn
+    if (x.ratingValue != null && x.ratingCount != null && x.ratingValue > 0 && x.ratingCount > 0) {
+      product.aggregateRating = { "@type": "AggregateRating", ratingValue: x.ratingValue, reviewCount: x.ratingCount }
+    }
+    if (x.condition && CONDITION_SCHEMA[x.condition]) offer.itemCondition = CONDITION_SCHEMA[x.condition]
+  }
+  if (cfg && cfg.shippingRateCents != null) {
+    offer.shippingDetails = {
+      "@type": "OfferShippingDetails",
+      shippingRate: { "@type": "MonetaryAmount", value: (cfg.shippingRateCents / 100).toFixed(2), currency: (cfg.shippingCurrency ?? "usd").toUpperCase() },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: cfg.shipCountry ?? "US" },
+      ...(cfg.handlingDaysMax != null && cfg.transitDaysMax != null
+        ? { deliveryTime: { "@type": "ShippingDeliveryTime",
+            handlingTime: { "@type": "QuantitativeValue", minValue: 0, maxValue: cfg.handlingDaysMax, unitCode: "DAY" },
+            transitTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: cfg.transitDaysMax, unitCode: "DAY" } } }
+        : {}),
+    }
+  }
+  if (cfg && cfg.returnDays != null) {
+    offer.hasMerchantReturnPolicy = {
+      "@type": "MerchantReturnPolicy",
+      applicableCountry: cfg.shipCountry ?? "US",
+      returnPolicyCategory: "https://schema.org/MerchantReturnFiniteReturnWindow",
+      merchantReturnDays: cfg.returnDays,
+      returnMethod: "https://schema.org/ReturnByMail",
+      returnFees: cfg.returnFees === "free" ? "https://schema.org/FreeReturn" : "https://schema.org/ReturnShippingFees",
+    }
+  }
+  return { product, offer }
+}
+
 // ─────────────── News SEO profile (V1.3 P2) — authors ───────────────
 
 export interface CmsAuthor {
