@@ -1,4 +1,10 @@
-# OWNER_RUNBOOK.md — everything to do outside code, in order
+# OWNER_RUNBOOK.md — reference detail (superseded as the execution list)
+
+> **Execute `LAUNCH_CHECKLIST.md` instead** — it consolidates this runbook plus
+> everything V1.1–V1.3 added (WAF token permission, IndexNow, Merchant feed,
+> assists) into one ordered list with verify steps and times. This file stays
+> as background detail for the steps it describes.
+
 
 Written for a semi-technical owner. Each step ends with **Verify**. Do them top to
 bottom. Nothing here is optional before flipping `SAAS_MODE` on.
