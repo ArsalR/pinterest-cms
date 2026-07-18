@@ -1,8 +1,10 @@
 // src/modules/connections/anthropic.ts
-// Optional customer Anthropic key (decision #9: customer-side inference).
-// Live validation only — the key is stored vault-encrypted and later set as a
-// repo secret in the customer's own GitHub (Phase 3); the platform never
-// calls the Anthropic API with it beyond this one-shot validation.
+// Optional customer Anthropic key (decision #9: customer-side inference; the
+// platform never pays for or proxies inference by default). The key is stored
+// vault-encrypted and used in exactly two places: (1) set as a repo secret in
+// the customer's own GitHub (Phase 3) for Actions-side builds; (2) V1.3 ✨
+// dashboard assists — rate-limited suggestion calls made with THIS customer's
+// key, never logged, hidden entirely when no key is stored.
 
 export interface AnthropicKeyCheck {
   valid: boolean
