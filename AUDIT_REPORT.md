@@ -279,3 +279,131 @@ All vars read in code are declared in `src/lib/types.ts` — no undocumented rea
 | Customer-key-only inference | VERIFIED | Anthropic key sealed to repo secret; never spent server-side |
 | $29 / $79 tiers, 7-day trial | VERIFIED | `billing/plans.ts` defaults 2900/7900; `TRIAL_DAYS=7` |
 | No plaintext secrets | VERIFIED | vault tests + no-secret-logging scan |
+
+---
+
+# V1.3 FULL-SYSTEM AUDIT (July 2026 — profiles + V1.2 suite + everything since)
+
+Adversarial stance unchanged: every claim below is an executed command or a
+test in the repo. Scope: V1.1 design options, V1.2 SEO Command Suite (S1–S6),
+V1.3 decisions (assists/scripts/WAF) + five SEO profiles, and the platform
+underneath them.
+
+## Verdict: **GO**
+
+No CRITICAL or HIGH open. One HIGH was found DURING V1.3 and fixed with
+regression tests before this audit (migration-runner idempotency, PR #54). One
+MEDIUM found in this audit (silent robots-vs-edge contradiction) fixed in this
+branch. Remaining MEDIUM/LOW are listed honestly below — none launch-blocking.
+
+## 1. Full regression — EXECUTED
+- Clean `npm ci` → typecheck ✓, madge no cycles (24 modules, barrel-only) ✓,
+  **454 vitest tests green** (was 283 at the last audit; +171 across V1.2/V1.3,
+  every stage landed with guardrail-fires tests).
+- Tenant API frozen-contract check: `git diff a43ab04..HEAD` over
+  `src/routes/public/v1/posts.ts`, `errors.ts`, `rateLimit.ts`,
+  `idempotency.ts`, `src/middleware/` = **empty**. All V1.3 API work is new
+  endpoints (`/v1/local`, `/v1/authors`, `/v1/merchant`) or additive fields on
+  V1.2-added endpoints; both discovery lists updated in every case.
+- Template cold build EXECUTED (fresh `npm install`, stub CMS):
+  - Empty default site: 12 pages / 1.15s, all three covenant gates PASS, and
+    **zero** profile artifacts emitted (no news/image sitemap, no llms-full,
+    no feed, no key file, no script manifest).
+  - **Determinism proven byte-for-byte**: two consecutive default builds diff
+    EMPTY (`diff -r` on dist).
+  - Every gate deliberately broken and confirmed BLOCKING (exit 1): injected
+    `<script>` → zero-js gate; dropped `X-Content-Type-Options` → header gate;
+    deleted robots.txt → SEO-file gate; **over-budget script selection
+    (GA4+Crisp+CookieYes = 130KB > 100KB) → build fails with the
+    plain-language report naming offenders and the lighter swap**.
+  - Light script selection (Plausible): builds, CSP extended with exactly its
+    hosts, tag emitted, zero-js gate sanctions it via the manifest.
+- Preset×kind matrix: runs in template CI (pr-checks); locally verified
+  representative kinds (content, ecommerce) on the default preset.
+
+## 2. New-surface security — EXECUTED (code-level)
+- Every V1.3 `/app` route is `prot()`-wrapped (grep over appRouter: zero
+  unprotected `sites/:id/*` mounts; the only `pub()` routes are marketing
+  pages + the static cockpit JS).
+- IDOR: automated scan over all 31 seo-module handlers — every handler that
+  reads `:id` resolves it through a tenant-scoped loader
+  (`WHERE id = ? AND customer_id = ?`). Zero unscoped handlers.
+- Assist endpoint: the Anthropic key never appears in any response or log;
+  prompt/output never logged; content loaded server-side (browser never ships
+  the body); 60/hr per-customer rate limit pinned by test.
+- WAF path: `zone_id` comes off the customer's own `customer_sites` row inside
+  the tenant-scoped query; the token comes from their vault. There is no code
+  path accepting a zone id from the request. Guardrail test proves the WAF
+  expression can never match a major search engine.
+- Script controls: unknown ids/malformed config dropped at parse (test);
+  template re-validates against its own closed catalog; only exact catalog tag
+  shapes can be emitted (no arbitrary injection path).
+
+## 3. Conflict hunt — EXECUTED
+- Sitemap composition: worst-case build emits news + image sitemaps and joins
+  BOTH into Astro's sitemap-index (verified in dist; idempotent insert
+  unit-tested; re-runs add nothing).
+- All-profiles schema graph: on the worst-case build, a post page's graph is
+  `NewsArticle + BreadcrumbList + FAQPage + Person + DefinedTerm` with unique
+  @ids; article carries abstract (TL;DR), about (focus keyword), author →
+  author page. Homepage: `WebSite + Store(LocalBusiness)` + global
+  Organization block. Product page: full merchant depth
+  (brand/MPN/rating/condition/shipping/returns) + BreadcrumbList. JSON parsed
+  and validated from the built HTML, plus a pure composition test suite.
+- The 48-hour news window holds exactly (48 of 500 hourly posts in the news
+  sitemap); llms-full exclusion holds exactly (450 of 500 with every 10th
+  excluded); Merchant feed fills (50 items, correct g: fields).
+- Robots vs edge vs AI preset: FIXED this branch — when robots.txt and the
+  edge rule disagree, the Control Center now says exactly which wins
+  ("the edge wins") and points at the presets that align both. Presets apply
+  both levels atomically by construction.
+- Redirect loops: slug-change 301s, 404-monitor entries, and CSV imports all
+  write the same `redirects` table that `detectChains` reads — chains AND
+  loops across all three sources surface in the manager (loop guardrail test).
+
+## 4. Performance — MEASURED
+- **500-post site, ALL profiles on: 514 pages in 3.28s** (4s wall incl. gen
+  scripts) on this container. Build time is content-fetch + render bound;
+  profiles add three extra fetches total (settings/authors/local|merchant),
+  memoized once per build.
+- **Lighthouse CI EXECUTED LIVE** (Chromium, worst-case build, representative
+  set: home, post with full AEO/news/author graph, product with merchant
+  depth, about): **performance 1.0 / SEO 1.0 / best-practices 1.0 on all
+  four; a11y 1.0 except 0.9 on /about** (pre-existing template page, not a
+  V1.3 surface). Assertions passed (lhci exit 0). This also clears the
+  long-standing "LHCI live run" owner condition from the previous audit.
+
+## 5. Findings register
+FIXED (pre-audit, during V1.3, each with regression tests):
+- HIGH — migration runner crashed ("duplicate column") on every site
+  provisioned after an ALTER migration shipped, also aborting that site's cron
+  GC/webhook retries. Fixed: tolerant idempotent runner + `_migrations` seeded
+  at provisioning in the same single batch. 3-state regression suite.
+FIXED (this audit branch):
+- MEDIUM — robots.txt vs edge-WAF disagreement was silent. Now called out in
+  the UI with which level wins.
+MEDIUM (open, honest):
+- M-1 Cross-VERSION byte-identity: determinism within this version is proven
+  byte-for-byte, but V1.2/V1.3 template expressions added whitespace-level
+  deltas to `<head>` versus pre-V1.2 builds (semantically identical; all
+  gates + LHCI green). Re-baselining "byte-identical" to this version is the
+  honest framing.
+LOW (open, honest):
+- L-1 Scheduled-post publishes (tenant cron) don't fire IndexNow pings; the
+  next dashboard publish batch covers them. Documented in code.
+- L-2 Static maps use the community OSM staticmap instance — availability is
+  best-effort; a broken image degrades gracefully. Swap to a keyed provider if
+  it matters (owner call).
+- L-3 /about a11y 0.9 (pre-existing heading-order nit).
+- L-4 Ecommerce profile on a `kind=content` site emits an empty (valid)
+  feed.xml — harmless; pairing is enforced by genesis defaults.
+- L-5 Yoast/Rank Math import maps core SEO meta only (titles/desc/robots/
+  canonical/OG/keyword) — niche plugin fields (e.g. cornerstone flags) are
+  dropped silently. Import report counts mapped posts.
+
+## Evidence appendix (commands executed this audit)
+clean `npm ci` + full gate · frozen-contract `git diff` · empty build + gates ·
+double-build byte diff · 4× deliberate gate breaks (all exit 1) · worst-case
+500-post all-profiles build + artifact/window/exclusion counts · JSON-LD
+parsed from built HTML (post/home/product) · LHCI live (4 URLs, exit 0) ·
+IDOR handler scan · appRouter prot() scan.
