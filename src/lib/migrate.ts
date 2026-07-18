@@ -185,6 +185,31 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE seo_settings ADD COLUMN scripts TEXT`,
     ],
   },
+  {
+    version: 10,
+    name: "010_business_locations",
+    statements: [
+      // V1.3 Local SEO profile — NAP stored once per location; multi-location
+      // support (each row = a location page + its own LocalBusiness schema).
+      // Additive; empty table = no local output = today's behavior.
+      `CREATE TABLE IF NOT EXISTS business_locations (
+         id TEXT PRIMARY KEY,
+         name TEXT NOT NULL,
+         subtype TEXT,
+         street TEXT, city TEXT, region TEXT, postal TEXT, country TEXT,
+         phone TEXT,
+         hours_json TEXT,
+         latitude REAL, longitude REAL,
+         service_areas TEXT,
+         price_range TEXT,
+         gbp_url TEXT,
+         rating_value REAL, rating_count INTEGER,
+         is_primary INTEGER NOT NULL DEFAULT 0,
+         slug TEXT UNIQUE,
+         created_at TEXT DEFAULT (datetime('now'))
+       )`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

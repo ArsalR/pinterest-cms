@@ -3,7 +3,7 @@
 // site.config.json (never lorem ipsum), dated, and footer-linked. These are
 // E-E-A-T signals and AdSense/affiliate-program requirements.
 import Base from "../layouts/Base.astro"
-import { loadConfig, canonicalHost } from "../lib/cms"
+import { loadConfig, canonicalHost, fetchLocations, localBusinessLd, napBlockHtml } from "../lib/cms"
 
 export function getStaticPaths() {
   return ["about", "contact", "privacy", "terms", "disclosure", "cookies", "editorial"].map((trust) => ({
@@ -119,9 +119,19 @@ const pages: Record<string, { title: string; body: string }> = {
 }
 
 const page = pages[trust!]
+
+// Local SEO profile (V1.3): the contact page shows the primary location's NAP
+// block (address, phone, hours, static map) + LocalBusiness schema. Empty for
+// non-local sites — byte-identical.
+const locations = trust === "contact" ? await fetchLocations(config) : []
+const primary = locations.find((l) => l.isPrimary) ?? locations[0]
+const napHtml = primary ? napBlockHtml(primary) : ""
+const contactLd = primary ? localBusinessLd(primary, `https://${host}/`, `https://${host}/contact/`) : null
+const contactSchema = contactLd ? { "@context": "https://schema.org", ...contactLd } : null
 ---
-<Base title={page.title} description={`${page.title}.`} path={`/${trust}/`}>
+<Base title={page.title} description={`${page.title}.`} path={`/${trust}/`} schema={contactSchema}>
   <h1>{page.title}</h1>
   <p style="color:#777;font-size:0.85rem">{dated}</p>
   <div set:html={page.body} />
+  {napHtml && <div set:html={napHtml} />}
 </Base>

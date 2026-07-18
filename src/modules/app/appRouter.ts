@@ -40,7 +40,7 @@ import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
 import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
 import { designPageHandler, designApplyHandler } from "../design"
-import { seoHubHandler, seoProfilesToggleHandler, seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, seoSettingsEdgeHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler, indexingHandler, seoAssistHandler, imageAltSuggestHandler, siteScriptsHandler, siteScriptsSaveHandler } from "../seo"
+import { seoHubHandler, seoProfilesToggleHandler, seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, seoSettingsEdgeHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler, indexingHandler, seoAssistHandler, imageAltSuggestHandler, siteScriptsHandler, siteScriptsSaveHandler, localSeoHandler, localSeoSaveHandler, localSeoDeleteHandler } from "../seo"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -171,6 +171,9 @@ saasAppRoutes.post("/sites/:id/assist", prot(seoAssistHandler))
 saasAppRoutes.post("/sites/:id/images/suggest", prot(imageAltSuggestHandler))
 saasAppRoutes.get("/sites/:id/scripts", prot(siteScriptsHandler))
 saasAppRoutes.post("/sites/:id/scripts", prot(siteScriptsSaveHandler))
+saasAppRoutes.get("/sites/:id/local", prot(localSeoHandler))
+saasAppRoutes.post("/sites/:id/local", prot(localSeoSaveHandler))
+saasAppRoutes.post("/sites/:id/local/delete", prot(localSeoDeleteHandler))
 saasAppRoutes.get("/sites/:id/design", prot(designPageHandler))
 saasAppRoutes.post("/sites/:id/design", prot(designApplyHandler))
 // Visual preview window (K12).

@@ -1,0 +1,30 @@
+---
+// Location pages (V1.3 Local SEO profile): one page per business location,
+// each with its own LocalBusiness schema and NAP block. Zero locations (or
+// profile off) ⇒ zero pages emitted — byte-identical for non-local sites.
+import Base from "../../layouts/Base.astro"
+import { loadConfig, canonicalHost, fetchLocations, localBusinessLd, napBlockHtml, type BusinessLocation } from "../../lib/cms"
+
+export async function getStaticPaths() {
+  const config = loadConfig()
+  const locations = await fetchLocations(config)
+  return locations
+    .filter((l) => l.slug)
+    .map((l) => ({ params: { slug: l.slug }, props: { location: l } }))
+}
+
+interface Props { location: BusinessLocation }
+const { location } = Astro.props
+const config = loadConfig()
+const host = canonicalHost(config)
+const path = `/locations/${location.slug}/`
+const ld = localBusinessLd(location, `https://${host}/`, `https://${host}${path}`)
+const schema = ld ? { "@context": "https://schema.org", ...ld } : null
+const title = `${location.name}${location.city ? ` — ${location.city}` : ""}`
+---
+<Base title={title} description={`Visit ${location.name}${location.city ? ` in ${location.city}` : ""} — address, opening hours and directions.`} path={path} schema={schema}>
+  <article>
+    <h1>{title}</h1>
+    <div set:html={napBlockHtml(location)} />
+  </article>
+</Base>
