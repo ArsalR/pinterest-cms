@@ -92,12 +92,20 @@ export interface SeoSettings {
   orgName: string
   orgLogo: string
   socialProfiles: string[]
+  /** V1.3 SEO profile activations (local/news/ecommerce/image/ai). [] = none. */
+  profiles: string[]
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   blockAiBots: false, blockedBots: [], disallowPaths: [], robotsExtra: "",
   rssEnabled: true, archivesEnabled: true, globalSchemaEnabled: false,
   orgName: "", orgLogo: "", socialProfiles: [],
+  profiles: [],
+}
+
+/** Is a V1.3 SEO profile enabled for this site? Absent settings ⇒ false. */
+export function profileOn(s: SeoSettings, id: string): boolean {
+  return s.profiles.includes(id)
 }
 
 let _seoSettingsCache: SeoSettings | null = null

@@ -33,7 +33,11 @@ seoSettingsRoutes.get("/", async (c) => {
     blockAiBots: false, blockedBots: [] as string[], disallowPaths: [] as string[],
     robotsExtra: "", rssEnabled: true, archivesEnabled: true,
     globalSchemaEnabled: false, orgName: "", orgLogo: "", socialProfiles: [] as string[],
+    profiles: [] as string[],
   }
+  // Valid profile ids — mirrors src/modules/seo/profiles.ts (CMS core stays
+  // dependency-clean of the SaaS modules, so the closed set is inlined).
+  const PROFILE_IDS = new Set(["local", "news", "ecommerce", "image", "ai"])
   let settings = defaults
   try {
     const r = await siteDb.execute({ sql: "SELECT * FROM seo_settings WHERE id = 'default' LIMIT 1", args: [] })
@@ -50,6 +54,7 @@ seoSettingsRoutes.get("/", async (c) => {
         orgName: (p.org_name as string | null) ?? "",
         orgLogo: (p.org_logo as string | null) ?? "",
         socialProfiles: jsonArr(p.social_profiles),
+        profiles: jsonArr(p.profiles).filter((id) => PROFILE_IDS.has(id)),
       }
     }
   } catch {

@@ -18,6 +18,7 @@ import { createSite } from "../../lib/provision"
 import { audit, type Customer } from "../customers"
 import { getConnection, getConnectionSecret } from "../connections"
 import { vaultEncrypt, vaultDecrypt } from "../vault"
+import { defaultProfilesForKind } from "../seo"
 import {
   installationToken, repoExists, createRepoFromTemplate,
   setRepoSecret, putRepoFile, dispatchWorkflow,
@@ -251,6 +252,25 @@ async function executeStep(
         )
       })
       await updateSite(db, siteId, { cms_site_id: result.siteId, cms_hostname: cmsHostname })
+      // Seed default SEO profiles for the site kind (V1.3 genesis mapping).
+      // Best-effort: a NEW site with no content builds identically either way,
+      // and the customer can toggle profiles in the SEO hub at any time.
+      const defaultProfiles = defaultProfilesForKind(site.kind)
+      if (defaultProfiles.length) {
+        try {
+          const reg = await db.execute({ sql: "SELECT turso_url, turso_token FROM sites WHERE id = ? LIMIT 1", args: [result.siteId] })
+          if (reg.rows.length) {
+            const newSiteDb = getSiteDb(String(reg.rows[0].turso_url), String(reg.rows[0].turso_token))
+            await newSiteDb.execute({
+              sql: `INSERT INTO seo_settings (id, profiles) VALUES ('default', ?)
+                    ON CONFLICT(id) DO UPDATE SET profiles = excluded.profiles`,
+              args: [JSON.stringify(defaultProfiles)],
+            })
+          }
+        } catch (err) {
+          console.error("profile seeding failed (non-fatal):", err instanceof Error ? err.message : err)
+        }
+      }
       if (!env.VAULT_MASTER_KEY) throw new Error("Credential storage isn't configured on the platform.")
       const apiKeyEnc = await vaultEncrypt(env.VAULT_MASTER_KEY, site.customer_id, result.apiKey)
       return { detail: { apiKeyEnc } }

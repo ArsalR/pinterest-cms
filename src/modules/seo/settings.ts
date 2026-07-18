@@ -32,7 +32,11 @@ export const AI_BOTS = [
  *  engine — the hard rail. Matched case-insensitively as substrings. */
 export const MAJOR_ENGINE_BOTS = ["googlebot", "bingbot", "slurp", "duckduckbot", "baiduspider", "yandex"]
 
+import type { ProfileId } from "./profiles"
+
 export interface SeoSettings {
+  /** SEO profile activations (V1.3) — [] = none = today's behavior. */
+  profiles: ProfileId[]
   /** One-click block of AI/LLM training crawlers (does not affect search). */
   blockAiBots: boolean
   /** Extra user-agents to Disallow: / (freeform, advanced). */
@@ -52,6 +56,7 @@ export interface SeoSettings {
 }
 
 export const DEFAULT_SEO_SETTINGS: SeoSettings = {
+  profiles: [],
   blockAiBots: false,
   blockedBots: [],
   disallowPaths: [],
