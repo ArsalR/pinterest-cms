@@ -244,6 +244,15 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE seo_settings ADD COLUMN merchant_json TEXT`,
     ],
   },
+  {
+    version: 13,
+    name: "013_image_license",
+    statements: [
+      // V1.3 Image SEO profile — site-level image license/creator for
+      // licensable-images eligibility. Additive; NULL = no ImageObject nodes.
+      `ALTER TABLE seo_settings ADD COLUMN image_license_json TEXT`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

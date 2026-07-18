@@ -25,6 +25,7 @@ export interface SiteImage {
   url: string
   filename: string
   alt: string | null
+  caption: string | null
   width: number | null
   height: number | null
   hasAlt: boolean
@@ -41,7 +42,7 @@ export async function listSiteImages(master: Client, cmsSiteId: string, limit = 
   const siteDb = await siteDbFor(master, cmsSiteId)
   if (!siteDb) return { images: [], total: 0, missingAlt: 0 }
   const r = await siteDb.execute({
-    sql: "SELECT id, url, filename, alt, width, height FROM media ORDER BY created_at DESC LIMIT ?",
+    sql: "SELECT id, url, filename, alt, caption, width, height FROM media ORDER BY created_at DESC LIMIT ?",
     args: [limit],
   })
   let missingAlt = 0
@@ -54,6 +55,7 @@ export async function listSiteImages(master: Client, cmsSiteId: string, limit = 
       url: String(row.url ?? ""),
       filename: String(row.filename ?? ""),
       alt,
+      caption: (row.caption as string | null) ?? null,
       width: row.width == null ? null : Number(row.width),
       height: row.height == null ? null : Number(row.height),
       hasAlt,
@@ -108,4 +110,63 @@ export async function slugifyFilenames(master: Client, cmsSiteId: string, ids: s
     }
   }
   return { updated }
+}
+
+/** Bulk-set captions on media rows (V1.3 P4 — surfaced captions). */
+export async function bulkUpdateCaptions(master: Client, cmsSiteId: string, updates: Array<{ id: string; caption: string }>): Promise<number> {
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return 0
+  let updated = 0
+  for (const u of updates) {
+    if (!u.id) continue
+    try {
+      const res = await siteDb.execute({ sql: "UPDATE media SET caption = ? WHERE id = ?", args: [u.caption.trim() || null, u.id] })
+      updated += Number(res.rowsAffected ?? 0)
+    } catch {
+      /* skip */
+    }
+  }
+  return updated
+}
+
+export interface ImageLicenseConfig {
+  licenseUrl: string
+  acquireLicenseUrl: string
+  creatorName: string
+}
+
+/** Site-level image license/creator (licensable-images eligibility). */
+export async function loadImageLicense(master: Client, cmsSiteId: string): Promise<ImageLicenseConfig> {
+  const empty = { licenseUrl: "", acquireLicenseUrl: "", creatorName: "" }
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return empty
+  try {
+    const r = await siteDb.execute({ sql: "SELECT image_license_json FROM seo_settings WHERE id = 'default' LIMIT 1", args: [] })
+    if (!r.rows.length) return empty
+    const o = JSON.parse(String(r.rows[0].image_license_json ?? "null")) as Partial<ImageLicenseConfig> | null
+    return {
+      licenseUrl: String(o?.licenseUrl ?? ""),
+      acquireLicenseUrl: String(o?.acquireLicenseUrl ?? ""),
+      creatorName: String(o?.creatorName ?? ""),
+    }
+  } catch {
+    return empty
+  }
+}
+
+export async function saveImageLicense(master: Client, cmsSiteId: string, cfg: ImageLicenseConfig): Promise<boolean> {
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return false
+  const clean = {
+    licenseUrl: /^https:\/\/\S+$/.test(cfg.licenseUrl.trim()) ? cfg.licenseUrl.trim() : "",
+    acquireLicenseUrl: /^https:\/\/\S+$/.test(cfg.acquireLicenseUrl.trim()) ? cfg.acquireLicenseUrl.trim() : "",
+    creatorName: cfg.creatorName.trim(),
+  }
+  const value = clean.licenseUrl || clean.acquireLicenseUrl || clean.creatorName ? JSON.stringify(clean) : null
+  await siteDb.execute({
+    sql: `INSERT INTO seo_settings (id, image_license_json, updated_at) VALUES ('default', ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET image_license_json = excluded.image_license_json, updated_at = datetime('now')`,
+    args: [value],
+  })
+  return true
 }

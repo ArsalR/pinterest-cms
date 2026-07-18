@@ -99,6 +99,8 @@ export interface SeoSettings {
   scripts: Array<{ id: string; config: string }>
   /** V1.3 P2: IndexNow key (served at /<key>.txt). "" until generated. */
   indexnowKey: string
+  /** V1.3 P4: image license/creator (licensable images). null = none. */
+  imageLicense: { licenseUrl?: string; acquireLicenseUrl?: string; creatorName?: string } | null
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
@@ -108,6 +110,7 @@ export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   profiles: [],
   scripts: [],
   indexnowKey: "",
+  imageLicense: null,
 }
 
 // ─────────────── Vetted script catalog (V1.3, template copy) ───────────────
@@ -190,6 +193,35 @@ export function scriptTagsFor(s: SeoSettings): string {
 /** Is a V1.3 SEO profile enabled for this site? Absent settings ⇒ false. */
 export function profileOn(s: SeoSettings, id: string): boolean {
   return s.profiles.includes(id)
+}
+
+// ─────────────── Image SEO profile (V1.3 P4) ───────────────
+
+/** Extract content image URLs from post HTML (absolute https only). */
+export function contentImageUrls(html: string): string[] {
+  const out: string[] = []
+  const re = /<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(html)) !== null) {
+    if (/^https:\/\//i.test(m[1]) && !out.includes(m[1])) out.push(m[1])
+  }
+  return out
+}
+
+/** ImageObject node with license/creator (licensable-images eligibility).
+ *  null when the license config is absent — byte-identical. */
+export function imageObjectLd(imageUrl: string, s: SeoSettings): object | null {
+  const lic = s.imageLicense
+  if (!lic || (!lic.licenseUrl && !lic.acquireLicenseUrl && !lic.creatorName)) return null
+  const node: Record<string, unknown> = { "@type": "ImageObject", contentUrl: imageUrl }
+  if (lic.licenseUrl) node.license = lic.licenseUrl
+  if (lic.acquireLicenseUrl) node.acquireLicensePage = lic.acquireLicenseUrl
+  if (lic.creatorName) {
+    node.creator = { "@type": "Person", name: lic.creatorName }
+    node.creditText = lic.creatorName
+    node.copyrightNotice = lic.creatorName
+  }
+  return node
 }
 
 // ─────────────── Ecommerce SEO profile (V1.3 P3) — merchant ───────────────

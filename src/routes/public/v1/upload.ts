@@ -14,6 +14,7 @@ import type { AppEnv } from "../../../lib/types"
 import { validateApiKey, logApiRequest } from "../../../lib/apiAuth"
 import { apiError } from "../../../lib/errors"
 import { uploadToR2 } from "../../../lib/r2"
+import { stripJpegExif, imageProfileOn } from "../../../lib/imageMeta"
 import { cuid } from "../../../lib/utils"
 
 const MAX_FILES_PER_REQUEST = 20
@@ -77,13 +78,19 @@ uploadRoutes.post("/", async (c) => {
     const alt = String(formData.get(`alt[${i}]`) ?? "")
     const caption = String(formData.get(`caption[${i}]`) ?? "")
 
-    const buffer = await file.arrayBuffer()
+    let buffer = await file.arrayBuffer()
 
     // Validate by magic bytes, not the client-supplied MIME type (trivially spoofed).
     const detectedMime = detectImageMime(new Uint8Array(buffer))
     if (!detectedMime) {
       await logApiRequest(siteDb, auth.keyId, "/v1/upload", "POST", 400)
       return apiError(c, 400, "upload_invalid_mime", `File '${file.name}' is not a supported image (JPEG, PNG, GIF, WebP)`, { filename: file.name })
+    }
+
+    // V1.3 Image SEO profile: strip EXIF/GPS from JPEGs at the door (privacy
+    // + weight). Profile off = bytes stored exactly as uploaded (today).
+    if (detectedMime === "image/jpeg" && (await imageProfileOn(siteDb))) {
+      buffer = stripJpegExif(buffer)
     }
 
     const { url, key } = await uploadToR2(c.env, hostname, file.name, buffer, detectedMime)
