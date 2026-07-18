@@ -11,6 +11,7 @@ import type { CloudflareEnv } from "../../lib/types"
 import {
   DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, type SeoSettings,
 } from "./settings"
+import { parseProfiles, type ProfileId } from "./profiles"
 import { SEO_SAFETY_OVERRIDE_PHRASE } from "./safety"
 import { siteDbFor, dispatchRebuild } from "./service"
 
@@ -38,6 +39,7 @@ export async function loadSeoSettings(master: Client, cmsSiteId: string): Promis
   if (!rows.length) return { ...DEFAULT_SEO_SETTINGS }
   const p = rows[0]
   return {
+    profiles: parseProfiles(p.profiles),
     blockAiBots: Number(p.block_ai_bots) === 1,
     blockedBots: arr(p.blocked_bots),
     disallowPaths: arr(p.disallow_paths),
@@ -113,4 +115,28 @@ export async function saveSeoSettings(
 
   await dispatchRebuild(env, master, customerId, repoFullName, "seo-settings")
   return { ok: true, overrodeEngineBlock: wouldBlock && overrideOk }
+}
+
+/**
+ * Persist the site's SEO profile activations (V1.3). Touches ONLY the profiles
+ * column — the Control Center's other settings are never clobbered — then
+ * triggers a covenant-gated rebuild.
+ */
+export async function saveProfiles(
+  env: CloudflareEnv,
+  customerId: string,
+  cmsSiteId: string,
+  repoFullName: string | null,
+  profiles: ProfileId[],
+  master: Client
+): Promise<{ ok: boolean; error?: string }> {
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return { ok: false, error: "The content workspace is unavailable." }
+  await siteDb.execute({
+    sql: `INSERT INTO seo_settings (id, profiles, updated_at) VALUES ('default', ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET profiles = excluded.profiles, updated_at = datetime('now')`,
+    args: [JSON.stringify(profiles)],
+  })
+  await dispatchRebuild(env, master, customerId, repoFullName, "seo-profiles")
+  return { ok: true }
 }

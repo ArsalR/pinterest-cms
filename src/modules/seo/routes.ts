@@ -17,7 +17,8 @@ import { SCHEMA_TYPES } from "./analyze"
 import { listPostsForSeo, loadPostSeo, savePostSeo, type SeoUpdate } from "./service"
 import { listSiteImages, bulkUpdateAlt, slugifyFilenames, type AltUpdate } from "./images"
 import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, type SeoSettings } from "./settings"
-import { loadSeoSettings, saveSeoSettings } from "./settingsService"
+import { loadSeoSettings, saveSeoSettings, saveProfiles } from "./settingsService"
+import { SEO_PROFILES, normalizeProfiles, type ProfileId } from "./profiles"
 import { detectChains, isBrandedLink, toRedirectsCsv, type RedirectKind, type RedirectMatch, type RedirectRow } from "./redirects"
 import { listRedirects, upsertRedirect, deleteRedirect, importRedirectsCsv } from "./redirectsService"
 import { indexOverview, bulkInspect, BULK_INSPECT_CAP } from "./indexingService"
@@ -53,6 +54,30 @@ export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
   const master = await masterDb(c)
   const site = await loadSite(master, siteId, customer.id)
   if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const settings = site.cms_site_id ? await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS) : DEFAULT_SEO_SETTINGS
+  const active = new Set(settings.profiles)
+
+  // SEO Profiles (V1.3) — site-level activations, several can be on at once.
+  const profileCards = SEO_PROFILES.map((p) => {
+    const on = active.has(p.id)
+    return `
+    <div class="card" style="height:100%;${on ? "border-color:#166534" : ""}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <h3 style="margin:0;font-size:14px">${escapeHtml(p.name)}</h3>
+        ${on ? `<span style="color:#86efac;font-size:11px;white-space:nowrap">● on</span>` : `<span class="muted" style="font-size:11px;white-space:nowrap">off</span>`}
+      </div>
+      <p style="margin:4px 0 2px;font-size:12px;color:#d4d4d4">${escapeHtml(p.tagline)}</p>
+      <p class="muted" style="margin:0 0 10px;font-size:12px">${escapeHtml(p.lightsUp)}</p>
+      <form method="post" action="/app/sites/${escapeAttr(siteId)}/seo/profiles" style="margin:0">
+        <input type="hidden" name="toggle" value="${p.id}" />
+        <button type="submit" class="btn ghost" style="font-size:12px">${on ? "Turn off" : "Turn on"}</button>
+      </form>
+    </div>`
+  }).join("")
+  const saved = c.req.query("saved")
+  const profileNotice = saved
+    ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">${escapeHtml(saved)} Your site is rebuilding (usually ~2 minutes).</p></div>`
+    : ""
 
   const jobs: Array<{ href: string; title: string; desc: string }> = [
     { href: "posts", title: "Tune a post's search snippet", desc: "Per-post title, description, social card, slug, schema and FAQ — with a live Google preview." },
@@ -71,12 +96,40 @@ export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
     </a>`).join("")
 
   const body = `
+    ${profileNotice}
     <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">SEO</h2>
       <p class="muted" style="font-size:13px">Everything search-related, one place per job. Every change rebuilds your site through the normal quality gates.</p>
     </div>
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#d4d4d4">Profiles <span class="muted" style="font-weight:400">— turn on the kinds of SEO this site needs; several can be on at once</span></h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;margin-bottom:16px">${profileCards}</div>
+    <h3 style="margin:14px 0 8px;font-size:13px;color:#d4d4d4">Tools</h3>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">${cards}</div>`
   return c.html(renderSaasLayout({ title: "SEO", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+/** Toggle one SEO profile on/off (V1.3). */
+export async function seoProfilesToggleHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q = "") => new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/seo${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back()
+
+  const form = await c.req.parseBody()
+  const toggle = String(form.toggle ?? "")
+  const current = await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS)
+  const set = new Set<string>(current.profiles)
+  if (set.has(toggle)) set.delete(toggle)
+  else set.add(toggle)
+  const next: ProfileId[] = normalizeProfiles([...set])
+  const r = await saveProfiles(c.env, customer.id, site.cms_site_id, site.repo_full_name, next, master)
+  if (!r.ok) return back()
+  const prof = SEO_PROFILES.find((p) => p.id === toggle)
+  await audit(master, customer.id, "site.seo_profiles_changed", site.domain, { profiles: next }).catch(() => {})
+  return back(`?saved=${encodeURIComponent(`${prof?.name ?? "Profile"} ${set.has(toggle) ? "enabled" : "disabled"}.`)}`)
 }
 
 // ─────────────────────── post list (the cockpit entry) ───────────────────────
@@ -328,6 +381,9 @@ export async function seoSettingsSaveHandler(c: Context<AppEnv>): Promise<Respon
   const on = (k: string) => form[k] === "on" || form[k] === "1" || form[k] === "true"
   const first = (k: string) => { const v = form[k]; return Array.isArray(v) ? String(v[0]) : String(v ?? "") }
   const next: SeoSettings = {
+    // Profiles are managed on the SEO hub; saveSeoSettings never writes the
+    // profiles column, so this placeholder can't clobber the stored value.
+    profiles: [],
     blockAiBots: on("blockAiBots"),
     blockedBots: lines(first("blockedBots")),
     disallowPaths: lines(first("disallowPaths")),

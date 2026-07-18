@@ -212,6 +212,7 @@ CREATE TABLE IF NOT EXISTS seo_settings (
   org_name              TEXT,
   org_logo              TEXT,
   social_profiles       TEXT,   -- JSON array of profile URLs
+  profiles              TEXT,   -- V1.3: JSON array of SEO profile ids (local/news/ecommerce/image/ai); NULL = none
   updated_at            TEXT DEFAULT (datetime('now'))
 );
 

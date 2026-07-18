@@ -14,7 +14,9 @@ interface Migration {
 
 // Each entry is an ordered list of idempotent DDL statements.
 // Add new migrations at the end; never edit existing entries.
-const MIGRATIONS: Migration[] = [
+// Exported so provisioning can stamp a fresh site's _migrations to the current
+// version set (a new site's CREATE TABLEs already include every column).
+export const MIGRATIONS: Migration[] = [
   {
     version: 1,
     name: "001_idempotency",
@@ -164,7 +166,27 @@ const MIGRATIONS: Migration[] = [
        )`,
     ],
   },
+  {
+    version: 8,
+    name: "008_seo_profiles",
+    statements: [
+      // V1.3 — SEO profile activations (local/news/ecommerce/image/ai). JSON
+      // array of profile ids on the Control Center row. Additive; NULL/absent
+      // = no profiles = today's exact behavior.
+      `ALTER TABLE seo_settings ADD COLUMN profiles TEXT`,
+    ],
+  },
 ]
+
+/** True for the SQLite error a re-run of an already-applied ALTER produces.
+ *  Tolerating it is what makes ALTER-based migrations idempotent: a site
+ *  provisioned AFTER the column shipped (its CREATE TABLE already has it) must
+ *  not crash the runner — that would also abort the rest of the site's cron
+ *  tick (idempotency GC, webhook retries). */
+export function isDuplicateColumnError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+  return /duplicate column name/i.test(msg)
+}
 
 export async function runMigrations(db: Client): Promise<void> {
   await db.execute(
@@ -180,18 +202,21 @@ export async function runMigrations(db: Client): Promise<void> {
 
   for (const migration of MIGRATIONS) {
     if (done.has(migration.version)) continue
-    // Execute all DDL statements + record the migration atomically so a partial
-    // failure cannot leave the schema half-applied.
-    await db.batch(
-      [
-        ...migration.statements.map((sql) => ({ sql, args: [] as never[] })),
-        {
-          sql: "INSERT OR IGNORE INTO _migrations (version, name) VALUES (?, ?)",
-          args: [migration.version, migration.name] as [number, string],
-        },
-      ],
-      "write"
-    )
+    // Statements run individually so an already-present column (fresh site
+    // whose CREATE TABLE bakes it in) is tolerated instead of failing the
+    // whole batch. Re-runs after a partial failure are safe: every statement
+    // is CREATE IF NOT EXISTS or a tolerated duplicate ALTER.
+    for (const sql of migration.statements) {
+      try {
+        await db.execute(sql)
+      } catch (err) {
+        if (!isDuplicateColumnError(err)) throw err
+      }
+    }
+    await db.execute({
+      sql: "INSERT OR IGNORE INTO _migrations (version, name) VALUES (?, ?)",
+      args: [migration.version, migration.name],
+    })
     console.log(`migrate: applied ${migration.name}`)
   }
 }
