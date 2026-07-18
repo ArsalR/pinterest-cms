@@ -19,7 +19,7 @@ seoRoutes.get("/", async (c) => {
   if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const r = await siteDb.execute({
-    sql: `SELECT id, slug, sitemap_exclude, nofollow, schema_type, faq_json
+    sql: `SELECT id, slug, sitemap_exclude, nofollow, schema_type, faq_json, author_id
           FROM posts WHERE published = 1`,
     args: [],
   })
@@ -29,6 +29,7 @@ seoRoutes.get("/", async (c) => {
     sitemapExclude: Number(row.sitemap_exclude) === 1,
     nofollow: Number(row.nofollow) === 1,
     schemaType: (row.schema_type as string | null) ?? null,
+    authorId: (row.author_id as string | null) ?? null,
     faq: parseFaq(row.faq_json as string | null),
   }))
   await logApiRequest(siteDb, auth.keyId, "/v1/seo", "GET", 200)

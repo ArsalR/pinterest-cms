@@ -1,7 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro"
 import Img from "../../components/Img.astro"
-import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, type CmsPost } from "../../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, fetchSeoSettings, profileOn, fetchAuthors, personLd, type CmsPost } from "../../lib/cms"
 
 export async function getStaticPaths() {
   const config = loadConfig()
@@ -19,15 +19,24 @@ const path = `/posts/${post.slug}/`
 // BreadcrumbList aids result presentation; FAQPage is emitted only when the
 // post actually contains ≥2 question-style headings, so AI engines can lift
 // direct Q&A answers.
+// News profile (V1.3 P2): articles default to NewsArticle; an explicit
+// per-post schema type from the cockpit still wins. Author byline + Person
+// node join the graph when an author is assigned.
+const seoSettings = await fetchSeoSettings(config)
+const newsOn = profileOn(seoSettings, "news")
+const authors = await fetchAuthors(config)
+const author = post.authorId ? authors.find((a) => a.id === post.authorId) : undefined
 const article = {
-  "@type": post.schemaType ?? "Article",
+  "@type": post.schemaType ?? (newsOn ? "NewsArticle" : "Article"),
   headline: post.title,
   description: post.seoDescription ?? post.excerpt ?? "",
   datePublished: post.publishedAt ?? undefined,
   dateModified: post.updatedAt ?? post.publishedAt ?? undefined,
   mainEntityOfPage: `https://${host}${path}`,
   publisher: { "@type": "Organization", name: config.name },
-  author: { "@type": "Person", name: config.ownerName },
+  author: author
+    ? { "@type": "Person", name: author.name, url: `https://${host}/authors/${author.slug}/` }
+    : { "@type": "Person", name: config.ownerName },
   ...(post.coverImage ? { image: [post.coverImage] } : {}),
 }
 const breadcrumb = {
@@ -54,7 +63,7 @@ const faqPage =
     : null
 const schema = {
   "@context": "https://schema.org",
-  "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : [])],
+  "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : []), ...(author ? [personLd(author, `https://${host}/`)] : [])],
 }
 // Robots directive from the cockpit's index/follow toggles. Absent (both off)
 // emits no robots meta at all — exactly today's behavior (rail #3).
@@ -74,6 +83,12 @@ const robots = computeRobots(post.noIndex, post.nofollow)
 >
   <article>
     <h1>{post.title}</h1>
+    {author && (
+      <p style="color:var(--muted);font-size:0.9rem;margin:0.2rem 0 0.8rem">
+        By <a href={`/authors/${author.slug}/`} style="color:inherit">{author.name}</a>
+        {post.publishedAt && ` · ${post.publishedAt.slice(0, 10)}`}
+      </p>
+    )}
     {post.excerpt && (
       <p class="summary" style="font-size:1.05rem;color:#444;border-left:3px solid #0a6152;padding-left:0.9rem">
         {post.excerpt}

@@ -16,6 +16,19 @@ import { installationToken, repositoryDispatch } from "../connections"
 import { audit } from "../customers"
 import { cuid } from "../../lib/utils"
 import { checkGate, DEFAULT_GATE_CONFIG, type GateConfig, type GateItem, type GateResult } from "../quality-gate"
+import { newsProfileOn, pingIndexNow } from "../seo"
+
+/** V1.3 News profile: fire an IndexNow ping for freshly published URLs so the
+ *  Bing/Copilot ecosystem indexes them fast. Best-effort — never blocks or
+ *  fails a publish. */
+async function indexNowAfterPublish(siteDb: Client, domain: string, slugs: string[]): Promise<void> {
+  try {
+    if (!(await newsProfileOn(siteDb))) return
+    await pingIndexNow(siteDb, domain, slugs.map((s) => `https://${domain}/posts/${s}/`))
+  } catch {
+    /* best-effort */
+  }
+}
 
 export interface CustomerSiteRef {
   id: string
@@ -96,7 +109,7 @@ export async function gateAndPublish(
   if (!siteDb) return { published: false, result: null, error: "The content workspace is unavailable." }
 
   const draftRow = await siteDb.execute({
-    sql: "SELECT id, title, excerpt, content, published FROM posts WHERE id = ? AND type = 'post' LIMIT 1",
+    sql: "SELECT id, title, slug, excerpt, content, published FROM posts WHERE id = ? AND type = 'post' LIMIT 1",
     args: [postId],
   })
   if (!draftRow.rows.length) return { published: false, result: null, error: "That draft no longer exists." }
@@ -144,6 +157,7 @@ export async function gateAndPublish(
       }
     }
   }
+  await indexNowAfterPublish(siteDb, site.domain, [String(d.slug ?? "")])
 
   return { published: true, result }
 }
@@ -164,6 +178,7 @@ export async function publishAllPassing(
 
   let published = 0
   let blocked = 0
+  const publishedIds: string[] = []
   for (const d of drafts) {
     if (!d.result.passed) { blocked++; continue }
     await siteDb
@@ -171,7 +186,7 @@ export async function publishAllPassing(
         sql: "UPDATE posts SET published = 1, published_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
         args: [d.id],
       })
-      .then(() => { published++ })
+      .then(() => { published++; publishedIds.push(d.id) })
       .catch(() => {})
   }
 
@@ -188,6 +203,16 @@ export async function publishAllPassing(
           console.error("publishAllPassing: rebuild dispatch failed:", err instanceof Error ? err.message : err)
         }
       }
+    }
+    // News profile: one IndexNow batch for everything that just went live.
+    try {
+      const slugRows = await siteDb.execute({
+        sql: `SELECT slug FROM posts WHERE id IN (${publishedIds.map(() => "?").join(",")})`,
+        args: publishedIds,
+      })
+      await indexNowAfterPublish(siteDb, site.domain, slugRows.rows.map((r) => String(r.slug)))
+    } catch {
+      /* best-effort */
     }
   }
   return { published, blocked }

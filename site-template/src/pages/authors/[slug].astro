@@ -1,0 +1,43 @@
+---
+// Author pages (V1.3 News SEO profile — E-E-A-T backbone): bio, Person schema,
+// and the author's articles. Zero authors ⇒ zero pages — byte-identical.
+import Base from "../../layouts/Base.astro"
+import { loadConfig, canonicalHost, fetchAuthors, fetchAllPosts, personLd, type CmsAuthor } from "../../lib/cms"
+
+export async function getStaticPaths() {
+  const config = loadConfig()
+  const authors = await fetchAuthors(config)
+  return authors.map((a) => ({ params: { slug: a.slug }, props: { author: a } }))
+}
+
+interface Props { author: CmsAuthor }
+const { author } = Astro.props
+const config = loadConfig()
+const host = canonicalHost(config)
+const posts = (await fetchAllPosts(config)).filter((p) => p.authorId === author.id)
+const schema = { "@context": "https://schema.org", ...personLd(author, `https://${host}/`) }
+---
+<Base title={`${author.name} — ${config.name}`} description={author.bio || `Articles by ${author.name} on ${config.name}.`} path={`/authors/${author.slug}/`} schema={schema}>
+  <article>
+    <h1>{author.name}</h1>
+    {author.photo && <img src={author.photo} alt={`Photo of ${author.name}`} width="120" height="120" style="border-radius:50%" loading="lazy" />}
+    {author.bio && <p>{author.bio}</p>}
+    {author.sameAs.length > 0 && (
+      <p>
+        {author.sameAs.map((u, i) => (
+          <span>{i > 0 && " · "}<a href={u} rel="noopener me">{new URL(u).hostname.replace(/^www\./, "")}</a></span>
+        ))}
+      </p>
+    )}
+    <h2>Articles by {author.name}</h2>
+    {posts.length === 0 && <p style="color:var(--muted)">No published articles yet.</p>}
+    <ul style="list-style:none;padding:0">
+      {posts.map((p) => (
+        <li style="margin:0 0 1rem">
+          <a href={`/posts/${p.slug}/`} style="font-weight:700;text-decoration:none">{p.title}</a>
+          {p.excerpt && <p style="margin:0.2rem 0 0;color:var(--muted)">{p.excerpt}</p>}
+        </li>
+      ))}
+    </ul>
+  </article>
+</Base>

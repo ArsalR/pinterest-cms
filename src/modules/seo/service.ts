@@ -34,6 +34,7 @@ export interface PostSeoRow {
   nofollow: boolean
   schemaType: string | null
   faq: FaqItem[]
+  authorId: string | null
 }
 
 export async function siteDbFor(master: Client, cmsSiteId: string): Promise<Client | null> {
@@ -83,7 +84,7 @@ export async function loadPostSeo(master: Client, cmsSiteId: string, postId: str
   const siteDb = await siteDbFor(master, cmsSiteId)
   if (!siteDb) return null
   const r = await siteDb.execute({
-    sql: `SELECT id, title, slug, published, excerpt, cover_image, content, seo_keywords, seo_title, seo_description,
+    sql: `SELECT id, title, slug, published, excerpt, cover_image, content, seo_keywords, seo_title, seo_description, author_id,
                  og_title, og_description, og_image, canonical_url, no_index,
                  sitemap_exclude, nofollow, schema_type, faq_json
           FROM posts WHERE id = ? AND type = 'post' LIMIT 1`,
@@ -100,6 +101,7 @@ export async function loadPostSeo(master: Client, cmsSiteId: string, postId: str
     ogImage: (p.og_image as string | null) ?? null, canonicalUrl: (p.canonical_url as string | null) ?? null,
     noIndex: Number(p.no_index) === 1, sitemapExclude: Number(p.sitemap_exclude) === 1, nofollow: Number(p.nofollow) === 1,
     schemaType: (p.schema_type as string | null) ?? null, faq: parseFaq(p.faq_json as string | null),
+    authorId: (p.author_id as string | null) ?? null,
   }
 }
 
@@ -108,6 +110,7 @@ export interface SeoUpdate {
   ogTitle: string; ogDescription: string; ogImage: string
   canonicalUrl: string; noIndex: boolean; sitemapExclude: boolean; nofollow: boolean
   schemaType: string; faq: FaqItem[]
+  authorId: string
   addRedirectOnSlugChange: boolean
   /** SEO-safety override phrase, required only when the save trips rail #2. */
   typedOverride?: string
@@ -171,13 +174,13 @@ export async function savePostSeo(env: CloudflareEnv, customerId: string, cmsSit
   const faqJson = u.faq.filter((f) => f.question?.trim() && f.answer?.trim())
   await siteDb.execute({
     sql: `UPDATE posts SET seo_title=?, seo_description=?, seo_keywords=?, slug=?, og_title=?, og_description=?, og_image=?,
-             canonical_url=?, no_index=?, sitemap_exclude=?, nofollow=?, schema_type=?, faq_json=?, updated_at=datetime('now')
+             canonical_url=?, no_index=?, sitemap_exclude=?, nofollow=?, schema_type=?, faq_json=?, author_id=?, updated_at=datetime('now')
           WHERE id=?`,
     args: [
       u.metaTitle.trim() || null, u.metaDescription.trim() || null, u.focusKeyword.trim() || null, newSlug,
       u.ogTitle.trim() || null, u.ogDescription.trim() || null, u.ogImage.trim() || null,
       u.canonicalUrl.trim() || null, u.noIndex ? 1 : 0, u.sitemapExclude ? 1 : 0, u.nofollow ? 1 : 0,
-      u.schemaType || null, faqJson.length ? JSON.stringify(faqJson) : null, postId,
+      u.schemaType || null, faqJson.length ? JSON.stringify(faqJson) : null, u.authorId.trim() || null, postId,
     ],
   })
 
