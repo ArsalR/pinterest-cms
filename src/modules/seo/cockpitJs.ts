@@ -18,8 +18,10 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
   function trunc(s,max){s=(s||"").trim();if(px(s)<=max)return{t:s,cut:false,px:px(s)};var out="";var parts=s.split(/(\s+)/);for(var i=0;i<parts.length;i++){if(px(out+parts[i])+4>max)break;out+=parts[i];}out=out.replace(/\s+$/,"");return{t:out+"…",cut:true,px:px(out)+4};}
   function esc(s){return (s||"").replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 
-  function field(label,id,val,ph,ta){
-    return '<label style="display:block;font-size:13px;margin:10px 0 4px">'+esc(label)+'</label>'+
+  function field(label,id,val,ph,ta,assistTask){
+    // ✨ assist buttons render only when the customer's key is connected.
+    var assistBtn=(assistTask&&d.assist)?' <button type="button" class="assist-btn" data-task="'+assistTask+'" data-target="'+id+'" style="background:none;border:1px solid #404040;border-radius:6px;color:#fcd34d;font-size:11px;padding:1px 7px;cursor:pointer;vertical-align:1px">✨ Suggest</button>':'';
+    return '<label style="display:block;font-size:13px;margin:10px 0 4px">'+esc(label)+assistBtn+'</label>'+
       (ta?'<textarea id="'+id+'" rows="2" placeholder="'+esc(ph)+'" style="width:100%;background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px">'+esc(val)+'</textarea>'
          :'<input id="'+id+'" value="'+esc(val)+'" placeholder="'+esc(ph)+'" style="width:100%;background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px">');
   }
@@ -31,8 +33,8 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
       ['Snippet','Social','Advanced','Content'].map(function(t,i){return '<button type="button" class="seo-tab" data-tab="'+i+'" style="background:none;border:none;border-bottom:2px solid '+(i===0?'#fafafa':'transparent')+';color:'+(i===0?'#fafafa':'#a3a3a3')+';padding:8px 10px;font-size:13px;cursor:pointer;font-family:inherit">'+t+'</button>';}).join("")+'</div>'+
       // Snippet
       '<div class="seo-pane" data-pane="0">'+
-        field("Meta title","f-metaTitle",d.metaTitle,"Defaults to “"+esc(d.title)+" — "+esc(d.siteName)+"”")+bar("b-title")+
-        field("Meta description","f-metaDescription",d.metaDescription,"Defaults to the excerpt",true)+bar("b-desc")+
+        field("Meta title","f-metaTitle",d.metaTitle,"Defaults to “"+esc(d.title)+" — "+esc(d.siteName)+"”",false,"meta_title")+bar("b-title")+
+        field("Meta description","f-metaDescription",d.metaDescription,"Defaults to the excerpt",true,"meta_description")+bar("b-desc")+
         field("Slug","f-slug",d.slug,"url-slug")+
         '<div id="slug-redirect" style="display:none;margin-top:6px"><label style="font-size:12px"><input type="checkbox" id="f-addRedirect" checked> Add a 301 from the old URL (recommended for a published page)</label></div>'+
         '<div style="margin-top:14px;background:#fff;border-radius:8px;padding:12px;color:#202124;font-family:arial,sans-serif">'+
@@ -59,7 +61,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
         '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0"><input type="checkbox" id="f-sitemapExclude" '+(d.sitemapExclude?"checked":"")+'> Exclude from sitemap</label>'+
         field("Canonical URL override","f-canonicalUrl",d.canonicalUrl,"https://… (leave blank for the default)")+
         '<label style="display:block;font-size:13px;margin:10px 0 4px">Schema type</label><select id="f-schemaType" style="background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px">'+schemaOpts+'</select>'+
-        '<div style="margin-top:14px"><div style="font-size:13px;margin-bottom:6px">FAQ (emits FAQPage schema)</div><div id="faq-list"></div><button type="button" id="faq-add" class="btn ghost" style="margin-top:6px">+ Add question</button></div>'+
+        '<div style="margin-top:14px"><div style="font-size:13px;margin-bottom:6px">FAQ (emits FAQPage schema)'+(d.assist?' <button type="button" class="assist-btn" data-task="faq" data-target="faq" style="background:none;border:1px solid #404040;border-radius:6px;color:#fcd34d;font-size:11px;padding:1px 7px;cursor:pointer">✨ Suggest from content</button>':'')+'</div><div id="faq-list"></div><button type="button" id="faq-add" class="btn ghost" style="margin-top:6px">+ Add question</button></div>'+
       '</div>'+
       // Content — live analysis sharing the quality gate's rules (S2).
       '<div class="seo-pane" data-pane="3" style="display:none">'+
@@ -156,6 +158,27 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     row.querySelector(".faq-x").addEventListener("click",function(){row.remove();});return row;}
   (d.faq||[]).forEach(function(f){$("faq-list").appendChild(faqRow(f.question,f.answer));});
   $("faq-add").addEventListener("click",function(){$("faq-list").appendChild(faqRow("",""));});
+
+  // ✨ assists — call the platform with {task, postId}; content is loaded
+  // server-side and suggestions land in the field for the human to edit/accept.
+  root.querySelectorAll(".assist-btn").forEach(function(btn){
+    btn.addEventListener("click",function(){
+      var task=btn.getAttribute("data-task"),target=btn.getAttribute("data-target");
+      var orig=btn.textContent;btn.disabled=true;btn.textContent="✨ …";
+      fetch(root.getAttribute("data-assist"),{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({task:task,postId:d.postId})})
+        .then(function(r){return r.json();}).then(function(res){
+          btn.disabled=false;btn.textContent=orig;
+          if(!res.ok){$("seo-toast").textContent=res.error||"Suggestion failed.";$("seo-toast").style.color="#fca5a5";return;}
+          if(task==="faq"){
+            var pairs=[];try{pairs=JSON.parse(res.text);}catch(e){}
+            if(Array.isArray(pairs)){pairs.forEach(function(p){if(p&&p.question)$("faq-list").appendChild(faqRow(String(p.question),String(p.answer||"")));});}
+          } else {
+            var el=$(target);if(el){el.value=res.text;el.dispatchEvent(new Event("input"));}
+          }
+          $("seo-toast").textContent="Suggestion added — edit freely, nothing is saved until you hit Save.";$("seo-toast").style.color="#fcd34d";
+        }).catch(function(){btn.disabled=false;btn.textContent=orig;$("seo-toast").textContent="Network error — try again.";$("seo-toast").style.color="#fca5a5";});
+    });
+  });
 
   // Save + typed-override (rail #2) + undo (S6). "prev" snapshots the last
   // successfully-saved payload so one click restores it.

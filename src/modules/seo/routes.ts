@@ -22,6 +22,7 @@ import { SEO_PROFILES, normalizeProfiles, type ProfileId } from "./profiles"
 import { detectChains, isBrandedLink, toRedirectsCsv, type RedirectKind, type RedirectMatch, type RedirectRow } from "./redirects"
 import { listRedirects, upsertRedirect, deleteRedirect, importRedirectsCsv } from "./redirectsService"
 import { indexOverview, bulkInspect, BULK_INSPECT_CAP } from "./indexingService"
+import { assistAvailable, runAssist, type AssistTask } from "./assist"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -172,10 +173,12 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
   if (!post) return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/posts` } })
 
   const url = `https://${site.domain}/posts/${post.slug}/`
+  // ✨ assists light up only when the customer's Anthropic key is in the vault.
+  const assist = await assistAvailable(master, customer.id).catch(() => false)
   // Seed the client with the current values as JSON (read by seo-cockpit.js).
   const seed = {
     siteName: site.name, url, baseUrl: `https://${site.domain}/posts/`,
-    published: post.published,
+    published: post.published, assist, postId: post.id,
     title: post.title, excerpt: post.excerpt ?? "", coverImage: post.coverImage ?? "",
     content: post.content, focusKeyword: post.focusKeyword ?? "",
     metaTitle: post.metaTitle ?? "", metaDescription: post.metaDescription ?? "", slug: post.slug,
@@ -189,7 +192,7 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
       <h2 style="margin:0 0 2px;font-size:16px">${escapeHtml(post.title)}</h2>
       <p class="muted" style="font-size:12px">${escapeHtml(url)}</p>
     </div>
-    <div id="seo-cockpit" data-save="/app/sites/${escapeAttr(siteId)}/posts/${escapeAttr(postId)}/seo"></div>
+    <div id="seo-cockpit" data-save="/app/sites/${escapeAttr(siteId)}/posts/${escapeAttr(postId)}/seo" data-assist="/app/sites/${escapeAttr(siteId)}/assist"></div>
     <script type="application/json" id="seo-seed">${escapeHtml(JSON.stringify(seed))}</script>
     <script src="/app/assets/seo-cockpit.js" defer></script>
     <template id="schema-types">${SCHEMA_TYPES.map((t) => `<option value="${t}">${t}</option>`).join("")}</template>`
@@ -241,9 +244,19 @@ export async function imageSeoHandler(c: Context<AppEnv>): Promise<Response> {
   const site = await loadSite(master, siteId, customer.id)
   if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
   const lib = site.cms_site_id ? await listSiteImages(master, site.cms_site_id).catch(() => ({ images: [], total: 0, missingAlt: 0 })) : { images: [], total: 0, missingAlt: 0 }
+  const assist = await assistAvailable(master, customer.id).catch(() => false)
+  const suggestId = c.req.query("suggest_id") ?? ""
+  const suggestAlt = c.req.query("suggest_alt") ?? ""
 
   const saved = c.req.query("saved")
-  const notice = saved ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — updated ${escapeHtml(saved)}.</p></div>` : ""
+  const assistError = c.req.query("assist_error")
+  const notice = saved
+    ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — updated ${escapeHtml(saved)}.</p></div>`
+    : assistError
+      ? `<div class="card" style="border-color:#7f1d1d;background:#2a0d0d"><p style="margin:0;color:#fca5a5;font-size:13px">${escapeHtml(assistError)}</p></div>`
+      : suggestId
+        ? `<div class="card" style="border-color:#7c5e10;background:#241c05"><p style="margin:0;color:#fcd34d;font-size:13px">✨ Suggestion added below — edit freely, then hit Save to keep it.</p></div>`
+        : ""
 
   const rows = lib.images.length
     ? lib.images.map((im) => `<tr style="border-top:1px solid #1f2937">
@@ -252,8 +265,11 @@ export async function imageSeoHandler(c: Context<AppEnv>): Promise<Response> {
           <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="slugify" value="${escapeAttr(im.id)}" /><span class="muted" style="word-break:break-all">${escapeHtml(im.filename)}</span></label>
         </td>
         <td style="padding:8px 6px">
-          <input name="alt_${escapeAttr(im.id)}" value="${escapeAttr(im.alt ?? "")}" placeholder="Describe this image…" maxlength="300"
-                 style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid ${im.hasAlt ? "#374151" : "#b45309"};background:#0b0f17;color:#fafafa;font-size:13px" />
+          <div style="display:flex;gap:6px;align-items:center">
+          <input name="alt_${escapeAttr(im.id)}" value="${escapeAttr(im.id === suggestId && suggestAlt ? suggestAlt : im.alt ?? "")}" placeholder="Describe this image…" maxlength="300"
+                 style="flex:1;padding:7px 9px;border-radius:6px;border:1px solid ${im.id === suggestId ? "#7c5e10" : im.hasAlt ? "#374151" : "#b45309"};background:#0b0f17;color:#fafafa;font-size:13px" />
+          ${assist ? `<button type="submit" formaction="/app/sites/${escapeAttr(siteId)}/images/suggest" name="mediaId" value="${escapeAttr(im.id)}" title="Suggest alt text with AI (uses your Anthropic key)" style="background:none;border:1px solid #404040;border-radius:6px;color:#fcd34d;font-size:11px;padding:4px 8px;cursor:pointer;white-space:nowrap">✨</button>` : ""}
+          </div>
         </td>
       </tr>`).join("")
     : `<tr><td colspan="3" class="muted" style="padding:12px 6px">No images in the media library yet.</td></tr>`
@@ -638,6 +654,78 @@ export async function indexingHandler(c: Context<AppEnv>): Promise<Response> {
 
   await audit(master, customer.id, "site.indexing_viewed", site.domain, { checked: checking }).catch(() => {})
   return c.html(renderSaasLayout({ title: "Indexing", active: "sites", customer, bodyHtml: header + covHtml + smHtml + urlsHtml }), 200, NO_STORE)
+}
+
+// ─────────────────────── ✨ AI assists (V1.3) ───────────────────────
+// POST /app/sites/:id/assist — {task, postId?, mediaId?}. Content is loaded
+// SERVER-side from the post/media row (the client never ships the body), the
+// call runs on the customer's own vault key, and only {task} is audit-logged —
+// never the prompt or the suggestion.
+
+export async function seoAssistHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const json = (o: object, status = 200) => c.json(o, status as 200, NO_STORE)
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return json({ ok: false, error: "Site not found." }, 404)
+  if (planGate(customer, nowSqlite()) === "read_only") return json({ ok: false, error: "Your trial has ended — subscribe to use AI suggestions." }, 403)
+
+  let b: Record<string, unknown>
+  try { b = (await c.req.json()) as Record<string, unknown> } catch { return json({ ok: false, error: "Bad request." }, 400) }
+  const task = String(b.task ?? "") as AssistTask
+  if (!["meta_title", "meta_description", "faq", "alt_text"].includes(task)) return json({ ok: false, error: "Unknown task." }, 400)
+
+  let input: { title?: string; content?: string; siteName?: string; imageUrl?: string; filename?: string }
+  if (task === "alt_text") {
+    const mediaId = String(b.mediaId ?? "")
+    const lib = await listSiteImages(master, site.cms_site_id).catch(() => ({ images: [], total: 0, missingAlt: 0 }))
+    const img = lib.images.find((i) => i.id === mediaId)
+    if (!img) return json({ ok: false, error: "That image no longer exists." }, 404)
+    input = { imageUrl: img.url, filename: img.filename }
+  } else {
+    const postId = String(b.postId ?? "")
+    const post = await loadPostSeo(master, site.cms_site_id, postId)
+    if (!post) return json({ ok: false, error: "That post no longer exists." }, 404)
+    input = { title: post.title, content: post.content, siteName: site.name }
+  }
+
+  const r = await runAssist(c.env, master, customer.id, task, input)
+  // Usage count only — no content ever reaches the audit log.
+  await audit(master, customer.id, "site.seo_assist_used", site.domain, { task, ok: r.ok }).catch(() => {})
+  if (!r.ok) return json({ ok: false, error: r.error }, 400)
+  return json({ ok: true, text: r.text })
+}
+
+/** ✨ alt-text suggestion for one media row. The image page is one big no-JS
+ *  form; the ✨ button submits it here via formaction, so we SAVE the current
+ *  edits first (no data loss), then fetch the suggestion and redirect back
+ *  with it prefilled in that row's input — unsaved until the human hits Save. */
+export async function imageAltSuggestHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q = "") => new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/images${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back()
+
+  const form = await c.req.parseBody({ all: true })
+  const mediaId = String(Array.isArray(form.mediaId) ? form.mediaId[0] : form.mediaId ?? "")
+  // Preserve in-progress edits before fetching the suggestion.
+  const alts: AltUpdate[] = []
+  for (const [k, v] of Object.entries(form)) {
+    if (k.startsWith("alt_")) alts.push({ id: k.slice(4), alt: Array.isArray(v) ? String(v[0]) : String(v) })
+  }
+  if (alts.length) await bulkUpdateAlt(master, site.cms_site_id, alts).catch(() => {})
+
+  const lib = await listSiteImages(master, site.cms_site_id).catch(() => ({ images: [], total: 0, missingAlt: 0 }))
+  const img = lib.images.find((i) => i.id === mediaId)
+  if (!img) return back()
+  const r = await runAssist(c.env, master, customer.id, "alt_text", { imageUrl: img.url, filename: img.filename })
+  await audit(master, customer.id, "site.seo_assist_used", site.domain, { task: "alt_text", ok: r.ok }).catch(() => {})
+  if (!r.ok) return back(`?assist_error=${encodeURIComponent(r.error ?? "Suggestion failed.")}`)
+  return back(`?suggest_id=${encodeURIComponent(mediaId)}&suggest_alt=${encodeURIComponent(r.text ?? "")}`)
 }
 
 /** Serve the cockpit's vanilla JS (no build step). Public — it's just a script. */

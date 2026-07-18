@@ -248,7 +248,7 @@ function stepOptional(byProvider: Map<string, ConnectionView>, gscAvailable: boo
     <h3 style="font-size:14px;margin:12px 0 4px">Anthropic API key ${aConnected ? `<span class="chip done">Connected</span>` : ""}</h3>
     ${
       aConnected
-        ? `<p style="font-size:13px">Key ${escapeHtml(aPreview)} stored encrypted. Used only inside <em>your</em> GitHub Actions to build and edit your sites. ${disconnectForm("anthropic")}</p>`
+        ? `<p style="font-size:13px">Key ${escapeHtml(aPreview)} stored encrypted. Used inside <em>your</em> GitHub Actions to build and edit your sites, and for ✨ AI suggestions in the dashboard (your key, your bill — suggestions are never logged). ${disconnectForm("anthropic")}</p>`
         : `<p class="muted-sm">Powers "build my site by prompting Claude" — runs in your GitHub Actions with your key; we never spend it server-side.</p>
            <form method="POST" action="/app/connections/anthropic">
              <div class="row">
