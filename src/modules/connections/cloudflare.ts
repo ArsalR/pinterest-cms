@@ -19,6 +19,9 @@ export const CF_TOKEN_TEMPLATE: ReadonlyArray<{ scope: string; permission: strin
   { scope: "Zone", permission: "DNS", access: "Edit" },
   { scope: "Zone", permission: "Cache Purge", access: "Purge" },
   { scope: "Zone", permission: "Analytics", access: "Read" },
+  // V1.3 edge bot protection — lets the platform manage the AI-crawler WAF
+  // rule and Bot Fight Mode on the customer's zone.
+  { scope: "Zone", permission: "Firewall Services", access: "Edit" },
 ]
 
 async function cfFetch<T>(token: string, path: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; result: T | null; errorMessage: string | null }> {
@@ -236,4 +239,128 @@ export async function enableWebAnalytics(
     body: JSON.stringify({ zone_tag: zoneTag, auto_install: true, host }),
   })
   return r.ok ? { ok: true, problem: null } : { ok: false, problem: r.errorMessage ?? "Couldn't enable Web Analytics." }
+}
+
+// ─────────────────────── Edge bot protection (V1.3, WAF) ───────────────────────
+// Managed via ONE named custom rule in the zone's http_request_firewall_custom
+// ruleset — never clobbering the customer's other rules (read → patch/add the
+// single rule identified by WAF_RULE_DESCRIPTION). robots.txt asks politely;
+// this rule ENFORCES at the edge.
+
+export const WAF_RULE_DESCRIPTION = "sitenetwork: block AI crawlers (managed)"
+
+/** The permission the WAF calls need, with the exact fix — surfaced verbatim
+ *  when Cloudflare answers 403. */
+export const WAF_PERMISSION_HELP =
+  'Your Cloudflare token is missing the "Zone → Firewall Services → Edit" permission. ' +
+  "Open dash.cloudflare.com → My Profile → API Tokens → edit the token you connected, add that permission, save — then try again here (no need to re-paste the token)."
+
+/** Build the WAF expression that blocks a list of bot user-agents. Pure. */
+export function aiBotWafExpression(bots: readonly string[]): string {
+  return bots.map((b) => `(lower(http.user_agent) contains "${b.toLowerCase()}")`).join(" or ")
+}
+
+interface RulesetRule {
+  id: string
+  description?: string
+  expression?: string
+  enabled?: boolean
+  action?: string
+}
+interface Ruleset {
+  id: string
+  rules?: RulesetRule[]
+}
+
+export interface EdgeBotState {
+  /** null = no entrypoint ruleset / rule yet. */
+  aiRule: { id: string; enabled: boolean } | null
+  botFightMode: boolean | null
+  /** Plain-language problem (e.g. missing permission) — null when readable. */
+  problem: string | null
+}
+
+function problemFor(status: number, msg: string | null): string {
+  if (status === 403) return WAF_PERMISSION_HELP
+  return msg ?? `Cloudflare returned ${status}`
+}
+
+/** Read the current edge state: our managed AI rule + Bot Fight Mode. */
+export async function getEdgeBotState(token: string, zoneId: string): Promise<EdgeBotState> {
+  let aiRule: EdgeBotState["aiRule"] = null
+  let problem: string | null = null
+
+  const entry = await cfFetch<Ruleset>(token, `/zones/${zoneId}/rulesets/phases/http_request_firewall_custom/entrypoint`)
+  if (entry.ok && entry.result) {
+    const rule = (entry.result.rules ?? []).find((r) => r.description === WAF_RULE_DESCRIPTION)
+    if (rule) aiRule = { id: rule.id, enabled: rule.enabled !== false }
+  } else if (entry.status !== 404) {
+    // 404 just means "no custom rules yet" — anything else is a real problem.
+    problem = problemFor(entry.status, entry.errorMessage)
+  }
+
+  let botFightMode: boolean | null = null
+  const bfm = await cfFetch<{ fight_mode?: boolean }>(token, `/zones/${zoneId}/bot_management`)
+  if (bfm.ok && bfm.result) botFightMode = bfm.result.fight_mode === true
+  // bot_management read failures are non-fatal (plan-dependent endpoint).
+
+  return { aiRule, botFightMode, problem }
+}
+
+/** Create/update/disable the managed AI-crawler block rule. Non-clobbering:
+ *  only the rule bearing WAF_RULE_DESCRIPTION is ever touched. */
+export async function setAiBotWafRule(
+  token: string,
+  zoneId: string,
+  enabled: boolean,
+  expression: string
+): Promise<{ ok: boolean; problem: string | null }> {
+  const rulePayload = {
+    description: WAF_RULE_DESCRIPTION,
+    expression,
+    action: "block",
+    enabled,
+  }
+
+  const entry = await cfFetch<Ruleset>(token, `/zones/${zoneId}/rulesets/phases/http_request_firewall_custom/entrypoint`)
+  if (!entry.ok && entry.status !== 404) {
+    return { ok: false, problem: problemFor(entry.status, entry.errorMessage) }
+  }
+
+  if (!entry.ok || !entry.result) {
+    // No custom ruleset yet — nothing to disable, or create it with our rule.
+    if (!enabled) return { ok: true, problem: null }
+    const created = await cfFetch<Ruleset>(token, `/zones/${zoneId}/rulesets`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: "default",
+        kind: "zone",
+        phase: "http_request_firewall_custom",
+        rules: [rulePayload],
+      }),
+    })
+    return created.ok ? { ok: true, problem: null } : { ok: false, problem: problemFor(created.status, created.errorMessage) }
+  }
+
+  const rulesetId = entry.result.id
+  const existing = (entry.result.rules ?? []).find((r) => r.description === WAF_RULE_DESCRIPTION)
+  const r = existing
+    ? await cfFetch<Ruleset>(token, `/zones/${zoneId}/rulesets/${rulesetId}/rules/${existing.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(rulePayload),
+      })
+    : await cfFetch<Ruleset>(token, `/zones/${zoneId}/rulesets/${rulesetId}/rules`, {
+        method: "POST",
+        body: JSON.stringify(rulePayload),
+      })
+  return r.ok ? { ok: true, problem: null } : { ok: false, problem: problemFor(r.status, r.errorMessage) }
+}
+
+/** Toggle Bot Fight Mode for a zone. */
+export async function setBotFightMode(token: string, zoneId: string, on: boolean): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/zones/${zoneId}/bot_management`, {
+    method: "PUT",
+    body: JSON.stringify({ fight_mode: on }),
+  })
+  return r.ok ? { ok: true, problem: null } : { ok: false, problem: problemFor(r.status, r.errorMessage) }
 }
