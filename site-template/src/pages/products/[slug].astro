@@ -1,7 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro"
 import Img from "../../components/Img.astro"
-import { loadConfig, fetchAllProducts, canonicalHost, formatPrice, type CmsProduct } from "../../lib/cms"
+import { loadConfig, fetchAllProducts, canonicalHost, formatPrice, fetchMerchant, merchantExtrasFor, fetchSeoSettings, profileOn, type CmsProduct } from "../../lib/cms"
 
 export async function getStaticPaths() {
   const config = loadConfig()
@@ -18,21 +18,41 @@ const price = formatPrice(product.priceCents, product.currency)
 const inStock = product.stockStatus === "in_stock"
 
 // Product + Offer JSON-LD (amendment 2 — indexable, price-in-results).
-const schema = {
-  "@context": "https://schema.org",
+// V1.3 P3: when the ecommerce PROFILE is on, merchant-depth fields join the
+// node (brand/GTIN/MPN/condition/ratings + shipping/returns) and product
+// pages gain a BreadcrumbList. Profile off = today's exact schema.
+const merchant = await fetchMerchant(config)
+const extras = merchantExtrasFor(merchant, product.id)
+const ecomOn = profileOn(await fetchSeoSettings(config), "ecommerce")
+const productNode = {
   "@type": "Product",
   name: product.title,
   description: product.seoDescription ?? product.description ?? "",
   ...(product.images.length ? { image: product.images } : {}),
   ...(product.sku ? { sku: product.sku } : {}),
+  ...extras.product,
   offers: {
     "@type": "Offer",
     price: (product.priceCents / 100).toFixed(2),
     priceCurrency: product.currency.toUpperCase(),
     availability: inStock ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
     url: `https://${host}${path}`,
+    ...extras.offer,
   },
 }
+const breadcrumb = ecomOn
+  ? {
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "Home", item: `https://${host}/` },
+        { "@type": "ListItem", position: 2, name: "Shop", item: `https://${host}/shop/` },
+        { "@type": "ListItem", position: 3, name: product.title, item: `https://${host}${path}` },
+      ],
+    }
+  : null
+const schema = breadcrumb
+  ? { "@context": "https://schema.org", "@graph": [productNode, breadcrumb] }
+  : { "@context": "https://schema.org", ...productNode }
 ---
 <Base
   title={product.seoTitle ?? `${product.title} — ${config.name}`}

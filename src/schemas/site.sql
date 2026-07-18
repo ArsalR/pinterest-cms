@@ -216,6 +216,7 @@ CREATE TABLE IF NOT EXISTS seo_settings (
   profiles              TEXT,   -- V1.3: JSON array of SEO profile ids (local/news/ecommerce/image/ai); NULL = none
   scripts               TEXT,   -- V1.3: JSON [{id, config}] of vetted script-catalog enablements; NULL = none
   indexnow_key          TEXT,   -- V1.3 P2: IndexNow key (served at /<key>.txt; NULL until news profile pings)
+  merchant_json         TEXT,   -- V1.3 P3: site-level shipping/returns config for merchant listings; NULL = none
   updated_at            TEXT DEFAULT (datetime('now'))
 );
 

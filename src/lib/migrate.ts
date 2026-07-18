@@ -229,6 +229,21 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE seo_settings ADD COLUMN indexnow_key TEXT`,
     ],
   },
+  {
+    version: 12,
+    name: "012_merchant_seo",
+    statements: [
+      // V1.3 Ecommerce SEO profile — Merchant-listing depth on products +
+      // site-level shipping/returns config. Additive; NULL = today's output.
+      `ALTER TABLE products ADD COLUMN brand TEXT`,
+      `ALTER TABLE products ADD COLUMN gtin TEXT`,
+      `ALTER TABLE products ADD COLUMN mpn TEXT`,
+      `ALTER TABLE products ADD COLUMN condition TEXT`,
+      `ALTER TABLE products ADD COLUMN rating_value REAL`,
+      `ALTER TABLE products ADD COLUMN rating_count INTEGER`,
+      `ALTER TABLE seo_settings ADD COLUMN merchant_json TEXT`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.
