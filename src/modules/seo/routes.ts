@@ -13,10 +13,11 @@ import { ensureMasterSchema } from "../../shared"
 import { renderSaasLayout } from "../../shared"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, planGate, type Customer } from "../customers"
+import { getConnectionSecret, getEdgeBotState, setAiBotWafRule, setBotFightMode, aiBotWafExpression, type EdgeBotState } from "../connections"
 import { SCHEMA_TYPES } from "./analyze"
 import { listPostsForSeo, loadPostSeo, savePostSeo, type SeoUpdate } from "./service"
 import { listSiteImages, bulkUpdateAlt, slugifyFilenames, type AltUpdate } from "./images"
-import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, type SeoSettings } from "./settings"
+import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, AI_BOTS, type SeoSettings } from "./settings"
 import { loadSeoSettings, saveSeoSettings, saveProfiles } from "./settingsService"
 import { SEO_PROFILES, normalizeProfiles, type ProfileId } from "./profiles"
 import { detectChains, isBrandedLink, toRedirectsCsv, type RedirectKind, type RedirectMatch, type RedirectRow } from "./redirects"
@@ -38,10 +39,10 @@ function nowSqlite(): string {
   return new Date().toISOString().replace("T", " ").slice(0, 19)
 }
 
-interface SeoSite { id: string; customer_id: string; cms_site_id: string | null; domain: string; name: string; repo_full_name: string | null }
+interface SeoSite { id: string; customer_id: string; cms_site_id: string | null; domain: string; name: string; repo_full_name: string | null; zone_id: string | null }
 async function loadSite(master: Awaited<ReturnType<typeof masterDb>>, siteId: string, customerId: string): Promise<SeoSite | null> {
   const r = await master.execute({
-    sql: "SELECT id, customer_id, cms_site_id, domain, name, repo_full_name FROM customer_sites WHERE id = ? AND customer_id = ? LIMIT 1",
+    sql: "SELECT id, customer_id, cms_site_id, domain, name, repo_full_name, zone_id FROM customer_sites WHERE id = ? AND customer_id = ? LIMIT 1",
     args: [siteId, customerId],
   })
   return r.rows.length ? (r.rows[0] as unknown as SeoSite) : null
@@ -325,7 +326,40 @@ function lines(v: unknown): string[] {
   return String(v ?? "").split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
 }
 
-function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opts: { error?: string; saved?: boolean; needOverride?: boolean } = {}): string {
+/** The "Edge enforcement" block inside the Crawlers card (V1.3 decision #3).
+ *  edge === undefined → Cloudflare not connected / no zone (teach state). */
+function edgeBlock(siteId: string, edge: EdgeBotState | undefined, edgeNotice?: string): string {
+  const head = `<div style="margin-top:14px;border-top:1px solid #262626;padding-top:10px">
+    <h4 style="margin:0 0 4px;font-size:13px">Edge enforcement <span class="muted" style="font-weight:400">— robots.txt asks politely; these BLOCK at Cloudflare's edge before a request reaches your site</span></h4>`
+  if (!edge) {
+    return `${head}<p class="muted" style="font-size:12px;margin:6px 0 0">Connect Cloudflare and finish this site's domain setup to enforce bot rules at the edge.</p></div>`
+  }
+  const notice = edgeNotice
+    ? `<p style="font-size:12px;color:${edgeNotice.startsWith("✓") ? "#86efac" : "#fca5a5"};margin:6px 0">${escapeHtml(edgeNotice)}</p>`
+    : edge.problem
+      ? `<p style="font-size:12px;color:#fca5a5;margin:6px 0">${escapeHtml(edge.problem)}</p>`
+      : ""
+  const aiOn = !!edge.aiRule?.enabled
+  const bfmOn = edge.botFightMode === true
+  const btn = (action: string, label: string) =>
+    `<form method="post" action="/app/sites/${escapeAttr(siteId)}/seo-settings/edge" style="display:inline;margin:0">
+       <input type="hidden" name="action" value="${action}" />
+       <button type="submit" class="btn ghost" style="font-size:12px">${label}</button></form>`
+  return `${head}
+    ${notice}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:8px 0">
+      <div style="font-size:13px">AI-crawler block (WAF rule) ${aiOn ? `<span style="color:#86efac;font-size:11px">● enforcing</span>` : `<span class="muted" style="font-size:11px">off</span>`}
+        <div class="muted" style="font-size:11px">Blocks GPTBot, ClaudeBot, CCBot &amp; co. at the edge — even crawlers that ignore robots.txt.</div></div>
+      ${btn(aiOn ? "ai_off" : "ai_on", aiOn ? "Turn off" : "Enforce")}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:8px 0">
+      <div style="font-size:13px">Bot Fight Mode ${bfmOn ? `<span style="color:#86efac;font-size:11px">● on</span>` : edge.botFightMode === null ? `<span class="muted" style="font-size:11px">unknown</span>` : `<span class="muted" style="font-size:11px">off</span>`}
+        <div class="muted" style="font-size:11px">Cloudflare challenges known malicious bots zone-wide (doesn't affect search engines).</div></div>
+      ${btn(bfmOn ? "bfm_off" : "bfm_on", bfmOn ? "Turn off" : "Turn on")}
+    </div></div>`
+}
+
+function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opts: { error?: string; saved?: boolean; needOverride?: boolean; edge?: EdgeBotState; edgeNotice?: string } = {}): string {
   const chk = (on: boolean) => (on ? "checked" : "")
   const notice = opts.saved
     ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — your site is rebuilding with the new SEO settings (usually ~2 minutes).</p></div>`
@@ -372,7 +406,16 @@ function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opt
         <textarea name="socialProfiles" rows="2" placeholder="https://twitter.com/…" style="${inputStyle}">${escapeHtml(s.socialProfiles.join("\n"))}</textarea>
       </div>
       <div class="card" style="display:flex;justify-content:flex-end"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save settings</button></div>
-    </form>`
+    </form>
+    <div class="card">${edgeBlock(siteId, opts.edge, opts.edgeNotice)}</div>`
+}
+
+/** Live edge state for the bot section; undefined = CF/zone not set up. */
+async function edgeStateFor(master: Awaited<ReturnType<typeof masterDb>>, c: Context<AppEnv>, customerId: string, site: SeoSite): Promise<EdgeBotState | undefined> {
+  if (!site.zone_id) return undefined
+  const token = await getConnectionSecret(master, c.env, customerId, "cloudflare", "edge-bot-state").catch(() => null)
+  if (!token) return undefined
+  return getEdgeBotState(token, site.zone_id).catch(() => undefined)
 }
 
 export async function seoSettingsHandler(c: Context<AppEnv>): Promise<Response> {
@@ -382,8 +425,57 @@ export async function seoSettingsHandler(c: Context<AppEnv>): Promise<Response> 
   const site = await loadSite(master, siteId, customer.id)
   if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
   const s = site.cms_site_id ? await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS) : DEFAULT_SEO_SETTINGS
-  const body = renderControlCenter(siteId, site.domain, s, { saved: c.req.query("saved") === "1" })
+  const edge = await edgeStateFor(master, c, customer.id, site)
+  const body = renderControlCenter(siteId, site.domain, s, {
+    saved: c.req.query("saved") === "1",
+    edge,
+    edgeNotice: c.req.query("edge") ?? undefined,
+  })
   return c.html(renderSaasLayout({ title: "SEO settings", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+/** Edge enforcement toggles (V1.3 decision #3): applies WAF/bot settings on
+ *  the CUSTOMER'S OWN zone with their vault token. Failures (e.g. a token
+ *  missing the Firewall Services permission) surface with the exact fix. */
+export async function seoSettingsEdgeHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (msg: string) =>
+    new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/seo-settings?edge=${encodeURIComponent(msg)}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back("Your trial has ended — subscribe to change edge settings.")
+  if (!site.zone_id) return back("Finish this site's domain setup first.")
+  const token = await getConnectionSecret(master, c.env, customer.id, "cloudflare", "edge-bot-toggle").catch(() => null)
+  if (!token) return back("Connect Cloudflare in Connections first.")
+
+  const form = await c.req.parseBody()
+  const action = String(form.action ?? "")
+  let r: { ok: boolean; problem: string | null }
+  let done = ""
+  switch (action) {
+    case "ai_on":
+      r = await setAiBotWafRule(token, site.zone_id, true, aiBotWafExpression(AI_BOTS))
+      done = "✓ AI crawlers are now blocked at the edge (WAF rule active)."
+      break
+    case "ai_off":
+      r = await setAiBotWafRule(token, site.zone_id, false, aiBotWafExpression(AI_BOTS))
+      done = "✓ Edge AI-crawler block turned off."
+      break
+    case "bfm_on":
+      r = await setBotFightMode(token, site.zone_id, true)
+      done = "✓ Bot Fight Mode is on."
+      break
+    case "bfm_off":
+      r = await setBotFightMode(token, site.zone_id, false)
+      done = "✓ Bot Fight Mode is off."
+      break
+    default:
+      return back("Unknown action.")
+  }
+  await audit(master, customer.id, "site.edge_bots_changed", site.domain, { action, ok: r.ok }).catch(() => {})
+  return back(r.ok ? done : r.problem ?? "Cloudflare call failed — try again.")
 }
 
 export async function seoSettingsSaveHandler(c: Context<AppEnv>): Promise<Response> {
