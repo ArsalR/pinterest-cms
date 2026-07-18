@@ -35,6 +35,7 @@ seoSettingsRoutes.get("/", async (c) => {
     globalSchemaEnabled: false, orgName: "", orgLogo: "", socialProfiles: [] as string[],
     profiles: [] as string[],
     scripts: [] as Array<{ id: string; config: string }>,
+    indexnowKey: "",
   }
   // Valid profile/script ids — mirror src/modules/seo/{profiles,scripts}.ts
   // (CMS core stays dependency-clean of the SaaS modules, so the closed sets
@@ -71,6 +72,7 @@ seoSettingsRoutes.get("/", async (c) => {
         socialProfiles: jsonArr(p.social_profiles),
         profiles: jsonArr(p.profiles).filter((id) => PROFILE_IDS.has(id)),
         scripts: parseScripts(p.scripts),
+        indexnowKey: String(p.indexnow_key ?? ""),
       }
     }
   } catch {

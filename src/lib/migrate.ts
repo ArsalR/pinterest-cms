@@ -210,6 +210,25 @@ export const MIGRATIONS: Migration[] = [
        )`,
     ],
   },
+  {
+    version: 11,
+    name: "011_news_authors",
+    statements: [
+      // V1.3 News SEO profile — author system (E-E-A-T backbone, benefits every
+      // profile) + IndexNow key. Additive; empty/NULL = today's behavior.
+      `CREATE TABLE IF NOT EXISTS authors (
+         id TEXT PRIMARY KEY,
+         name TEXT NOT NULL,
+         slug TEXT UNIQUE NOT NULL,
+         bio TEXT,
+         photo TEXT,
+         same_as TEXT,
+         created_at TEXT DEFAULT (datetime('now'))
+       )`,
+      `ALTER TABLE posts ADD COLUMN author_id TEXT`,
+      `ALTER TABLE seo_settings ADD COLUMN indexnow_key TEXT`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

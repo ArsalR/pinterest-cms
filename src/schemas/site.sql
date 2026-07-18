@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS posts (
   nofollow        INTEGER NOT NULL DEFAULT 0,
   schema_type     TEXT,                        -- Article|HowTo|FAQ|Product|Review
   faq_json        TEXT,                         -- FAQPage builder output
+  author_id       TEXT,                         -- V1.3 P2: → authors.id (byline/E-E-A-T)
   scheduled_at    TEXT,
   created_at      TEXT DEFAULT (datetime('now')),
   updated_at      TEXT DEFAULT (datetime('now')),
@@ -214,6 +215,7 @@ CREATE TABLE IF NOT EXISTS seo_settings (
   social_profiles       TEXT,   -- JSON array of profile URLs
   profiles              TEXT,   -- V1.3: JSON array of SEO profile ids (local/news/ecommerce/image/ai); NULL = none
   scripts               TEXT,   -- V1.3: JSON [{id, config}] of vetted script-catalog enablements; NULL = none
+  indexnow_key          TEXT,   -- V1.3 P2: IndexNow key (served at /<key>.txt; NULL until news profile pings)
   updated_at            TEXT DEFAULT (datetime('now'))
 );
 
@@ -235,6 +237,18 @@ CREATE TABLE IF NOT EXISTS business_locations (
   is_primary    INTEGER NOT NULL DEFAULT 0,
   slug          TEXT UNIQUE,
   created_at    TEXT DEFAULT (datetime('now'))
+);
+
+-- ─────────────── NEWS SEO (V1.3 P2) — authors (E-E-A-T) ───────────────
+-- Runtime truth: provision.ts + migrate.ts (011). posts.author_id joins here.
+CREATE TABLE IF NOT EXISTS authors (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  slug       TEXT UNIQUE NOT NULL,
+  bio        TEXT,
+  photo      TEXT,
+  same_as    TEXT,    -- JSON array of profile URLs (Person sameAs)
+  created_at TEXT DEFAULT (datetime('now'))
 );
 
 -- ─────────────── ECOMMERCE (amendment 2 — kind='ecommerce' sites) ───────────────

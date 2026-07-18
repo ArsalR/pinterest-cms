@@ -61,6 +61,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
         '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:8px 0"><input type="checkbox" id="f-sitemapExclude" '+(d.sitemapExclude?"checked":"")+'> Exclude from sitemap</label>'+
         field("Canonical URL override","f-canonicalUrl",d.canonicalUrl,"https://… (leave blank for the default)")+
         '<label style="display:block;font-size:13px;margin:10px 0 4px">Schema type</label><select id="f-schemaType" style="background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px">'+schemaOpts+'</select>'+
+        '<label style="display:block;font-size:13px;margin:10px 0 4px">Author <span class="muted">(byline + Person schema — manage authors in SEO → Authors)</span></label><select id="f-authorId" style="background:#0a0a0a;border:1px solid #404040;border-radius:8px;padding:9px;color:#fafafa;font-size:13px"><option value="">No author</option>'+((d.authors||[]).map(function(a){return '<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>';}).join(""))+'</select>'+
         '<div style="margin-top:14px"><div style="font-size:13px;margin-bottom:6px">FAQ (emits FAQPage schema)'+(d.assist?' <button type="button" class="assist-btn" data-task="faq" data-target="faq" style="background:none;border:1px solid #404040;border-radius:6px;color:#fcd34d;font-size:11px;padding:1px 7px;cursor:pointer">✨ Suggest from content</button>':'')+'</div><div id="faq-list"></div><button type="button" id="faq-add" class="btn ghost" style="margin-top:6px">+ Add question</button></div>'+
       '</div>'+
       // Content — live analysis sharing the quality gate's rules (S2).
@@ -78,6 +79,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
 
   var $=function(id){return document.getElementById(id);};
   if(d.schemaType)$("f-schemaType").value=d.schemaType;
+  if(d.authorId)$("f-authorId").value=d.authorId;
 
   // tabs — click + Left/Right arrow-key navigation (S6 keyboard nav)
   var tabs=[].slice.call(root.querySelectorAll(".seo-tab"));
@@ -188,7 +190,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     return {metaTitle:$("f-metaTitle").value,metaDescription:$("f-metaDescription").value,slug:$("f-slug").value,focusKeyword:$("f-focusKeyword").value,
       ogTitle:$("f-ogTitle").value,ogDescription:$("f-ogDescription").value,ogImage:$("f-ogImage").value,
       canonicalUrl:$("f-canonicalUrl").value,noIndex:$("f-noIndex").checked,nofollow:$("f-nofollow").checked,
-      sitemapExclude:$("f-sitemapExclude").checked,schemaType:$("f-schemaType").value,faq:faq,
+      sitemapExclude:$("f-sitemapExclude").checked,schemaType:$("f-schemaType").value,authorId:$("f-authorId")?$("f-authorId").value:"",faq:faq,
       addRedirect:$("f-addRedirect")?$("f-addRedirect").checked:false,
       typedOverride:$("f-typedOverride")?$("f-typedOverride").value:""};
   }
@@ -200,7 +202,7 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
     $("f-metaTitle").value=p.metaTitle;$("f-metaDescription").value=p.metaDescription;$("f-slug").value=p.slug;$("f-focusKeyword").value=p.focusKeyword;
     $("f-ogTitle").value=p.ogTitle;$("f-ogDescription").value=p.ogDescription;$("f-ogImage").value=p.ogImage;
     $("f-canonicalUrl").value=p.canonicalUrl;$("f-noIndex").checked=p.noIndex;$("f-nofollow").checked=p.nofollow;
-    $("f-sitemapExclude").checked=p.sitemapExclude;$("f-schemaType").value=p.schemaType;
+    $("f-sitemapExclude").checked=p.sitemapExclude;$("f-schemaType").value=p.schemaType;if($("f-authorId"))$("f-authorId").value=p.authorId||"";
     $("faq-list").innerHTML="";(p.faq||[]).forEach(function(f){$("faq-list").appendChild(faqRow(f.question,f.answer));});
     refresh();
   }

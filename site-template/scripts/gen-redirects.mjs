@@ -51,7 +51,7 @@ function buildRobots(s) {
 
 async function loadSeoSettings() {
   const key = process.env.CMS_API_KEY
-  const defaults = { blockAiBots: false, blockedBots: [], disallowPaths: [], robotsExtra: "", scripts: [] }
+  const defaults = { blockAiBots: false, blockedBots: [], disallowPaths: [], robotsExtra: "", scripts: [], profiles: [] }
   if (!key || !config.cmsApiUrl) return defaults
   try {
     const resp = await fetch(`${config.cmsApiUrl}/seo-settings`, { headers: { Authorization: `Bearer ${key}` } })
@@ -66,6 +66,25 @@ async function loadSeoSettings() {
 const seoSettings = await loadSeoSettings()
 writeFileSync(new URL("../dist/robots.txt", import.meta.url), buildRobots(seoSettings))
 console.log(`robots.txt: ${robotsIsDefault(seoSettings) ? "default (allow-all)" : "from SEO Control Center"} -> ${SITEMAP_URL}`)
+
+// ─────────── Child sitemaps (V1.3 profiles): join Astro's sitemap index ───────────
+// News (and later image) sitemaps are separate files; they're referenced from
+// the generated sitemap-index so everything composes under ONE index. No
+// profile on → index untouched (byte-identical).
+import { existsSync } from "node:fs"
+function addChildSitemap(childFile) {
+  const childUrl = `https://${to}/${childFile}`
+  const idxUrl = new URL("../dist/sitemap-index.xml", import.meta.url)
+  const childPath = new URL(`../dist/${childFile}`, import.meta.url)
+  if (!existsSync(idxUrl.pathname) || !existsSync(childPath.pathname)) return false
+  let idx = readFileSync(idxUrl, "utf8")
+  if (idx.includes(`<loc>${childUrl}</loc>`)) return true
+  idx = idx.replace("</sitemapindex>", `<sitemap><loc>${childUrl}</loc></sitemap></sitemapindex>`)
+  writeFileSync(idxUrl, idx)
+  console.log(`sitemap-index: added ${childFile}`)
+  return true
+}
+if ((seoSettings.profiles ?? []).includes("news")) addChildSitemap("news-sitemap.xml")
 
 // ─────────── Vetted site scripts (V1.3): budget gate + CSP + zero-JS manifest ───────────
 // Mirrors src/lib/cms.ts TEMPLATE_SCRIPT_CATALOG / src/modules/seo/scripts.ts.

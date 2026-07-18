@@ -17,6 +17,7 @@ import { getConnectionSecret, getEdgeBotState, setAiBotWafRule, setBotFightMode,
 import { SCHEMA_TYPES } from "./analyze"
 import { listPostsForSeo, loadPostSeo, savePostSeo, type SeoUpdate } from "./service"
 import { listSiteImages, bulkUpdateAlt, slugifyFilenames, type AltUpdate } from "./images"
+import { listAuthors } from "./newsService"
 import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, AI_BOTS, type SeoSettings } from "./settings"
 import { loadSeoSettings, saveSeoSettings, saveProfiles } from "./settingsService"
 import { SEO_PROFILES, normalizeProfiles, type ProfileId } from "./profiles"
@@ -95,6 +96,9 @@ export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
   // Profile-gated tools appear only when their profile is on (one place per job).
   if (active.has("local")) {
     jobs.push({ href: "local", title: "Business info & locations", desc: "Name, address, phone, hours and locations — stored once, shown consistently everywhere, with LocalBusiness schema." })
+  }
+  if (active.has("news")) {
+    jobs.push({ href: "authors", title: "Authors & bylines", desc: "Author pages with real bios and Person schema — the E-E-A-T backbone. Fast-indexing pings fire automatically on publish." })
   }
   const cards = jobs.map((j) => `
     <a href="/app/sites/${escapeAttr(siteId)}/${j.href}" style="display:block;text-decoration:none;color:inherit">
@@ -183,6 +187,7 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
   const url = `https://${site.domain}/posts/${post.slug}/`
   // ✨ assists light up only when the customer's Anthropic key is in the vault.
   const assist = await assistAvailable(master, customer.id).catch(() => false)
+  const authors = await listAuthors(master, site.cms_site_id).catch(() => [])
   // Seed the client with the current values as JSON (read by seo-cockpit.js).
   const seed = {
     siteName: site.name, url, baseUrl: `https://${site.domain}/posts/`,
@@ -193,6 +198,7 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
     ogTitle: post.ogTitle ?? "", ogDescription: post.ogDescription ?? "", ogImage: post.ogImage ?? "",
     canonicalUrl: post.canonicalUrl ?? "", noIndex: post.noIndex, sitemapExclude: post.sitemapExclude,
     nofollow: post.nofollow, schemaType: post.schemaType ?? "", faq: post.faq,
+    authorId: post.authorId ?? "", authors: authors.map((a) => ({ id: a.id, name: a.name })),
   }
 
   const body = `
@@ -229,7 +235,7 @@ export async function seoSaveHandler(c: Context<AppEnv>): Promise<Response> {
     metaTitle: str("metaTitle"), metaDescription: str("metaDescription"), slug: str("slug"), focusKeyword: str("focusKeyword"),
     ogTitle: str("ogTitle"), ogDescription: str("ogDescription"), ogImage: str("ogImage"),
     canonicalUrl: str("canonicalUrl"), noIndex: bool("noIndex"), sitemapExclude: bool("sitemapExclude"),
-    nofollow: bool("nofollow"), schemaType: str("schemaType"), faq, addRedirectOnSlugChange: bool("addRedirect"),
+    nofollow: bool("nofollow"), schemaType: str("schemaType"), faq, authorId: str("authorId"), addRedirectOnSlugChange: bool("addRedirect"),
     typedOverride: str("typedOverride"),
   }
   const r = await savePostSeo(c.env, customer.id, site.cms_site_id, site.repo_full_name, postId, update, master)

@@ -62,6 +62,7 @@ export interface CmsPost {
   nofollow?: boolean
   schemaType?: string | null
   faq?: Array<{ question: string; answer: string }> | null
+  authorId?: string | null
 }
 
 /** Canonical robots-directive rule (mirrors src/modules/seo/analyze.ts).
@@ -96,6 +97,8 @@ export interface SeoSettings {
   profiles: string[]
   /** V1.3 vetted script enablements [{id, config}]. [] = zero-JS as today. */
   scripts: Array<{ id: string; config: string }>
+  /** V1.3 P2: IndexNow key (served at /<key>.txt). "" until generated. */
+  indexnowKey: string
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
@@ -104,6 +107,7 @@ export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   orgName: "", orgLogo: "", socialProfiles: [],
   profiles: [],
   scripts: [],
+  indexnowKey: "",
 }
 
 // ─────────────── Vetted script catalog (V1.3, template copy) ───────────────
@@ -186,6 +190,49 @@ export function scriptTagsFor(s: SeoSettings): string {
 /** Is a V1.3 SEO profile enabled for this site? Absent settings ⇒ false. */
 export function profileOn(s: SeoSettings, id: string): boolean {
   return s.profiles.includes(id)
+}
+
+// ─────────────── News SEO profile (V1.3 P2) — authors ───────────────
+
+export interface CmsAuthor {
+  id: string
+  name: string
+  slug: string
+  bio: string
+  photo: string
+  sameAs: string[]
+}
+
+let _authorsCache: CmsAuthor[] | null = null
+
+/** Fetch authors (memoized). [] on error or when none exist — byte-identical. */
+export async function fetchAuthors(config: SiteConfig): Promise<CmsAuthor[]> {
+  if (_authorsCache) return _authorsCache
+  const key = process.env.CMS_API_KEY
+  if (!key) return (_authorsCache = [])
+  try {
+    const resp = await fetch(`${config.cmsApiUrl}/authors`, { headers: { Authorization: `Bearer ${key}` } })
+    if (!resp.ok) return (_authorsCache = [])
+    const data = (await resp.json()) as { authors?: CmsAuthor[] }
+    _authorsCache = Array.isArray(data.authors) ? data.authors : []
+    return _authorsCache
+  } catch {
+    return (_authorsCache = [])
+  }
+}
+
+/** Person JSON-LD for an author page/byline. */
+export function personLd(a: CmsAuthor, siteUrl: string): object {
+  const node: Record<string, unknown> = {
+    "@type": "Person",
+    "@id": `${siteUrl}authors/${a.slug}/#person`,
+    name: a.name,
+    url: `${siteUrl}authors/${a.slug}/`,
+  }
+  if (a.bio) node.description = a.bio
+  if (a.photo) node.image = a.photo
+  if (a.sameAs.length) node.sameAs = a.sameAs
+  return node
 }
 
 // ─────────────── Local SEO profile (V1.3 P1) ───────────────
@@ -403,7 +450,7 @@ async function mergeSeoOverrides(config: SiteConfig, posts: CmsPost[]): Promise<
   try {
     const resp = await fetch(`${config.cmsApiUrl}/seo`, { headers: { Authorization: `Bearer ${key}` } })
     if (!resp.ok) return
-    const data = (await resp.json()) as { seo?: Array<{ id: string; nofollow?: boolean; schemaType?: string | null; faq?: Array<{ question: string; answer: string }> | null }> }
+    const data = (await resp.json()) as { seo?: Array<{ id: string; nofollow?: boolean; schemaType?: string | null; faq?: Array<{ question: string; answer: string }> | null; authorId?: string | null }> }
     const byId = new Map((data.seo ?? []).map((s) => [s.id, s]))
     for (const p of posts) {
       const o = byId.get(p.id)
@@ -411,6 +458,7 @@ async function mergeSeoOverrides(config: SiteConfig, posts: CmsPost[]): Promise<
       p.nofollow = o.nofollow ?? false
       p.schemaType = o.schemaType ?? null
       p.faq = o.faq ?? null
+      p.authorId = o.authorId ?? null
     }
   } catch {
     // absent overrides = today's output
