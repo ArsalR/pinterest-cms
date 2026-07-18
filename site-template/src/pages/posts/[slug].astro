@@ -1,7 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro"
 import Img from "../../components/Img.astro"
-import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, type CmsPost } from "../../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, type CmsPost } from "../../lib/cms"
 
 export async function getStaticPaths() {
   const config = loadConfig()
@@ -20,7 +20,7 @@ const path = `/posts/${post.slug}/`
 // post actually contains ≥2 question-style headings, so AI engines can lift
 // direct Q&A answers.
 const article = {
-  "@type": "Article",
+  "@type": post.schemaType ?? "Article",
   headline: post.title,
   description: post.seoDescription ?? post.excerpt ?? "",
   datePublished: post.publishedAt ?? undefined,
@@ -38,7 +38,9 @@ const breadcrumb = {
     { "@type": "ListItem", position: 3, name: post.title, item: `https://${host}${path}` },
   ],
 }
-const faqs = extractFaqs(post.content)
+// Manual FAQ from the SEO cockpit wins; otherwise auto-extract from headings
+// (byte-identical when the post carries no manual FAQ override).
+const faqs = post.faq && post.faq.length > 0 ? post.faq : extractFaqs(post.content)
 const faqPage =
   faqs.length >= 2
     ? {
@@ -54,6 +56,9 @@ const schema = {
   "@context": "https://schema.org",
   "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : [])],
 }
+// Robots directive from the cockpit's index/follow toggles. Absent (both off)
+// emits no robots meta at all — exactly today's behavior (rail #3).
+const robots = computeRobots(post.noIndex, post.nofollow)
 ---
 <Base
   title={post.seoTitle ?? `${post.title} — ${config.name}`}
@@ -61,7 +66,11 @@ const schema = {
   path={path}
   schema={schema}
   ogType="article"
-  ogImage={post.coverImage}
+  ogImage={post.ogImage ?? post.coverImage}
+  robots={robots}
+  canonicalOverride={post.canonicalUrl ?? null}
+  ogTitle={post.ogTitle ?? null}
+  ogDescription={post.ogDescription ?? null}
 >
   <article>
     <h1>{post.title}</h1>

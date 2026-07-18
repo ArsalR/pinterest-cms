@@ -40,6 +40,7 @@ import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
 import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
 import { designPageHandler, designApplyHandler } from "../design"
+import { seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler } from "../seo"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -148,6 +149,11 @@ saasAppRoutes.post("/sites/:id/prompt", prot(sitePromptHandler))
 saasAppRoutes.post("/sites/:id/genesis", prot(siteGenesisHandler))
 saasAppRoutes.post("/sites/:id/rollback", prot(siteRollbackHandler))
 // Design options — change preset/layout later (V1.1).
+// SEO cockpit (V1.2 S1).
+saasAppRoutes.get("/assets/seo-cockpit.js", pub(seoCockpitJsHandler))
+saasAppRoutes.get("/sites/:id/posts", prot(seoPostsHandler))
+saasAppRoutes.get("/sites/:id/posts/:postId/seo", prot(seoCockpitHandler))
+saasAppRoutes.post("/sites/:id/posts/:postId/seo", prot(seoSaveHandler))
 saasAppRoutes.get("/sites/:id/design", prot(designPageHandler))
 saasAppRoutes.post("/sites/:id/design", prot(designApplyHandler))
 // Visual preview window (K12).
