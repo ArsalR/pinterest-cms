@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS posts (
   canonical_url   TEXT,
   no_index        INTEGER DEFAULT 0,
   structured_data TEXT,
+  sitemap_exclude INTEGER NOT NULL DEFAULT 0, -- V1.2 S1: per-post SEO overrides
+  nofollow        INTEGER NOT NULL DEFAULT 0,
+  schema_type     TEXT,                        -- Article|HowTo|FAQ|Product|Review
+  faq_json        TEXT,                         -- FAQPage builder output
   scheduled_at    TEXT,
   created_at      TEXT DEFAULT (datetime('now')),
   updated_at      TEXT DEFAULT (datetime('now')),

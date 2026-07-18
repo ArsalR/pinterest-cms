@@ -128,6 +128,19 @@ const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_orders_created ON orders(created_at)`,
     ],
   },
+  {
+    version: 6,
+    name: "006_seo_cockpit",
+    statements: [
+      // V1.2 S1 — per-post SEO overrides. Additive; defaults reproduce today's
+      // output exactly (the template applies them only when set). The existing
+      // seo_*/og_*/canonical_url/no_index columns already cover the rest.
+      `ALTER TABLE posts ADD COLUMN sitemap_exclude INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE posts ADD COLUMN nofollow INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE posts ADD COLUMN schema_type TEXT`,
+      `ALTER TABLE posts ADD COLUMN faq_json TEXT`,
+    ],
+  },
 ]
 
 export async function runMigrations(db: Client): Promise<void> {

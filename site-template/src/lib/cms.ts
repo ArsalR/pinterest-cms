@@ -53,6 +53,24 @@ export interface CmsPost {
   category: { slug: string; name: string } | null
   seoTitle: string | null
   seoDescription: string | null
+  // V1.2 SEO cockpit overrides. All optional — absent reproduces today's output.
+  noIndex?: boolean
+  canonicalUrl?: string | null
+  ogTitle?: string | null
+  ogDescription?: string | null
+  ogImage?: string | null
+  nofollow?: boolean
+  schemaType?: string | null
+  faq?: Array<{ question: string; answer: string }> | null
+}
+
+/** Canonical robots-directive rule (mirrors src/modules/seo/analyze.ts).
+ *  Both flags false/absent ⇒ null ⇒ NO robots meta (byte-identical, rail #3). */
+export function computeRobots(noIndex?: boolean, nofollow?: boolean): string | null {
+  const parts: string[] = []
+  if (noIndex) parts.push("noindex")
+  if (nofollow) parts.push("nofollow")
+  return parts.length > 0 ? parts.join(", ") : null
 }
 
 export function loadConfig(): SiteConfig {
@@ -81,6 +99,8 @@ export async function fetchAllPosts(config: SiteConfig): Promise<CmsPost[]> {
         coverImage?: string | null; publishedAt?: string | null; updatedAt?: string | null
         category?: { slug: string; name: string } | null
         seoTitle?: string | null; seoDescription?: string | null
+        noIndex?: boolean; canonicalUrl?: string | null
+        ogTitle?: string | null; ogDescription?: string | null; ogImage?: string | null
       }>
       total: number
     }
@@ -97,11 +117,40 @@ export async function fetchAllPosts(config: SiteConfig): Promise<CmsPost[]> {
         category: p.category ?? null,
         seoTitle: p.seoTitle ?? null,
         seoDescription: p.seoDescription ?? null,
+        noIndex: p.noIndex ?? false,
+        canonicalUrl: p.canonicalUrl ?? null,
+        ogTitle: p.ogTitle ?? null,
+        ogDescription: p.ogDescription ?? null,
+        ogImage: p.ogImage ?? null,
       })
     }
     if (out.length >= data.total || data.posts.length < limit) break
   }
+  // Merge V1.2 SEO override fields not carried by the frozen /v1/posts shape.
+  await mergeSeoOverrides(config, out)
   return out
+}
+
+/** Fetch per-post SEO overrides from the additive /v1/seo endpoint and merge by
+ *  id. Best-effort: on any error the site builds exactly as before (defaults). */
+async function mergeSeoOverrides(config: SiteConfig, posts: CmsPost[]): Promise<void> {
+  const key = process.env.CMS_API_KEY
+  if (!key || posts.length === 0) return
+  try {
+    const resp = await fetch(`${config.cmsApiUrl}/seo`, { headers: { Authorization: `Bearer ${key}` } })
+    if (!resp.ok) return
+    const data = (await resp.json()) as { seo?: Array<{ id: string; nofollow?: boolean; schemaType?: string | null; faq?: Array<{ question: string; answer: string }> | null }> }
+    const byId = new Map((data.seo ?? []).map((s) => [s.id, s]))
+    for (const p of posts) {
+      const o = byId.get(p.id)
+      if (!o) continue
+      p.nofollow = o.nofollow ?? false
+      p.schemaType = o.schemaType ?? null
+      p.faq = o.faq ?? null
+    }
+  } catch {
+    // absent overrides = today's output
+  }
 }
 
 /** Fetch all published products (ecommerce sites). Empty for non-store sites. */

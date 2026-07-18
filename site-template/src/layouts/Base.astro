@@ -11,12 +11,22 @@ interface Props {
   schema?: object | null   // page-specific JSON-LD
   ogType?: string          // "website" | "article" | "product"
   ogImage?: string | null  // absolute URL of the social image
+  // V1.2 SEO cockpit overrides. All optional — absent = byte-identical output.
+  robots?: string | null            // e.g. "noindex, nofollow"; absent = no robots meta
+  canonicalOverride?: string | null // absolute URL; absent = computed canonical
+  ogTitle?: string | null           // absent = title
+  ogDescription?: string | null     // absent = description
 }
 
-const { title, description, path, schema = null, ogType = "website", ogImage = null } = Astro.props
+const {
+  title, description, path, schema = null, ogType = "website", ogImage = null,
+  robots = null, canonicalOverride = null, ogTitle = null, ogDescription = null,
+} = Astro.props
 const config = loadConfig()
 const host = canonicalHost(config)
-const canonical = `https://${host}${path}`
+const canonical = canonicalOverride ?? `https://${host}${path}`
+const socialTitle = ogTitle ?? title
+const socialDescription = ogDescription ?? description
 const year = new Date().getFullYear()
 ---
 <!doctype html>
@@ -26,6 +36,7 @@ const year = new Date().getFullYear()
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{title}</title>
   <meta name="description" content={description} />
+  {robots && <meta name="robots" content={robots} />}
   <link rel="canonical" href={canonical} />
   <link rel="sitemap" href="/sitemap-index.xml" />
   <link rel="alternate" type="application/rss+xml" title={config.name} href="/rss.xml" />
@@ -39,13 +50,13 @@ const year = new Date().getFullYear()
   {/* Open Graph + Twitter (social + AI-answer surfaces). */}
   <meta property="og:type" content={ogType} />
   <meta property="og:site_name" content={config.name} />
-  <meta property="og:title" content={title} />
-  <meta property="og:description" content={description} />
+  <meta property="og:title" content={socialTitle} />
+  <meta property="og:description" content={socialDescription} />
   <meta property="og:url" content={canonical} />
   {ogImage && <meta property="og:image" content={ogImage} />}
   <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
-  <meta name="twitter:title" content={title} />
-  <meta name="twitter:description" content={description} />
+  <meta name="twitter:title" content={socialTitle} />
+  <meta name="twitter:description" content={socialDescription} />
   {ogImage && <meta name="twitter:image" content={ogImage} />}
 
   {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
