@@ -40,7 +40,7 @@ import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
 import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
 import { designPageHandler, designApplyHandler } from "../design"
-import { seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler } from "../seo"
+import { seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler } from "../seo"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -158,6 +158,11 @@ saasAppRoutes.get("/sites/:id/images", prot(imageSeoHandler))
 saasAppRoutes.post("/sites/:id/images", prot(imageSeoSaveHandler))
 saasAppRoutes.get("/sites/:id/seo-settings", prot(seoSettingsHandler))
 saasAppRoutes.post("/sites/:id/seo-settings", prot(seoSettingsSaveHandler))
+saasAppRoutes.get("/sites/:id/redirects", prot(redirectsHandler))
+saasAppRoutes.get("/sites/:id/redirects/export.csv", prot(redirectsExportHandler))
+saasAppRoutes.post("/sites/:id/redirects", prot(redirectsAddHandler))
+saasAppRoutes.post("/sites/:id/redirects/delete", prot(redirectsDeleteHandler))
+saasAppRoutes.post("/sites/:id/redirects/import", prot(redirectsImportHandler))
 saasAppRoutes.get("/sites/:id/design", prot(designPageHandler))
 saasAppRoutes.post("/sites/:id/design", prot(designApplyHandler))
 // Visual preview window (K12).
