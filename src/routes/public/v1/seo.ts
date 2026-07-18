@@ -19,12 +19,13 @@ seoRoutes.get("/", async (c) => {
   if (auth.error) return apiError(c, auth.status, auth.code, auth.error)
 
   const r = await siteDb.execute({
-    sql: `SELECT id, sitemap_exclude, nofollow, schema_type, faq_json
+    sql: `SELECT id, slug, sitemap_exclude, nofollow, schema_type, faq_json
           FROM posts WHERE published = 1`,
     args: [],
   })
   const seo = r.rows.map((row) => ({
     id: String(row.id),
+    slug: String(row.slug ?? ""),
     sitemapExclude: Number(row.sitemap_exclude) === 1,
     nofollow: Number(row.nofollow) === 1,
     schemaType: (row.schema_type as string | null) ?? null,

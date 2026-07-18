@@ -1,7 +1,7 @@
 // RSS 2.0 feed (SEO file set, amendment 3). Static, built at deploy time from
 // the CMS posts — no client JS, no runtime dependency.
 import type { APIRoute } from "astro"
-import { loadConfig, fetchAllPosts, canonicalHost } from "../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, fetchSeoSettings } from "../lib/cms"
 
 function esc(s: string): string {
   return s.replace(/[<>&'"]/g, (c) =>
@@ -11,6 +11,9 @@ function esc(s: string): string {
 
 export const GET: APIRoute = async () => {
   const config = loadConfig()
+  // RSS is on by default (byte-identical); the SEO Control Center can disable it.
+  const settings = await fetchSeoSettings(config)
+  if (!settings.rssEnabled) return new Response("Not found", { status: 404 })
   const host = canonicalHost(config)
   const base = `https://${host}`
   const posts = await fetchAllPosts(config)
