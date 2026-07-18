@@ -77,6 +77,59 @@ export function loadConfig(): SiteConfig {
   return JSON.parse(readFileSync(new URL("../../site.config.json", import.meta.url), "utf8")) as SiteConfig
 }
 
+// ─────────────── Site SEO Control Center settings (V1.2 S3) ───────────────
+// Fetched once at build from the additive /v1/seo-settings endpoint. Defaults
+// reproduce today's output exactly, so an unconfigured site is byte-identical.
+
+export interface SeoSettings {
+  blockAiBots: boolean
+  blockedBots: string[]
+  disallowPaths: string[]
+  robotsExtra: string
+  rssEnabled: boolean
+  archivesEnabled: boolean
+  globalSchemaEnabled: boolean
+  orgName: string
+  orgLogo: string
+  socialProfiles: string[]
+}
+
+export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
+  blockAiBots: false, blockedBots: [], disallowPaths: [], robotsExtra: "",
+  rssEnabled: true, archivesEnabled: true, globalSchemaEnabled: false,
+  orgName: "", orgLogo: "", socialProfiles: [],
+}
+
+let _seoSettingsCache: SeoSettings | null = null
+
+/** Load the site's SEO settings once (memoized). Best-effort: any error → the
+ *  defaults, so the build proceeds exactly as before. */
+export async function fetchSeoSettings(config: SiteConfig): Promise<SeoSettings> {
+  if (_seoSettingsCache) return _seoSettingsCache
+  const key = process.env.CMS_API_KEY
+  if (!key) return (_seoSettingsCache = SEO_SETTINGS_DEFAULTS)
+  try {
+    const resp = await fetch(`${config.cmsApiUrl}/seo-settings`, { headers: { Authorization: `Bearer ${key}` } })
+    if (!resp.ok) return (_seoSettingsCache = SEO_SETTINGS_DEFAULTS)
+    const data = (await resp.json()) as { settings?: Partial<SeoSettings> }
+    _seoSettingsCache = { ...SEO_SETTINGS_DEFAULTS, ...(data.settings ?? {}) }
+    return _seoSettingsCache
+  } catch {
+    return (_seoSettingsCache = SEO_SETTINGS_DEFAULTS)
+  }
+}
+
+/** Global Organization + WebSite JSON-LD, or null when disabled (byte-identical
+ *  default). Mirrors src/modules/seo/settings.ts globalSchema(). */
+export function globalSchemaFor(s: SeoSettings, siteName: string, siteUrl: string): object | null {
+  if (!s.globalSchemaEnabled) return null
+  const org: Record<string, unknown> = { "@type": "Organization", name: s.orgName.trim() || siteName, url: siteUrl }
+  if (s.orgLogo.trim()) org.logo = s.orgLogo.trim()
+  const profiles = s.socialProfiles.map((p) => p.trim()).filter(Boolean)
+  if (profiles.length) org.sameAs = profiles
+  return { "@context": "https://schema.org", "@graph": [org, { "@type": "WebSite", name: siteName, url: siteUrl }] }
+}
+
 export function canonicalHost(config: SiteConfig): string {
   return config.canonicalHost === "www" ? `www.${config.domain}` : config.domain
 }

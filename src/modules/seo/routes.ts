@@ -16,6 +16,8 @@ import { audit, planGate, type Customer } from "../customers"
 import { SCHEMA_TYPES } from "./analyze"
 import { listPostsForSeo, loadPostSeo, savePostSeo, type SeoUpdate } from "./service"
 import { listSiteImages, bulkUpdateAlt, slugifyFilenames, type AltUpdate } from "./images"
+import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, type SeoSettings } from "./settings"
+import { loadSeoSettings, saveSeoSettings } from "./settingsService"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -198,6 +200,111 @@ export async function imageSeoSaveHandler(c: Context<AppEnv>): Promise<Response>
   await audit(master, customer.id, "site.image_seo_saved", site.domain, { alts: altRes.updated, filenames: slugRes.updated }).catch(() => {})
   const parts = [altRes.updated ? `${altRes.updated} alt text${altRes.updated === 1 ? "" : "s"}` : "", slugRes.updated ? `${slugRes.updated} filename${slugRes.updated === 1 ? "" : "s"}` : ""].filter(Boolean)
   return back(parts.length ? `?saved=${encodeURIComponent(parts.join(" + "))}` : "")
+}
+
+// ─────────────────────── Site SEO Control Center (S3) ───────────────────────
+// Robots/crawlers hub with hard rails, sitemap/feeds/archives toggles, and a
+// global-schema editor. Plain HTML form POST. Blocking a major search engine
+// requires typing the SEO-safety override (rail #2) — enforced server-side.
+
+function lines(v: unknown): string[] {
+  return String(v ?? "").split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
+}
+
+function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opts: { error?: string; saved?: boolean; needOverride?: boolean } = {}): string {
+  const chk = (on: boolean) => (on ? "checked" : "")
+  const notice = opts.saved
+    ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — your site is rebuilding with the new SEO settings.</p></div>`
+    : opts.error
+      ? `<div class="card" style="border-color:#7f1d1d;background:#2a0d0d"><p style="margin:0;color:#fca5a5;font-size:13px">${escapeHtml(opts.error)}</p></div>`
+      : ""
+  const overrideField = opts.needOverride
+    ? `<div style="margin-top:8px"><label style="font-size:12px;color:#fca5a5">Type <strong>NOINDEX ANYWAY</strong> to confirm hiding your site from search engines:</label>
+         <input name="override" placeholder="NOINDEX ANYWAY" style="width:100%;margin-top:4px;padding:8px;border-radius:6px;border:1px solid #b45309;background:#0b0f17;color:#fafafa;font-size:13px" /></div>`
+    : ""
+  const inputStyle = "width:100%;padding:8px 10px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px"
+  return `
+    ${notice}
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(domain)}</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">SEO settings</h2>
+      <p class="muted" style="font-size:13px">Site-wide search settings. Everything here is optional — the defaults match a normal, fully-indexed site.</p>
+    </div>
+    <form method="post" action="/app/sites/${escapeAttr(siteId)}/seo-settings">
+      <div class="card">
+        <h3 style="margin:0 0 8px;font-size:14px">Crawlers</h3>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:6px 0"><input type="checkbox" name="blockAiBots" ${chk(s.blockAiBots)} />
+          <span>Block AI training crawlers <span class="muted">(GPTBot, ClaudeBot, CCBot, Google-Extended… — keeps your content out of AI training without affecting Google/Bing search). <strong style="color:#86efac">Recommended</strong> if you don't want your writing used for training.</span></span></label>
+        <label style="display:block;font-size:12px;margin:12px 0 3px" class="muted">Block specific bots (one per line — advanced)</label>
+        <textarea name="blockedBots" rows="2" placeholder="e.g. SemrushBot" style="${inputStyle}">${escapeHtml(s.blockedBots.join("\n"))}</textarea>
+        <label style="display:block;font-size:12px;margin:12px 0 3px" class="muted">Disallow paths for all bots (one per line — e.g. /tag/)</label>
+        <textarea name="disallowPaths" rows="2" placeholder="/search" style="${inputStyle}">${escapeHtml(s.disallowPaths.join("\n"))}</textarea>
+        <label style="display:block;font-size:12px;margin:12px 0 3px" class="muted">Extra robots.txt lines (advanced)</label>
+        <textarea name="robotsExtra" rows="2" style="${inputStyle}">${escapeHtml(s.robotsExtra)}</textarea>
+        ${overrideField}
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px;font-size:14px">Feeds &amp; archives</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0"><input type="checkbox" name="rssEnabled" ${chk(s.rssEnabled)} /> RSS feed (/rss.xml)</label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0"><input type="checkbox" name="archivesEnabled" ${chk(s.archivesEnabled)} /> Category &amp; date archive pages</label>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px;font-size:14px">Global schema</h3>
+        <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0"><input type="checkbox" name="globalSchemaEnabled" ${chk(s.globalSchemaEnabled)} /> Emit Organization + WebSite structured data site-wide</label>
+        <label style="display:block;font-size:12px;margin:10px 0 3px" class="muted">Organization name (defaults to the site name)</label>
+        <input name="orgName" value="${escapeAttr(s.orgName)}" style="${inputStyle}" />
+        <label style="display:block;font-size:12px;margin:10px 0 3px" class="muted">Logo URL</label>
+        <input name="orgLogo" value="${escapeAttr(s.orgLogo)}" placeholder="https://…" style="${inputStyle}" />
+        <label style="display:block;font-size:12px;margin:10px 0 3px" class="muted">Social profile URLs (one per line)</label>
+        <textarea name="socialProfiles" rows="2" placeholder="https://twitter.com/…" style="${inputStyle}">${escapeHtml(s.socialProfiles.join("\n"))}</textarea>
+      </div>
+      <div class="card" style="display:flex;justify-content:flex-end"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save settings</button></div>
+    </form>`
+}
+
+export async function seoSettingsHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const s = site.cms_site_id ? await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS) : DEFAULT_SEO_SETTINGS
+  const body = renderControlCenter(siteId, site.domain, s, { saved: c.req.query("saved") === "1" })
+  return c.html(renderSaasLayout({ title: "SEO settings", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+export async function seoSettingsSaveHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const render = (s: SeoSettings, opts: { error?: string; needOverride?: boolean }) =>
+    c.html(renderSaasLayout({ title: "SEO settings", active: "sites", customer, bodyHtml: renderControlCenter(siteId, site.domain, s, opts) }), 200, NO_STORE)
+  if (planGate(customer, nowSqlite()) === "read_only") return render(DEFAULT_SEO_SETTINGS, { error: "Your trial has ended — subscribe to change SEO settings." })
+
+  const form = await c.req.parseBody({ all: true })
+  const on = (k: string) => form[k] === "on" || form[k] === "1" || form[k] === "true"
+  const first = (k: string) => { const v = form[k]; return Array.isArray(v) ? String(v[0]) : String(v ?? "") }
+  const next: SeoSettings = {
+    blockAiBots: on("blockAiBots"),
+    blockedBots: lines(first("blockedBots")),
+    disallowPaths: lines(first("disallowPaths")),
+    robotsExtra: first("robotsExtra").slice(0, 4000),
+    rssEnabled: on("rssEnabled"),
+    archivesEnabled: on("archivesEnabled"),
+    globalSchemaEnabled: on("globalSchemaEnabled"),
+    orgName: first("orgName").slice(0, 200),
+    orgLogo: first("orgLogo").slice(0, 500),
+    socialProfiles: lines(first("socialProfiles")),
+  }
+  const override = first("override")
+  const r = await saveSeoSettings(c.env, customer.id, site.cms_site_id, site.repo_full_name, next, master, override)
+  if (!r.ok) {
+    // Hard rail tripped — re-render with the override field (rail #2).
+    return render(next, { error: r.error, needOverride: robotsWouldBlockMajorEngines(next) })
+  }
+  await audit(master, customer.id, "site.seo_settings_saved", site.domain, { engineBlockOverride: !!r.overrodeEngineBlock }).catch(() => {})
+  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/seo-settings?saved=1` } })
 }
 
 /** Serve the cockpit's vanilla JS (no build step). Public — it's just a script. */

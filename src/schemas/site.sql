@@ -195,6 +195,26 @@ CREATE TABLE IF NOT EXISTS redirects (
   created_at  TEXT DEFAULT (datetime('now'))
 );
 
+-- ─────────────── SEO CONTROL CENTER (V1.2 S3) ───────────────
+-- Per-site SEO Control Center record. Additive; NO row exists until the
+-- customer configures it, so an unconfigured site reads defaults and builds
+-- byte-identically (no robots.txt, RSS/archives on, global schema off).
+-- Runtime truth: provision.ts SITE_SCHEMA_STATEMENTS + migrate.ts (migration 007).
+CREATE TABLE IF NOT EXISTS seo_settings (
+  id                    TEXT PRIMARY KEY DEFAULT 'default',
+  block_ai_bots         INTEGER NOT NULL DEFAULT 0,
+  blocked_bots          TEXT,   -- JSON array of extra user-agents to Disallow: /
+  disallow_paths        TEXT,   -- JSON array of paths to Disallow for all bots
+  robots_extra          TEXT,   -- verbatim extra robots.txt lines
+  rss_enabled           INTEGER NOT NULL DEFAULT 1,
+  archives_enabled      INTEGER NOT NULL DEFAULT 1,
+  global_schema_enabled INTEGER NOT NULL DEFAULT 0,
+  org_name              TEXT,
+  org_logo              TEXT,
+  social_profiles       TEXT,   -- JSON array of profile URLs
+  updated_at            TEXT DEFAULT (datetime('now'))
+);
+
 -- ─────────────── ECOMMERCE (amendment 2 — kind='ecommerce' sites) ───────────────
 -- Additive; inert for content sites. Products are a CMS content collection;
 -- orders are recorded by the platform Stripe webhook (4.5e). Runtime truth is

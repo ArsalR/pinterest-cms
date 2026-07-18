@@ -141,6 +141,29 @@ const MIGRATIONS: Migration[] = [
       `ALTER TABLE posts ADD COLUMN faq_json TEXT`,
     ],
   },
+  {
+    version: 7,
+    name: "007_seo_settings",
+    statements: [
+      // V1.2 S3 — per-site SEO Control Center record. Additive; NO row is
+      // inserted, so an unconfigured site reads defaults and stays byte-identical
+      // (no robots.txt, RSS/archives on, global schema off).
+      `CREATE TABLE IF NOT EXISTS seo_settings (
+         id TEXT PRIMARY KEY DEFAULT 'default',
+         block_ai_bots INTEGER NOT NULL DEFAULT 0,
+         blocked_bots TEXT,
+         disallow_paths TEXT,
+         robots_extra TEXT,
+         rss_enabled INTEGER NOT NULL DEFAULT 1,
+         archives_enabled INTEGER NOT NULL DEFAULT 1,
+         global_schema_enabled INTEGER NOT NULL DEFAULT 0,
+         org_name TEXT,
+         org_logo TEXT,
+         social_profiles TEXT,
+         updated_at TEXT DEFAULT (datetime('now'))
+       )`,
+    ],
+  },
 ]
 
 export async function runMigrations(db: Client): Promise<void> {
