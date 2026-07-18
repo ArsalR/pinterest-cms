@@ -15,6 +15,7 @@ import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, planGate, type Customer } from "../customers"
 import { SCHEMA_TYPES } from "./analyze"
 import { listPostsForSeo, loadPostSeo, savePostSeo, type SeoUpdate } from "./service"
+import { listSiteImages, bulkUpdateAlt, slugifyFilenames, type AltUpdate } from "./images"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -82,6 +83,7 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
     siteName: site.name, url, baseUrl: `https://${site.domain}/posts/`,
     published: post.published,
     title: post.title, excerpt: post.excerpt ?? "", coverImage: post.coverImage ?? "",
+    content: post.content, focusKeyword: post.focusKeyword ?? "",
     metaTitle: post.metaTitle ?? "", metaDescription: post.metaDescription ?? "", slug: post.slug,
     ogTitle: post.ogTitle ?? "", ogDescription: post.ogDescription ?? "", ogImage: post.ogImage ?? "",
     canonicalUrl: post.canonicalUrl ?? "", noIndex: post.noIndex, sitemapExclude: post.sitemapExclude,
@@ -119,7 +121,7 @@ export async function seoSaveHandler(c: Context<AppEnv>): Promise<Response> {
   const faq = Array.isArray(b.faq) ? (b.faq as Array<{ question?: unknown; answer?: unknown }>).slice(0, 30).map((f) => ({ question: String(f.question ?? ""), answer: String(f.answer ?? "") })) : []
 
   const update: SeoUpdate = {
-    metaTitle: str("metaTitle"), metaDescription: str("metaDescription"), slug: str("slug"),
+    metaTitle: str("metaTitle"), metaDescription: str("metaDescription"), slug: str("slug"), focusKeyword: str("focusKeyword"),
     ogTitle: str("ogTitle"), ogDescription: str("ogDescription"), ogImage: str("ogImage"),
     canonicalUrl: str("canonicalUrl"), noIndex: bool("noIndex"), sitemapExclude: bool("sitemapExclude"),
     nofollow: bool("nofollow"), schemaType: str("schemaType"), faq, addRedirectOnSlugChange: bool("addRedirect"),
@@ -128,6 +130,74 @@ export async function seoSaveHandler(c: Context<AppEnv>): Promise<Response> {
   if (!r.ok) return json({ ok: false, error: r.error }, 400)
   await audit(master, customer.id, "site.seo_saved", site.domain, { postId, slugChanged: r.slugChanged }).catch(() => {})
   return json({ ok: true, slugChanged: r.slugChanged, redirectAdded: r.redirectAdded })
+}
+
+// ─────────────────────── image SEO (S2) ───────────────────────
+// Media-library alt text + filename hygiene. Plain HTML form POST — no client
+// JS needed. Edits library metadata only, so the live site is unaffected until
+// images are (re)used (byte-identical, rail #3).
+
+export async function imageSeoHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const lib = site.cms_site_id ? await listSiteImages(master, site.cms_site_id).catch(() => ({ images: [], total: 0, missingAlt: 0 })) : { images: [], total: 0, missingAlt: 0 }
+
+  const saved = c.req.query("saved")
+  const notice = saved ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — updated ${escapeHtml(saved)}.</p></div>` : ""
+
+  const rows = lib.images.length
+    ? lib.images.map((im) => `<tr style="border-top:1px solid #1f2937">
+        <td style="padding:8px 6px"><img src="${escapeAttr(im.url)}" alt="" loading="lazy" style="width:56px;height:56px;object-fit:cover;border-radius:6px;background:#111" /></td>
+        <td style="padding:8px 6px;font-size:12px">
+          <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="slugify" value="${escapeAttr(im.id)}" /><span class="muted" style="word-break:break-all">${escapeHtml(im.filename)}</span></label>
+        </td>
+        <td style="padding:8px 6px">
+          <input name="alt_${escapeAttr(im.id)}" value="${escapeAttr(im.alt ?? "")}" placeholder="Describe this image…" maxlength="300"
+                 style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid ${im.hasAlt ? "#374151" : "#b45309"};background:#0b0f17;color:#fafafa;font-size:13px" />
+        </td>
+      </tr>`).join("")
+    : `<tr><td colspan="3" class="muted" style="padding:12px 6px">No images in the media library yet.</td></tr>`
+
+  const body = `
+    ${notice}
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">Image SEO</h2>
+      <p class="muted" style="font-size:13px">Alt text describes an image for search engines and screen readers. ${lib.missingAlt ? `<strong style="color:#fcd34d">${lib.missingAlt} of ${lib.total}</strong> images are missing it.` : `All ${lib.total} images have alt text. 🎉`}</p>
+    </div>
+    <form method="post" action="/app/sites/${escapeAttr(siteId)}/images">
+      <div class="card" style="padding:6px 10px"><table style="width:100%;border-collapse:collapse">
+        <thead><tr style="font-size:11px;text-transform:uppercase;letter-spacing:.04em" class="muted">
+          <th style="text-align:left;padding:6px">Image</th><th style="text-align:left;padding:6px">Filename <span style="font-weight:400">(tick to slugify)</span></th><th style="text-align:left;padding:6px">Alt text</th>
+        </tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="card" style="display:flex;justify-content:flex-end"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save changes</button></div>
+    </form>`
+  return c.html(renderSaasLayout({ title: "Image SEO", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+export async function imageSeoSaveHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q = "") => new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/images${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back()
+
+  const form = await c.req.parseBody({ all: true })
+  const alts: AltUpdate[] = []
+  const slugifyIds: string[] = []
+  for (const [k, v] of Object.entries(form)) {
+    if (k.startsWith("alt_")) alts.push({ id: k.slice(4), alt: Array.isArray(v) ? String(v[0]) : String(v) })
+    else if (k === "slugify") (Array.isArray(v) ? v : [v]).forEach((x) => slugifyIds.push(String(x)))
+  }
+  const altRes = await bulkUpdateAlt(master, site.cms_site_id, alts)
+  const slugRes = slugifyIds.length ? await slugifyFilenames(master, site.cms_site_id, slugifyIds) : { updated: 0 }
+  await audit(master, customer.id, "site.image_seo_saved", site.domain, { alts: altRes.updated, filenames: slugRes.updated }).catch(() => {})
+  const parts = [altRes.updated ? `${altRes.updated} alt text${altRes.updated === 1 ? "" : "s"}` : "", slugRes.updated ? `${slugRes.updated} filename${slugRes.updated === 1 ? "" : "s"}` : ""].filter(Boolean)
+  return back(parts.length ? `?saved=${encodeURIComponent(parts.join(" + "))}` : "")
 }
 
 /** Serve the cockpit's vanilla JS (no build step). Public — it's just a script. */

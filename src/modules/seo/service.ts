@@ -20,6 +20,8 @@ export interface PostSeoRow {
   published: boolean
   excerpt: string | null
   coverImage: string | null
+  content: string
+  focusKeyword: string | null
   metaTitle: string | null
   metaDescription: string | null
   ogTitle: string | null
@@ -33,10 +35,26 @@ export interface PostSeoRow {
   faq: FaqItem[]
 }
 
-async function siteDbFor(master: Client, cmsSiteId: string): Promise<Client | null> {
+export async function siteDbFor(master: Client, cmsSiteId: string): Promise<Client | null> {
   const r = await master.execute({ sql: "SELECT turso_url, turso_token FROM sites WHERE id = ? LIMIT 1", args: [cmsSiteId] })
   if (!r.rows.length) return null
   return getSiteDb(r.rows[0].turso_url as string, r.rows[0].turso_token as string)
+}
+
+/** Trigger a rebuild through the normal pipeline (safety rail #1). Best-effort:
+ *  a missing/failed dispatch is logged, never thrown. Shared by every SEO
+ *  writer (cockpit, image SEO, …) so all edits take the same covenant-gated path. */
+export async function dispatchRebuild(env: CloudflareEnv, master: Client, customerId: string, repoFullName: string | null, reason: string): Promise<void> {
+  if (!repoFullName) return
+  const gh = await getConnection(master, customerId, "github")
+  const installationId = Number((JSON.parse(gh?.meta || "{}") as { installationId?: number }).installationId ?? 0)
+  if (!installationId) return
+  try {
+    const token = await installationToken(env, installationId)
+    await repositoryDispatch(token, repoFullName, "content-updated", { reason })
+  } catch (err) {
+    console.error(`seo rebuild dispatch failed (${reason}):`, err instanceof Error ? err.message : err)
+  }
 }
 
 function parseFaq(raw: string | null): FaqItem[] {
@@ -64,7 +82,7 @@ export async function loadPostSeo(master: Client, cmsSiteId: string, postId: str
   const siteDb = await siteDbFor(master, cmsSiteId)
   if (!siteDb) return null
   const r = await siteDb.execute({
-    sql: `SELECT id, title, slug, published, excerpt, cover_image, seo_title, seo_description,
+    sql: `SELECT id, title, slug, published, excerpt, cover_image, content, seo_keywords, seo_title, seo_description,
                  og_title, og_description, og_image, canonical_url, no_index,
                  sitemap_exclude, nofollow, schema_type, faq_json
           FROM posts WHERE id = ? AND type = 'post' LIMIT 1`,
@@ -75,6 +93,7 @@ export async function loadPostSeo(master: Client, cmsSiteId: string, postId: str
   return {
     id: String(p.id), title: String(p.title ?? ""), slug: String(p.slug ?? ""), published: Number(p.published) === 1,
     excerpt: (p.excerpt as string | null) ?? null, coverImage: (p.cover_image as string | null) ?? null,
+    content: String(p.content ?? ""), focusKeyword: (p.seo_keywords as string | null) ?? null,
     metaTitle: (p.seo_title as string | null) ?? null, metaDescription: (p.seo_description as string | null) ?? null,
     ogTitle: (p.og_title as string | null) ?? null, ogDescription: (p.og_description as string | null) ?? null,
     ogImage: (p.og_image as string | null) ?? null, canonicalUrl: (p.canonical_url as string | null) ?? null,
@@ -84,7 +103,7 @@ export async function loadPostSeo(master: Client, cmsSiteId: string, postId: str
 }
 
 export interface SeoUpdate {
-  metaTitle: string; metaDescription: string; slug: string
+  metaTitle: string; metaDescription: string; slug: string; focusKeyword: string
   ogTitle: string; ogDescription: string; ogImage: string
   canonicalUrl: string; noIndex: boolean; sitemapExclude: boolean; nofollow: boolean
   schemaType: string; faq: FaqItem[]
@@ -119,11 +138,11 @@ export async function savePostSeo(env: CloudflareEnv, customerId: string, cmsSit
 
   const faqJson = u.faq.filter((f) => f.question?.trim() && f.answer?.trim())
   await siteDb.execute({
-    sql: `UPDATE posts SET seo_title=?, seo_description=?, slug=?, og_title=?, og_description=?, og_image=?,
+    sql: `UPDATE posts SET seo_title=?, seo_description=?, seo_keywords=?, slug=?, og_title=?, og_description=?, og_image=?,
              canonical_url=?, no_index=?, sitemap_exclude=?, nofollow=?, schema_type=?, faq_json=?, updated_at=datetime('now')
           WHERE id=?`,
     args: [
-      u.metaTitle.trim() || null, u.metaDescription.trim() || null, newSlug,
+      u.metaTitle.trim() || null, u.metaDescription.trim() || null, u.focusKeyword.trim() || null, newSlug,
       u.ogTitle.trim() || null, u.ogDescription.trim() || null, u.ogImage.trim() || null,
       u.canonicalUrl.trim() || null, u.noIndex ? 1 : 0, u.sitemapExclude ? 1 : 0, u.nofollow ? 1 : 0,
       u.schemaType || null, faqJson.length ? JSON.stringify(faqJson) : null, postId,
@@ -141,17 +160,6 @@ export async function savePostSeo(env: CloudflareEnv, customerId: string, cmsSit
   }
 
   // Rebuild through the normal pipeline (safety rail #1).
-  if (repoFullName) {
-    const gh = await getConnection(master, customerId, "github")
-    const installationId = Number((JSON.parse(gh?.meta || "{}") as { installationId?: number }).installationId ?? 0)
-    if (installationId) {
-      try {
-        const token = await installationToken(env, installationId)
-        await repositoryDispatch(token, repoFullName, "content-updated", { reason: "seo-cockpit" })
-      } catch (err) {
-        console.error("seo save: rebuild dispatch failed:", err instanceof Error ? err.message : err)
-      }
-    }
-  }
+  await dispatchRebuild(env, master, customerId, repoFullName, "seo-cockpit")
   return { ok: true, slugChanged, redirectAdded }
 }

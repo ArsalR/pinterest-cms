@@ -6,6 +6,7 @@ import { describe, it, expect } from "vitest"
 import {
   parseWxr, parseRestPosts, tagText, slugify,
   originalPath, extractImageUrls, rewriteImageUrls,
+  postMeta, extractSeoMeta,
 } from "./wordpress"
 
 const WXR = `<?xml version="1.0" encoding="UTF-8"?>
@@ -69,6 +70,71 @@ describe("parseWxr (K9 WordPress import)", () => {
 
   it("returns empty (never throws) on junk input", () => {
     expect(parseWxr("not xml at all")).toEqual({ posts: [], skipped: 0 })
+  })
+})
+
+// ─────────────────────── Yoast / Rank Math SEO mapping (S2) ───────────────────────
+
+const YOAST_ITEM = `<rss xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><item>
+  <title>Yoast Post</title>
+  <content:encoded><![CDATA[<p>Body content here.</p>]]></content:encoded>
+  <wp:post_name><![CDATA[yoast-post]]></wp:post_name>
+  <wp:post_type><![CDATA[post]]></wp:post_type>
+  <wp:postmeta><wp:meta_key><![CDATA[_yoast_wpseo_title]]></wp:meta_key><wp:meta_value><![CDATA[Custom SEO Title]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[_yoast_wpseo_metadesc]]></wp:meta_key><wp:meta_value><![CDATA[A tuned meta description.]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[_yoast_wpseo_focuskw]]></wp:meta_key><wp:meta_value><![CDATA[espresso]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[_yoast_wpseo_canonical]]></wp:meta_key><wp:meta_value><![CDATA[https://example.com/canonical/]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[_yoast_wpseo_meta-robots-noindex]]></wp:meta_key><wp:meta_value><![CDATA[1]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[_yoast_wpseo_opengraph-title]]></wp:meta_key><wp:meta_value><![CDATA[OG Title]]></wp:meta_value></wp:postmeta>
+</item></channel></rss>`
+
+const RANKMATH_ITEM = `<rss xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><item>
+  <title>Rank Post</title>
+  <content:encoded><![CDATA[<p>Body content here.</p>]]></content:encoded>
+  <wp:post_name><![CDATA[rank-post]]></wp:post_name>
+  <wp:post_type><![CDATA[post]]></wp:post_type>
+  <wp:postmeta><wp:meta_key><![CDATA[rank_math_title]]></wp:meta_key><wp:meta_value><![CDATA[RM SEO Title]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[rank_math_description]]></wp:meta_key><wp:meta_value><![CDATA[RM meta description.]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[rank_math_robots]]></wp:meta_key><wp:meta_value><![CDATA[a:2:{i:0;s:7:"noindex";i:1;s:8:"nofollow";}]]></wp:meta_value></wp:postmeta>
+  <wp:postmeta><wp:meta_key><![CDATA[rank_math_canonical_url]]></wp:meta_key><wp:meta_value><![CDATA[https://example.com/rm/]]></wp:meta_value></wp:postmeta>
+</item></channel></rss>`
+
+describe("extractSeoMeta (Yoast / Rank Math)", () => {
+  it("parses all postmeta pairs into a map", () => {
+    const m = postMeta(YOAST_ITEM)
+    expect(m.get("_yoast_wpseo_title")).toBe("Custom SEO Title")
+    expect(m.get("_yoast_wpseo_meta-robots-noindex")).toBe("1")
+  })
+
+  it("maps Yoast meta onto the normalized shape", () => {
+    const seo = extractSeoMeta(postMeta(YOAST_ITEM))!
+    expect(seo.source).toBe("yoast")
+    expect(seo.seoTitle).toBe("Custom SEO Title")
+    expect(seo.seoDescription).toBe("A tuned meta description.")
+    expect(seo.focusKeyword).toBe("espresso")
+    expect(seo.canonicalUrl).toBe("https://example.com/canonical/")
+    expect(seo.noindex).toBe(true)
+    expect(seo.ogTitle).toBe("OG Title")
+    expect(seo.nofollow).toBeUndefined()
+  })
+
+  it("maps Rank Math meta incl. serialized robots array", () => {
+    const seo = extractSeoMeta(postMeta(RANKMATH_ITEM))!
+    expect(seo.source).toBe("rankmath")
+    expect(seo.seoTitle).toBe("RM SEO Title")
+    expect(seo.noindex).toBe(true)
+    expect(seo.nofollow).toBe(true)
+    expect(seo.canonicalUrl).toBe("https://example.com/rm/")
+  })
+
+  it("returns undefined when neither plugin left meta (plain export = today)", () => {
+    expect(extractSeoMeta(new Map())).toBeUndefined()
+    expect(extractSeoMeta(new Map([["some_other_key", "x"]]))).toBeUndefined()
+  })
+
+  it("parseWxr attaches seo meta to the post", () => {
+    const { posts } = parseWxr(YOAST_ITEM)
+    expect(posts[0].seo?.seoTitle).toBe("Custom SEO Title")
   })
 })
 

@@ -115,6 +115,7 @@ export async function importRunHandler(c: Context<AppEnv>): Promise<Response> {
       r.skippedNonPost ? `ignored ${r.skippedNonPost} non-post items` : "",
       r.redirectsCreated ? `added ${r.redirectsCreated} redirect${r.redirectsCreated === 1 ? "" : "s"}` : "",
       r.imagesRehosted ? `rehosted ${r.imagesRehosted} image${r.imagesRehosted === 1 ? "" : "s"}` : "",
+      r.seoMapped ? `mapped SEO on ${r.seoMapped} post${r.seoMapped === 1 ? "" : "s"} (Yoast/Rank Math)` : "",
     ].filter(Boolean)
     const msg = `Imported ${r.imported} post${r.imported === 1 ? "" : "s"} as drafts${extras.length ? " — " + extras.join(", ") : ""}. Review them in Drafts & quality gate.`
     return back({ done: msg })
