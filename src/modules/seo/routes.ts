@@ -15,8 +15,8 @@ import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, planGate, type Customer } from "../customers"
 import { getConnectionSecret, getEdgeBotState, setAiBotWafRule, setBotFightMode, aiBotWafExpression, type EdgeBotState } from "../connections"
 import { SCHEMA_TYPES } from "./analyze"
-import { listPostsForSeo, loadPostSeo, savePostSeo, type SeoUpdate } from "./service"
-import { listSiteImages, bulkUpdateAlt, slugifyFilenames, type AltUpdate } from "./images"
+import { listPostsForSeo, loadPostSeo, savePostSeo, dispatchRebuild, type SeoUpdate } from "./service"
+import { listSiteImages, bulkUpdateAlt, bulkUpdateCaptions, slugifyFilenames, loadImageLicense, saveImageLicense, type AltUpdate } from "./images"
 import { listAuthors } from "./newsService"
 import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, AI_BOTS, type SeoSettings } from "./settings"
 import { loadSeoSettings, saveSeoSettings, saveProfiles } from "./settingsService"
@@ -262,6 +262,9 @@ export async function imageSeoHandler(c: Context<AppEnv>): Promise<Response> {
   if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
   const lib = site.cms_site_id ? await listSiteImages(master, site.cms_site_id).catch(() => ({ images: [], total: 0, missingAlt: 0 })) : { images: [], total: 0, missingAlt: 0 }
   const assist = await assistAvailable(master, customer.id).catch(() => false)
+  const imgSettings = site.cms_site_id ? await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS) : DEFAULT_SEO_SETTINGS
+  const imageProfile = imgSettings.profiles.includes("image")
+  const license = imageProfile && site.cms_site_id ? await loadImageLicense(master, site.cms_site_id).catch(() => ({ licenseUrl: "", acquireLicenseUrl: "", creatorName: "" })) : { licenseUrl: "", acquireLicenseUrl: "", creatorName: "" }
   const suggestId = c.req.query("suggest_id") ?? ""
   const suggestAlt = c.req.query("suggest_alt") ?? ""
 
@@ -283,8 +286,12 @@ export async function imageSeoHandler(c: Context<AppEnv>): Promise<Response> {
         </td>
         <td style="padding:8px 6px">
           <div style="display:flex;gap:6px;align-items:center">
+          <div style="flex:1">
           <input name="alt_${escapeAttr(im.id)}" value="${escapeAttr(im.id === suggestId && suggestAlt ? suggestAlt : im.alt ?? "")}" placeholder="Describe this image…" maxlength="300"
-                 style="flex:1;padding:7px 9px;border-radius:6px;border:1px solid ${im.id === suggestId ? "#7c5e10" : im.hasAlt ? "#374151" : "#b45309"};background:#0b0f17;color:#fafafa;font-size:13px" />
+                 style="width:100%;padding:7px 9px;border-radius:6px;border:1px solid ${im.id === suggestId ? "#7c5e10" : im.hasAlt ? "#374151" : "#b45309"};background:#0b0f17;color:#fafafa;font-size:13px" />
+          ${imageProfile ? `<input name="caption_${escapeAttr(im.id)}" value="${escapeAttr(im.caption ?? "")}" placeholder="Caption (shown on the page & in the image sitemap)" maxlength="300"
+                 style="width:100%;margin-top:4px;padding:6px 9px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#a3a3a3;font-size:12px" />` : ""}
+          </div>
           ${assist ? `<button type="submit" formaction="/app/sites/${escapeAttr(siteId)}/images/suggest" name="mediaId" value="${escapeAttr(im.id)}" title="Suggest alt text with AI (uses your Anthropic key)" style="background:none;border:1px solid #404040;border-radius:6px;color:#fcd34d;font-size:11px;padding:4px 8px;cursor:pointer;white-space:nowrap">✨</button>` : ""}
           </div>
         </td>
@@ -303,7 +310,19 @@ export async function imageSeoHandler(c: Context<AppEnv>): Promise<Response> {
           <th style="text-align:left;padding:6px">Image</th><th style="text-align:left;padding:6px">Filename <span style="font-weight:400">(tick to slugify)</span></th><th style="text-align:left;padding:6px">Alt text</th>
         </tr></thead><tbody>${rows}</tbody></table></div>
       <div class="card" style="display:flex;justify-content:flex-end"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save changes</button></div>
-    </form>`
+    </form>
+    ${imageProfile ? `<form method="post" action="/app/sites/${escapeAttr(siteId)}/images/license">
+      <div class="card">
+        <h3 style="margin:0 0 4px;font-size:14px">Image licensing</h3>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">Fill these in to be eligible for the "Licensable" badge in Google Images (ImageObject license/creator schema on your pages).</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+          <div><label class="muted" style="font-size:12px">License page URL</label><input name="licenseUrl" value="${escapeAttr(license.licenseUrl)}" placeholder="https://…/image-license/" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px" /></div>
+          <div><label class="muted" style="font-size:12px">"Get a license" URL</label><input name="acquireLicenseUrl" value="${escapeAttr(license.acquireLicenseUrl)}" placeholder="https://…/contact/" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px" /></div>
+          <div><label class="muted" style="font-size:12px">Creator name</label><input name="creatorName" value="${escapeAttr(license.creatorName)}" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px" /></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px"><button type="submit" style="background:#374151;color:#fff;border:0;border-radius:7px;padding:8px 15px;font-size:13px;cursor:pointer">Save licensing</button></div>
+      </div>
+    </form>` : ""}`
   return c.html(renderSaasLayout({ title: "Image SEO", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
 
@@ -323,6 +342,11 @@ export async function imageSeoSaveHandler(c: Context<AppEnv>): Promise<Response>
     if (k.startsWith("alt_")) alts.push({ id: k.slice(4), alt: Array.isArray(v) ? String(v[0]) : String(v) })
     else if (k === "slugify") (Array.isArray(v) ? v : [v]).forEach((x) => slugifyIds.push(String(x)))
   }
+  const captions: Array<{ id: string; caption: string }> = []
+  for (const [k, v] of Object.entries(form)) {
+    if (k.startsWith("caption_")) captions.push({ id: k.slice(8), caption: Array.isArray(v) ? String(v[0]) : String(v) })
+  }
+  if (captions.length) await bulkUpdateCaptions(master, site.cms_site_id, captions).catch(() => {})
   const altRes = await bulkUpdateAlt(master, site.cms_site_id, alts)
   const slugRes = slugifyIds.length ? await slugifyFilenames(master, site.cms_site_id, slugifyIds) : { updated: 0 }
   await audit(master, customer.id, "site.image_seo_saved", site.domain, { alts: altRes.updated, filenames: slugRes.updated }).catch(() => {})
@@ -918,6 +942,26 @@ export async function imageAltSuggestHandler(c: Context<AppEnv>): Promise<Respon
   await audit(master, customer.id, "site.seo_assist_used", site.domain, { task: "alt_text", ok: r.ok }).catch(() => {})
   if (!r.ok) return back(`?assist_error=${encodeURIComponent(r.error ?? "Suggestion failed.")}`)
   return back(`?suggest_id=${encodeURIComponent(mediaId)}&suggest_alt=${encodeURIComponent(r.text ?? "")}`)
+}
+
+/** Save the site-level image license config (V1.3 P4). */
+export async function imageLicenseSaveHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q = "") => new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/images${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back()
+  const form = (await c.req.parseBody()) as Record<string, unknown>
+  await saveImageLicense(master, site.cms_site_id, {
+    licenseUrl: String(form.licenseUrl ?? ""),
+    acquireLicenseUrl: String(form.acquireLicenseUrl ?? ""),
+    creatorName: String(form.creatorName ?? ""),
+  }).catch(() => {})
+  await dispatchRebuild(c.env, master, customer.id, site.repo_full_name, "image-license")
+  await audit(master, customer.id, "site.image_license_saved", site.domain).catch(() => {})
+  return back(`?saved=${encodeURIComponent("image licensing")}`)
 }
 
 /** Serve the cockpit's vanilla JS (no build step). Public — it's just a script. */

@@ -85,6 +85,7 @@ function addChildSitemap(childFile) {
   return true
 }
 if ((seoSettings.profiles ?? []).includes("news")) addChildSitemap("news-sitemap.xml")
+if ((seoSettings.profiles ?? []).includes("image")) addChildSitemap("image-sitemap.xml")
 
 // ─────────── Vetted site scripts (V1.3): budget gate + CSP + zero-JS manifest ───────────
 // Mirrors src/lib/cms.ts TEMPLATE_SCRIPT_CATALOG / src/modules/seo/scripts.ts.

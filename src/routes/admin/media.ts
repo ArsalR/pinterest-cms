@@ -6,6 +6,7 @@ import type { AppEnv } from "../../lib/types"
 import { renderAdminLayout } from "../../views/admin/Layout"
 import { escapeHtml, escapeAttr, formatDate, sanitizeFilename, cuid } from "../../lib/utils"
 import { uploadToR2, deleteFromR2 } from "../../lib/r2"
+import { stripJpegExif, imageProfileOn, isJpeg } from "../../lib/imageMeta"
 
 export const mediaAdminRoute = new Hono<AppEnv>()
 
@@ -162,9 +163,12 @@ mediaAdminRoute.post("/upload", async (c) => {
     if (!f.type.startsWith("image/")) return c.json({ error: `${f.name} is not an image` }, 415)
   }
 
+  // V1.3 Image SEO profile: strip EXIF/GPS from JPEGs at the door.
+  const stripExif = await imageProfileOn(siteDb)
   const results = await Promise.all(
     files.map(async (f) => {
-      const buf = await f.arrayBuffer()
+      let buf = await f.arrayBuffer()
+      if (stripExif && isJpeg(new Uint8Array(buf))) buf = stripJpegExif(buf)
       const safeName = sanitizeFilename(f.name)
       const { url, key } = await uploadToR2(c.env, hostname, safeName, buf, f.type)
       return { id: cuid(), url, key, filename: safeName, size: f.size }

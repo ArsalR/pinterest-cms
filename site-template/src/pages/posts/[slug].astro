@@ -1,7 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro"
 import Img from "../../components/Img.astro"
-import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, fetchSeoSettings, profileOn, fetchAuthors, personLd, type CmsPost } from "../../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, fetchSeoSettings, profileOn, fetchAuthors, personLd, imageObjectLd, type CmsPost } from "../../lib/cms"
 
 export async function getStaticPaths() {
   const config = loadConfig()
@@ -24,6 +24,9 @@ const path = `/posts/${post.slug}/`
 // node join the graph when an author is assigned.
 const seoSettings = await fetchSeoSettings(config)
 const newsOn = profileOn(seoSettings, "news")
+// Image profile (V1.3 P4): ImageObject with license/creator for the cover
+// image — licensable-images eligibility. Null unless configured.
+const coverImageLd = profileOn(seoSettings, "image") && post.coverImage ? imageObjectLd(post.coverImage, seoSettings) : null
 const authors = await fetchAuthors(config)
 const author = post.authorId ? authors.find((a) => a.id === post.authorId) : undefined
 const article = {
@@ -63,7 +66,7 @@ const faqPage =
     : null
 const schema = {
   "@context": "https://schema.org",
-  "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : []), ...(author ? [personLd(author, `https://${host}/`)] : [])],
+  "@graph": [article, breadcrumb, ...(faqPage ? [faqPage] : []), ...(author ? [personLd(author, `https://${host}/`)] : []), ...(coverImageLd ? [coverImageLd] : [])],
 }
 // Robots directive from the cockpit's index/follow toggles. Absent (both off)
 // emits no robots meta at all — exactly today's behavior (rail #3).
