@@ -43,6 +43,42 @@ async function loadSite(master: Awaited<ReturnType<typeof masterDb>>, siteId: st
   return r.rows.length ? (r.rows[0] as unknown as SeoSite) : null
 }
 
+// ─────────────────────── SEO hub (S6 — one place per job) ───────────────────────
+// The single entry point for every SEO job. Each card names the job in plain
+// language and links to the one tool that does it — no overlapping surfaces.
+
+export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+
+  const jobs: Array<{ href: string; title: string; desc: string }> = [
+    { href: "posts", title: "Tune a post's search snippet", desc: "Per-post title, description, social card, slug, schema and FAQ — with a live Google preview." },
+    { href: "images", title: "Fix image alt text", desc: "See which images are missing alt text and fill them in, in bulk." },
+    { href: "seo-settings", title: "Site-wide search settings", desc: "Crawler rules (incl. one-click AI-bot blocking), feeds, archives and global schema." },
+    { href: "redirects", title: "Redirect old URLs", desc: "301/302/410 rules, branded short links, CSV import, and chain detection." },
+    { href: "404s", title: "Catch broken links", desc: "Your most-hit missing URLs from Cloudflare, with one-click 301s." },
+    { href: "indexing", title: "Check Google indexing", desc: "How much of the site Google has indexed, page-by-page status, and a deindex watch." },
+  ]
+  const cards = jobs.map((j) => `
+    <a href="/app/sites/${escapeAttr(siteId)}/${j.href}" style="display:block;text-decoration:none;color:inherit">
+      <div class="card" style="height:100%">
+        <h3 style="margin:0 0 4px;font-size:14px;color:#fafafa">${escapeHtml(j.title)} →</h3>
+        <p class="muted" style="margin:0;font-size:12px">${escapeHtml(j.desc)}</p>
+      </div>
+    </a>`).join("")
+
+  const body = `
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">SEO</h2>
+      <p class="muted" style="font-size:13px">Everything search-related, one place per job. Every change rebuilds your site through the normal quality gates.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px">${cards}</div>`
+  return c.html(renderSaasLayout({ title: "SEO", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
 // ─────────────────────── post list (the cockpit entry) ───────────────────────
 
 export async function seoPostsHandler(c: Context<AppEnv>): Promise<Response> {
@@ -62,7 +98,7 @@ export async function seoPostsHandler(c: Context<AppEnv>): Promise<Response> {
     : `<tr><td colspan="2" class="muted">No posts yet.</td></tr>`
 
   const body = `
-    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/seo" style="color:#93c5fd">← SEO</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">SEO cockpit</h2>
       <p class="muted" style="font-size:13px">Fine-tune each post's search snippet, social card, and indexing. Everything's optional — the defaults are already good.</p>
     </div>
@@ -130,9 +166,12 @@ export async function seoSaveHandler(c: Context<AppEnv>): Promise<Response> {
     ogTitle: str("ogTitle"), ogDescription: str("ogDescription"), ogImage: str("ogImage"),
     canonicalUrl: str("canonicalUrl"), noIndex: bool("noIndex"), sitemapExclude: bool("sitemapExclude"),
     nofollow: bool("nofollow"), schemaType: str("schemaType"), faq, addRedirectOnSlugChange: bool("addRedirect"),
+    typedOverride: str("typedOverride"),
   }
   const r = await savePostSeo(c.env, customer.id, site.cms_site_id, site.repo_full_name, postId, update, master)
-  if (!r.ok) return json({ ok: false, error: r.error }, 400)
+  if (!r.ok) return json({ ok: false, error: r.error, needOverride: r.needOverride ?? false }, 400)
+  // Rail #2: an override of the SEO-safety gate is always audit-logged.
+  if (r.overrodeSafety) await audit(master, customer.id, "site.seo_safety_overridden", site.domain, { postId }).catch(() => {})
   await audit(master, customer.id, "site.seo_saved", site.domain, { postId, slugChanged: r.slugChanged }).catch(() => {})
   return json({ ok: true, slugChanged: r.slugChanged, redirectAdded: r.redirectAdded })
 }
@@ -168,7 +207,7 @@ export async function imageSeoHandler(c: Context<AppEnv>): Promise<Response> {
 
   const body = `
     ${notice}
-    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/seo" style="color:#93c5fd">← SEO</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">Image SEO</h2>
       <p class="muted" style="font-size:13px">Alt text describes an image for search engines and screen readers. ${lib.missingAlt ? `<strong style="color:#fcd34d">${lib.missingAlt} of ${lib.total}</strong> images are missing it.` : `All ${lib.total} images have alt text. 🎉`}</p>
     </div>
@@ -217,7 +256,7 @@ function lines(v: unknown): string[] {
 function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opts: { error?: string; saved?: boolean; needOverride?: boolean } = {}): string {
   const chk = (on: boolean) => (on ? "checked" : "")
   const notice = opts.saved
-    ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — your site is rebuilding with the new SEO settings.</p></div>`
+    ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — your site is rebuilding with the new SEO settings (usually ~2 minutes).</p></div>`
     : opts.error
       ? `<div class="card" style="border-color:#7f1d1d;background:#2a0d0d"><p style="margin:0;color:#fca5a5;font-size:13px">${escapeHtml(opts.error)}</p></div>`
       : ""
@@ -228,7 +267,7 @@ function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opt
   const inputStyle = "width:100%;padding:8px 10px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px"
   return `
     ${notice}
-    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(domain)}</a></p>
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/seo" style="color:#93c5fd">← SEO</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">SEO settings</h2>
       <p class="muted" style="font-size:13px">Site-wide search settings. Everything here is optional — the defaults match a normal, fully-indexed site.</p>
     </div>
@@ -358,7 +397,7 @@ function renderRedirects(siteId: string, domain: string, rows: RedirectRow[], op
     </div>`
   return `
     ${notice}
-    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(domain)}</a></p>
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/seo" style="color:#93c5fd">← SEO</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">Redirects</h2>
       <p class="muted" style="font-size:13px">Send old or changed URLs to the right place (301/302), mark removed pages as gone (410), or make short branded links. <a href="/app/sites/${escapeAttr(siteId)}/404s" style="color:#93c5fd">See your 404s →</a></p>
     </div>
@@ -414,7 +453,7 @@ export async function redirectsAddHandler(c: Context<AppEnv>): Promise<Response>
   const r = await upsertRedirect(c.env, customer.id, site.cms_site_id, site.repo_full_name, input, master)
   if (!r.ok) return back("?error=" + encodeURIComponent(r.error ?? "Couldn't save."))
   await audit(master, customer.id, "site.redirect_saved", site.domain, { from: input.from, kind: input.kind }).catch(() => {})
-  return back("?saved=" + encodeURIComponent(`Redirect saved: ${input.from} → ${input.kind === "410" ? "gone" : input.to}. Live on the next rebuild.`))
+  return back("?saved=" + encodeURIComponent(`Redirect saved: ${input.from} → ${input.kind === "410" ? "gone" : input.to}. Live after the next rebuild (usually ~2 minutes).`))
 }
 
 export async function redirectsDeleteHandler(c: Context<AppEnv>): Promise<Response> {
@@ -428,7 +467,7 @@ export async function redirectsDeleteHandler(c: Context<AppEnv>): Promise<Respon
     await deleteRedirect(c.env, customer.id, site.cms_site_id, site.repo_full_name, String(form.id ?? ""), master).catch(() => {})
     await audit(master, customer.id, "site.redirect_deleted", site.domain).catch(() => {})
   }
-  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/redirects?saved=${encodeURIComponent("Redirect removed. Live on the next rebuild.")}` } })
+  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/redirects?saved=${encodeURIComponent("Redirect removed. Live after the next rebuild (usually ~2 minutes).")}` } })
 }
 
 export async function redirectsImportHandler(c: Context<AppEnv>): Promise<Response> {
@@ -442,7 +481,7 @@ export async function redirectsImportHandler(c: Context<AppEnv>): Promise<Respon
   const form = await c.req.parseBody()
   const res = await importRedirectsCsv(c.env, customer.id, site.cms_site_id, site.repo_full_name, String(form.csv ?? ""), master)
   await audit(master, customer.id, "site.redirects_imported", site.domain, { added: res.added, errors: res.errors.length }).catch(() => {})
-  const msg = `Imported ${res.added} redirect${res.added === 1 ? "" : "s"}${res.errors.length ? ` — ${res.errors.length} row(s) skipped` : ""}. Live on the next rebuild.`
+  const msg = `Imported ${res.added} redirect${res.added === 1 ? "" : "s"}${res.errors.length ? ` — ${res.errors.length} row(s) skipped` : ""}. Live after the next rebuild (usually ~2 minutes).`
   return back("?saved=" + encodeURIComponent(msg))
 }
 
@@ -484,7 +523,7 @@ export async function indexingHandler(c: Context<AppEnv>): Promise<Response> {
   const checking = c.req.query("check") === "1"
 
   const header = `
-    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/seo" style="color:#93c5fd">← SEO</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">Indexing</h2>
       <p class="muted" style="font-size:13px">How much of your site Google has actually indexed, straight from Search Console.</p>
     </div>`

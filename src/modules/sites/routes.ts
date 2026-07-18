@@ -392,11 +392,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
       ${site.status === "active" ? `<a class="btn" href="https://${escapeAttr(canonicalHost)}/" target="_blank">Open site ↗</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/design">Design</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/preview">Preview &amp; approve</a>
-        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/posts">SEO cockpit</a>
-        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/images">Image SEO</a>
-        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/seo-settings">SEO settings</a>
-        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/redirects">Redirects</a>
-        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/indexing">Indexing</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/seo">SEO</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/drafts">Drafts &amp; quality gate</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/insights">Internal linking</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/pseo">Programmatic SEO</a>

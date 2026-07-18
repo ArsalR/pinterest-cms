@@ -39,6 +39,24 @@ export interface SeoSafetyResult {
 }
 
 /**
+ * Cockpit-save transition gate (S6 wiring of rail #2): evaluate turning
+ * noindex ON for one more published post, given the site's current counts.
+ * Pure — the service passes live counts; the phrase requirement and audit
+ * contract are identical to checkSeoSafety. Unit-tested.
+ */
+export function noindexTransitionGate(
+  totalPublished: number,
+  currentNoindexCount: number,
+  typedOverride?: string | null
+): SeoSafetyResult {
+  return checkSeoSafety({
+    totalPublished,
+    noindexCount: currentNoindexCount + 1,
+    typedOverride: typedOverride ?? null,
+  })
+}
+
+/**
  * Evaluate the SEO-safety gate. Pure — no I/O, no audit logging (the caller
  * logs when `overridden` is true). Zero published pages ⇒ nothing to protect,
  * so the gate passes trivially.

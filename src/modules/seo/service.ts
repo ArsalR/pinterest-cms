@@ -12,6 +12,7 @@ import { getSiteDb } from "../../lib/turso"
 import { cuid } from "../../lib/utils"
 import { getConnection, installationToken, repositoryDispatch } from "../connections"
 import { isValidSlug, isSchemaType, type FaqItem } from "./analyze"
+import { noindexTransitionGate, SEO_SAFETY_OVERRIDE_PHRASE } from "./safety"
 
 export interface PostSeoRow {
   id: string
@@ -108,6 +109,8 @@ export interface SeoUpdate {
   canonicalUrl: string; noIndex: boolean; sitemapExclude: boolean; nofollow: boolean
   schemaType: string; faq: FaqItem[]
   addRedirectOnSlugChange: boolean
+  /** SEO-safety override phrase, required only when the save trips rail #2. */
+  typedOverride?: string
 }
 
 export interface SaveResult {
@@ -115,6 +118,12 @@ export interface SaveResult {
   error?: string
   slugChanged?: boolean
   redirectAdded?: boolean
+  /** True when the save was refused by the SEO-safety gate and needs the
+   *  typed override phrase to proceed (rail #2). */
+  needOverride?: boolean
+  /** True when a blocked save went through under a valid typed override —
+   *  the route audit-logs this. */
+  overrodeSafety?: boolean
 }
 
 /** Persist SEO fields for a post; on a published slug change, offer a 301. */
@@ -134,6 +143,29 @@ export async function savePostSeo(env: CloudflareEnv, customerId: string, cmsSit
   if (newSlug !== cur.slug) {
     const dup = await siteDb.execute({ sql: "SELECT 1 FROM posts WHERE slug = ? AND id != ? LIMIT 1", args: [newSlug, postId] })
     if (dup.rows.length) return { ok: false, error: "Another post already uses that slug." }
+  }
+
+  // SEO-safety gate (rail #2): newly noindexing a published post must not push
+  // the site's deindexed share over the limit without an explicit typed
+  // override. Only checked on the transition (off → on) so an already-noindexed
+  // post can still be edited freely.
+  let overrodeSafety = false
+  if (u.noIndex && !cur.noIndex && cur.published) {
+    const counts = await siteDb.execute({
+      sql: "SELECT COUNT(*) AS total, SUM(CASE WHEN no_index = 1 THEN 1 ELSE 0 END) AS noidx FROM posts WHERE published = 1 AND type = 'post'",
+      args: [],
+    })
+    const total = Number(counts.rows[0]?.total ?? 0)
+    const noidx = Number(counts.rows[0]?.noidx ?? 0)
+    const gate = noindexTransitionGate(total, noidx, u.typedOverride ?? null)
+    if (!gate.passed) {
+      return {
+        ok: false,
+        needOverride: true,
+        error: `${gate.reasons.join(" ")} If you're sure, type "${SEO_SAFETY_OVERRIDE_PHRASE}" to confirm.`,
+      }
+    }
+    overrodeSafety = gate.overridden
   }
 
   const faqJson = u.faq.filter((f) => f.question?.trim() && f.answer?.trim())
@@ -161,5 +193,5 @@ export async function savePostSeo(env: CloudflareEnv, customerId: string, cmsSit
 
   // Rebuild through the normal pipeline (safety rail #1).
   await dispatchRebuild(env, master, customerId, repoFullName, "seo-cockpit")
-  return { ok: true, slugChanged, redirectAdded }
+  return { ok: true, slugChanged, redirectAdded, overrodeSafety }
 }

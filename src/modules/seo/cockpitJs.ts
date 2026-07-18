@@ -3,8 +3,9 @@
 // build step — the dashboard has none). Hand-written vanilla JS: 4 tabs, live
 // SERP + social previews (pixel-width truncation mirrored from analyze.ts), a
 // live Content-analysis tab (S2 — mirrors content.ts + the quality gate's own
-// rules), FAQ builder, fetch-based save with an undo-less success toast, and
-// the slug→redirect offer. Keyboard-navigable (native inputs + focusable tabs).
+// rules), FAQ builder, fetch-based save with one-click undo (S6), the rail-#2
+// typed-override flow, and the slug→redirect offer. Keyboard-navigable: native
+// inputs, focusable tabs, Left/Right arrows switch tabs.
 
 export const SEO_COCKPIT_JS = String.raw`(function () {
   var root = document.getElementById("seo-cockpit");
@@ -66,18 +67,32 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
         '<div style="display:flex;align-items:center;gap:10px;margin:12px 0 4px"><div id="ca-score" style="font-weight:700;font-size:22px">–</div><div class="muted" style="font-size:12px">Live check — same rules as the publish quality gate.</div></div>'+
         '<div id="content-checks"></div>'+
       '</div>'+
-      '<div style="display:flex;align-items:center;gap:12px;margin-top:16px;border-top:1px solid #262626;padding-top:12px"><button type="button" id="seo-save" class="btn">Save</button><span id="seo-toast" class="muted" style="font-size:13px"></span></div>'+
+      '<div id="seo-override" style="display:none;margin-top:12px;border:1px solid #b45309;border-radius:8px;padding:10px;background:#1c1104">'+
+        '<div id="seo-override-msg" style="font-size:13px;color:#fcd34d;margin-bottom:6px"></div>'+
+        '<input id="f-typedOverride" placeholder="NOINDEX ANYWAY" style="width:100%;background:#0a0a0a;border:1px solid #b45309;border-radius:8px;padding:9px;color:#fafafa;font-size:13px">'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:12px;margin-top:16px;border-top:1px solid #262626;padding-top:12px"><button type="button" id="seo-save" class="btn">Save</button><button type="button" id="seo-undo" class="btn ghost" style="display:none">Undo</button><span id="seo-toast" class="muted" style="font-size:13px"></span></div>'+
     '</div>';
 
   var $=function(id){return document.getElementById(id);};
   if(d.schemaType)$("f-schemaType").value=d.schemaType;
 
-  // tabs
-  root.querySelectorAll(".seo-tab").forEach(function(b){b.addEventListener("click",function(){
-    root.querySelectorAll(".seo-tab").forEach(function(x){x.style.borderBottomColor="transparent";x.style.color="#a3a3a3";});
+  // tabs — click + Left/Right arrow-key navigation (S6 keyboard nav)
+  var tabs=[].slice.call(root.querySelectorAll(".seo-tab"));
+  function selectTab(b){
+    tabs.forEach(function(x){x.style.borderBottomColor="transparent";x.style.color="#a3a3a3";});
     b.style.borderBottomColor="#fafafa";b.style.color="#fafafa";
     root.querySelectorAll(".seo-pane").forEach(function(p){p.style.display=p.getAttribute("data-pane")===b.getAttribute("data-tab")?"block":"none";});
-  });});
+  }
+  tabs.forEach(function(b,i){
+    b.addEventListener("click",function(){selectTab(b);});
+    b.addEventListener("keydown",function(e){
+      if(e.key!=="ArrowRight"&&e.key!=="ArrowLeft")return;
+      e.preventDefault();
+      var next=tabs[(i+(e.key==="ArrowRight"?1:tabs.length-1))%tabs.length];
+      next.focus();selectTab(next);
+    });
+  });
 
   // ── Content analysis (mirrors src/modules/seo/content.ts + the quality gate).
   // minWords 300 is the gate's own threshold — keep in sync with DEFAULT_GATE_CONFIG.
@@ -142,20 +157,62 @@ export const SEO_COCKPIT_JS = String.raw`(function () {
   (d.faq||[]).forEach(function(f){$("faq-list").appendChild(faqRow(f.question,f.answer));});
   $("faq-add").addEventListener("click",function(){$("faq-list").appendChild(faqRow("",""));});
 
-  $("seo-save").addEventListener("click",function(){
-    var btn=$("seo-save");btn.disabled=true;$("seo-toast").textContent="Saving…";
+  // Save + typed-override (rail #2) + undo (S6). "prev" snapshots the last
+  // successfully-saved payload so one click restores it.
+  var prev=null;
+  function payloadNow(){
     var faq=[].map.call($("faq-list").querySelectorAll(".faq-row"),function(r){return{question:r.querySelector(".faq-q").value,answer:r.querySelector(".faq-a").value};});
-    var payload={metaTitle:$("f-metaTitle").value,metaDescription:$("f-metaDescription").value,slug:$("f-slug").value,focusKeyword:$("f-focusKeyword").value,
+    return {metaTitle:$("f-metaTitle").value,metaDescription:$("f-metaDescription").value,slug:$("f-slug").value,focusKeyword:$("f-focusKeyword").value,
       ogTitle:$("f-ogTitle").value,ogDescription:$("f-ogDescription").value,ogImage:$("f-ogImage").value,
       canonicalUrl:$("f-canonicalUrl").value,noIndex:$("f-noIndex").checked,nofollow:$("f-nofollow").checked,
       sitemapExclude:$("f-sitemapExclude").checked,schemaType:$("f-schemaType").value,faq:faq,
-      addRedirect:$("f-addRedirect")?$("f-addRedirect").checked:false};
+      addRedirect:$("f-addRedirect")?$("f-addRedirect").checked:false,
+      typedOverride:$("f-typedOverride")?$("f-typedOverride").value:""};
+  }
+  function savedSnapshot(){
+    var p=payloadNow();p.typedOverride="";p.addRedirect=false;return p;
+  }
+  prev=savedSnapshot(); // page-load state = first undo target
+  function applyPayload(p){
+    $("f-metaTitle").value=p.metaTitle;$("f-metaDescription").value=p.metaDescription;$("f-slug").value=p.slug;$("f-focusKeyword").value=p.focusKeyword;
+    $("f-ogTitle").value=p.ogTitle;$("f-ogDescription").value=p.ogDescription;$("f-ogImage").value=p.ogImage;
+    $("f-canonicalUrl").value=p.canonicalUrl;$("f-noIndex").checked=p.noIndex;$("f-nofollow").checked=p.nofollow;
+    $("f-sitemapExclude").checked=p.sitemapExclude;$("f-schemaType").value=p.schemaType;
+    $("faq-list").innerHTML="";(p.faq||[]).forEach(function(f){$("faq-list").appendChild(faqRow(f.question,f.answer));});
+    refresh();
+  }
+  function send(payload,after){
+    var btn=$("seo-save");btn.disabled=true;$("seo-toast").textContent="Saving…";$("seo-toast").style.color="";
     fetch(root.getAttribute("data-save"),{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)})
       .then(function(r){return r.json();}).then(function(res){
         btn.disabled=false;
-        if(res.ok){d.slug=payload.slug;$("slug-redirect").style.display="none";$("seo-toast").textContent="Saved — rebuilding your site"+(res.redirectAdded?" (301 added)":"")+".";$("seo-toast").style.color="#86efac";}
-        else{$("seo-toast").textContent=res.error||"Couldn’t save.";$("seo-toast").style.color="#fca5a5";}
+        if(res.ok){
+          $("seo-override").style.display="none";if($("f-typedOverride"))$("f-typedOverride").value="";
+          d.slug=payload.slug;$("slug-redirect").style.display="none";
+          $("seo-toast").textContent="Saved — your site is rebuilding (usually ~2 minutes)"+(res.redirectAdded?", 301 added":"")+".";$("seo-toast").style.color="#86efac";
+          if(after)after();
+        } else if(res.needOverride){
+          $("seo-override").style.display="block";
+          $("seo-override-msg").textContent=res.error||"This change needs a typed confirmation.";
+          $("f-typedOverride").focus();
+          $("seo-toast").textContent="";
+        } else {$("seo-toast").textContent=res.error||"Couldn’t save.";$("seo-toast").style.color="#fca5a5";}
       }).catch(function(){btn.disabled=false;$("seo-toast").textContent="Network error — try again.";$("seo-toast").style.color="#fca5a5";});
+  }
+  $("seo-save").addEventListener("click",function(){
+    var snapshotBefore=prev;
+    send(payloadNow(),function(){
+      prev=snapshotBefore; // undo restores the state before THIS save
+      $("seo-undo").style.display="inline-block";
+    });
+  });
+  $("seo-undo").addEventListener("click",function(){
+    if(!prev)return;
+    applyPayload(prev);
+    send(prev,function(){
+      $("seo-undo").style.display="none";
+      prev=savedSnapshot();
+    });
   });
 
   refresh();
