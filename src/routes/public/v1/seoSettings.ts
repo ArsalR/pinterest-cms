@@ -34,10 +34,25 @@ seoSettingsRoutes.get("/", async (c) => {
     robotsExtra: "", rssEnabled: true, archivesEnabled: true,
     globalSchemaEnabled: false, orgName: "", orgLogo: "", socialProfiles: [] as string[],
     profiles: [] as string[],
+    scripts: [] as Array<{ id: string; config: string }>,
   }
-  // Valid profile ids — mirrors src/modules/seo/profiles.ts (CMS core stays
-  // dependency-clean of the SaaS modules, so the closed set is inlined).
+  // Valid profile/script ids — mirror src/modules/seo/{profiles,scripts}.ts
+  // (CMS core stays dependency-clean of the SaaS modules, so the closed sets
+  // are inlined; the template ALSO validates against its own catalog copy).
   const PROFILE_IDS = new Set(["local", "news", "ecommerce", "image", "ai"])
+  const SCRIPT_IDS = new Set(["plausible", "fathom", "ga4", "crisp", "cookieyes"])
+  const parseScripts = (raw: unknown): Array<{ id: string; config: string }> => {
+    if (typeof raw !== "string" || !raw.trim()) return []
+    try {
+      const a = JSON.parse(raw) as Array<{ id?: unknown; config?: unknown }>
+      if (!Array.isArray(a)) return []
+      return a
+        .map((v) => ({ id: String(v?.id ?? ""), config: String(v?.config ?? "").trim() }))
+        .filter((v) => SCRIPT_IDS.has(v.id) && v.config)
+    } catch {
+      return []
+    }
+  }
   let settings = defaults
   try {
     const r = await siteDb.execute({ sql: "SELECT * FROM seo_settings WHERE id = 'default' LIMIT 1", args: [] })
@@ -55,6 +70,7 @@ seoSettingsRoutes.get("/", async (c) => {
         orgLogo: (p.org_logo as string | null) ?? "",
         socialProfiles: jsonArr(p.social_profiles),
         profiles: jsonArr(p.profiles).filter((id) => PROFILE_IDS.has(id)),
+        scripts: parseScripts(p.scripts),
       }
     }
   } catch {

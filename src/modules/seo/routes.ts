@@ -23,6 +23,8 @@ import { detectChains, isBrandedLink, toRedirectsCsv, type RedirectKind, type Re
 import { listRedirects, upsertRedirect, deleteRedirect, importRedirectsCsv } from "./redirectsService"
 import { indexOverview, bulkInspect, BULK_INSPECT_CAP } from "./indexingService"
 import { assistAvailable, runAssist, type AssistTask } from "./assist"
+import { SCRIPT_CATALOG, parseEnabledScripts, checkScriptBudget, type EnabledScript } from "./scripts"
+import { saveScripts } from "./settingsService"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -87,6 +89,7 @@ export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
     { href: "redirects", title: "Redirect old URLs", desc: "301/302/410 rules, branded short links, CSV import, and chain detection." },
     { href: "404s", title: "Catch broken links", desc: "Your most-hit missing URLs from Cloudflare, with one-click 301s." },
     { href: "indexing", title: "Check Google indexing", desc: "How much of the site Google has indexed, page-by-page status, and a deindex watch." },
+    { href: "scripts", title: "Site scripts", desc: "Vetted analytics, chat and consent tools — real download cost shown, budget-capped, defer-only." },
   ]
   const cards = jobs.map((j) => `
     <a href="/app/sites/${escapeAttr(siteId)}/${j.href}" style="display:block;text-decoration:none;color:inherit">
@@ -397,9 +400,10 @@ export async function seoSettingsSaveHandler(c: Context<AppEnv>): Promise<Respon
   const on = (k: string) => form[k] === "on" || form[k] === "1" || form[k] === "true"
   const first = (k: string) => { const v = form[k]; return Array.isArray(v) ? String(v[0]) : String(v ?? "") }
   const next: SeoSettings = {
-    // Profiles are managed on the SEO hub; saveSeoSettings never writes the
-    // profiles column, so this placeholder can't clobber the stored value.
+    // Profiles + scripts are managed on their own pages; saveSeoSettings never
+    // writes those columns, so these placeholders can't clobber stored values.
     profiles: [],
+    scripts: [],
     blockAiBots: on("blockAiBots"),
     blockedBots: lines(first("blockedBots")),
     disallowPaths: lines(first("disallowPaths")),
@@ -654,6 +658,89 @@ export async function indexingHandler(c: Context<AppEnv>): Promise<Response> {
 
   await audit(master, customer.id, "site.indexing_viewed", site.domain, { checked: checking }).catch(() => {})
   return c.html(renderSaasLayout({ title: "Indexing", active: "sites", customer, bodyHtml: header + covHtml + smHtml + urlsHtml }), 200, NO_STORE)
+}
+
+// ─────────────────────── Site scripts (V1.3 — vetted catalog) ───────────────────────
+// Decision #2: a curated defer-only allowlist, never arbitrary injection. Each
+// card shows the integration's REAL wire cost before enabling; the budget bar
+// shows the total; an over-budget save is refused with the plain-language
+// report, and the template build enforces the same gate deploy-blocking.
+
+function renderScriptsPage(siteId: string, domain: string, enabled: EnabledScript[], opts: { error?: string; saved?: boolean } = {}): string {
+  const byId = new Map(enabled.map((e) => [e.id, e]))
+  const budget = checkScriptBudget(enabled)
+  const notice = opts.saved
+    ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">Saved — your site is rebuilding with the new scripts (usually ~2 minutes).</p></div>`
+    : opts.error
+      ? `<div class="card" style="border-color:#7f1d1d;background:#2a0d0d"><p style="margin:0;color:#fca5a5;font-size:13px">${escapeHtml(opts.error)}</p></div>`
+      : ""
+  const inputStyle = "width:100%;padding:8px 10px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px"
+  const cards = SCRIPT_CATALOG.map((s) => {
+    const cur = byId.get(s.id)
+    return `
+    <div class="card" style="height:100%;${cur ? "border-color:#166534" : ""}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <h3 style="margin:0;font-size:14px">${escapeHtml(s.name)}</h3>
+        <span class="muted" style="font-size:11px;white-space:nowrap">~${s.costKb}KB · ${s.strategy === "interaction" ? "loads on first interaction" : "deferred"}</span>
+      </div>
+      <p class="muted" style="margin:4px 0 8px;font-size:12px">${s.category === "analytics" ? "Analytics" : s.category === "chat" ? "Chat widget" : "Consent tool"} — adds ~${s.costKb}KB for every visitor. ${s.strategy === "interaction" ? "Won't load until someone interacts with the page." : "Loads after your content (defer)."}</p>
+      <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0"><input type="checkbox" name="on_${s.id}" ${cur ? "checked" : ""} /> Enable</label>
+      <label style="display:block;font-size:12px;margin:6px 0 3px" class="muted">${escapeHtml(s.configLabel)}</label>
+      <input name="cfg_${s.id}" value="${escapeAttr(cur?.config ?? "")}" placeholder="${escapeAttr(s.configPlaceholder)}" style="${inputStyle}" />
+    </div>`
+  }).join("")
+  const pct = Math.min(100, Math.round((budget.totalKb / budget.budgetKb) * 100))
+  return `
+    ${notice}
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/seo" style="color:#93c5fd">← SEO</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">Site scripts</h2>
+      <p class="muted" style="font-size:13px">A vetted set of third-party tools for ${escapeHtml(domain)}. Every script costs your visitors real download weight — the cost is shown up front, and the total is capped so pages stay fast. Arbitrary scripts can't be added.</p>
+      <div style="margin-top:8px"><div style="height:6px;background:#262626;border-radius:3px"><div style="height:100%;border-radius:3px;background:${budget.ok ? "#86efac" : "#fca5a5"};width:${pct}%"></div></div>
+      <p class="muted" style="font-size:12px;margin:4px 0 0">${escapeHtml(budget.report)}</p></div>
+    </div>
+    <form method="post" action="/app/sites/${escapeAttr(siteId)}/scripts">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">${cards}</div>
+      <div class="card" style="display:flex;justify-content:flex-end;margin-top:12px"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save scripts</button></div>
+    </form>`
+}
+
+export async function siteScriptsHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const settings = site.cms_site_id ? await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS) : DEFAULT_SEO_SETTINGS
+  const body = renderScriptsPage(siteId, site.domain, settings.scripts, { saved: c.req.query("saved") === "1" })
+  return c.html(renderSaasLayout({ title: "Site scripts", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+export async function siteScriptsSaveHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const render = (enabled: EnabledScript[], error: string) =>
+    c.html(renderSaasLayout({ title: "Site scripts", active: "sites", customer, bodyHtml: renderScriptsPage(siteId, site.domain, enabled, { error }) }), 200, NO_STORE)
+  if (planGate(customer, nowSqlite()) === "read_only") return render([], "Your trial has ended — subscribe to change scripts.")
+
+  const form = await c.req.parseBody()
+  const submitted: Array<{ id: string; config: string }> = []
+  for (const s of SCRIPT_CATALOG) {
+    if (form[`on_${s.id}`] !== "on") continue
+    const config = String(form[`cfg_${s.id}`] ?? "").trim()
+    if (!s.configPattern.test(config)) {
+      return render(submitted, `${s.name}: "${config || "(empty)"}" doesn't look right — expected something like ${s.configPlaceholder}.`)
+    }
+    submitted.push({ id: s.id, config })
+  }
+  // Round-trip through the validator (defense in depth — same rules as build).
+  const enabled = parseEnabledScripts(JSON.stringify(submitted))
+  const r = await saveScripts(c.env, customer.id, site.cms_site_id, site.repo_full_name, enabled, master)
+  if (!r.ok) return render(enabled, r.error ?? "Couldn't save.")
+  await audit(master, customer.id, "site.scripts_changed", site.domain, { ids: enabled.map((e) => e.id) }).catch(() => {})
+  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/scripts?saved=1` } })
 }
 
 // ─────────────────────── ✨ AI assists (V1.3) ───────────────────────

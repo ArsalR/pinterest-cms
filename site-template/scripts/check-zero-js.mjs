@@ -16,6 +16,24 @@ const TURNSTILE = /src\s*=\s*["']https:\/\/challenges\.cloudflare\.com\/turnstil
 const CART_JS = /src\s*=\s*["']\/cart\.js["']/i
 const ORDER_JS = /src\s*=\s*["']\/order-complete\.js["']/i
 
+// V1.3 script controls: the build emits dist/.site-scripts.json ONLY when the
+// customer enabled vetted catalog scripts (budget-gated in gen-redirects.mjs).
+// Those exact hosts — and the local loader — become sanctioned on all pages.
+// No manifest = today's exact zero-JS behavior.
+let sanctioned = { scriptHosts: [], allowLoader: false }
+try {
+  sanctioned = JSON.parse(readFileSync(join(dist, ".site-scripts.json"), "utf8"))
+} catch {
+  /* no scripts enabled */
+}
+const LOADER_JS = /src\s*=\s*["']\/js\/site-scripts\.js["']/i
+function isSanctionedScript(tag) {
+  const m = /src\s*=\s*["']([^"']+)["']/i.exec(tag)
+  if (!m) return false
+  if (sanctioned.allowLoader && LOADER_JS.test(tag)) return true
+  return (sanctioned.scriptHosts ?? []).some((h) => m[1].startsWith(h + "/") || m[1].startsWith(h + "?") || m[1] === h)
+}
+
 function walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name)
@@ -32,7 +50,8 @@ function walk(dir) {
           !/type\s*=\s*["']application\/ld\+json["']/i.test(tag) &&
           !(isContact && TURNSTILE.test(tag)) &&
           !(isCartPage && CART_JS.test(tag)) &&
-          !(isOrderPage && ORDER_JS.test(tag))
+          !(isOrderPage && ORDER_JS.test(tag)) &&
+          !isSanctionedScript(tag)
       )
       if (bad.length) offenders.push(`${rel}: ${bad.join(" ")}`)
     }

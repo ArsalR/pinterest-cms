@@ -33,10 +33,13 @@ export const AI_BOTS = [
 export const MAJOR_ENGINE_BOTS = ["googlebot", "bingbot", "slurp", "duckduckbot", "baiduspider", "yandex"]
 
 import type { ProfileId } from "./profiles"
+import type { EnabledScript } from "./scripts"
 
 export interface SeoSettings {
   /** SEO profile activations (V1.3) — [] = none = today's behavior. */
   profiles: ProfileId[]
+  /** Vetted script-catalog enablements (V1.3) — [] = zero-JS as today. */
+  scripts: EnabledScript[]
   /** One-click block of AI/LLM training crawlers (does not affect search). */
   blockAiBots: boolean
   /** Extra user-agents to Disallow: / (freeform, advanced). */
@@ -57,6 +60,7 @@ export interface SeoSettings {
 
 export const DEFAULT_SEO_SETTINGS: SeoSettings = {
   profiles: [],
+  scripts: [],
   blockAiBots: false,
   blockedBots: [],
   disallowPaths: [],
