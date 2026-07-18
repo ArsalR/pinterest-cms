@@ -18,6 +18,8 @@ import { listPostsForSeo, loadPostSeo, savePostSeo, type SeoUpdate } from "./ser
 import { listSiteImages, bulkUpdateAlt, slugifyFilenames, type AltUpdate } from "./images"
 import { DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, type SeoSettings } from "./settings"
 import { loadSeoSettings, saveSeoSettings } from "./settingsService"
+import { detectChains, isBrandedLink, toRedirectsCsv, type RedirectKind, type RedirectMatch, type RedirectRow } from "./redirects"
+import { listRedirects, upsertRedirect, deleteRedirect, importRedirectsCsv } from "./redirectsService"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -305,6 +307,159 @@ export async function seoSettingsSaveHandler(c: Context<AppEnv>): Promise<Respon
   }
   await audit(master, customer.id, "site.seo_settings_saved", site.domain, { engineBlockOverride: !!r.overrodeEngineBlock }).catch(() => {})
   return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/seo-settings?saved=1` } })
+}
+
+// ─────────────────────── Redirects & branded links manager (S4) ───────────────────────
+
+function chainWarnings(rows: RedirectRow[]): string {
+  const chains = detectChains(rows)
+  if (!chains.length) return ""
+  const items = chains.slice(0, 20).map((c) => {
+    const path = [c.from, ...c.hops].map((p) => escapeHtml(p)).join(" → ")
+    return `<li style="margin:2px 0">${c.loop ? "🔁 <strong style='color:#fca5a5'>Loop</strong>: " : "⛓ Chain: "}${path}</li>`
+  }).join("")
+  return `<div class="card" style="border-color:#7c5e10;background:#241c05">
+      <p style="margin:0 0 6px;font-size:13px;color:#fcd34d">${chains.length} redirect ${chains.length === 1 ? "chain" : "chains"} found — these force extra hops (or loop forever). Point the source straight at the final destination.</p>
+      <ul style="margin:0;padding-left:18px;font-size:12px;color:#d4d4d4">${items}</ul>
+    </div>`
+}
+
+function redirectRowsHtml(siteId: string, rows: RedirectRow[], branded: boolean): string {
+  const filtered = rows.filter((r) => isBrandedLink(r) === branded)
+  if (!filtered.length) return `<tr><td colspan="4" class="muted" style="padding:10px 6px">${branded ? "No branded links yet." : "No redirects yet."}</td></tr>`
+  return filtered.map((r) => `<tr style="border-top:1px solid #1f2937">
+      <td style="padding:8px 6px;font-size:12px"><code>${escapeHtml(r.from)}</code>${r.matchType === "prefix" ? ` <span class="muted" style="font-size:10px">/*</span>` : ""}</td>
+      <td style="padding:8px 6px;font-size:12px">${r.kind === "410" ? `<span class="muted">— gone —</span>` : `<code>${escapeHtml(r.to)}</code>`}</td>
+      <td style="padding:8px 6px;font-size:11px"><span style="padding:1px 6px;border-radius:4px;background:#1f2937">${r.kind}</span> · ${r.hits} hit${r.hits === 1 ? "" : "s"}</td>
+      <td style="padding:8px 6px;text-align:right">
+        <form method="post" action="/app/sites/${escapeAttr(siteId)}/redirects/delete" style="margin:0" onsubmit="return confirm('Delete this redirect?')">
+          <input type="hidden" name="id" value="${escapeAttr(r.id)}" />
+          <button type="submit" style="background:none;border:none;color:#737373;cursor:pointer;font-size:14px">✕</button>
+        </form>
+      </td>
+    </tr>`).join("")
+}
+
+function renderRedirects(siteId: string, domain: string, rows: RedirectRow[], opts: { error?: string; saved?: string } = {}): string {
+  const notice = opts.saved
+    ? `<div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">${escapeHtml(opts.saved)}</p></div>`
+    : opts.error
+      ? `<div class="card" style="border-color:#7f1d1d;background:#2a0d0d"><p style="margin:0;color:#fca5a5;font-size:13px">${escapeHtml(opts.error)}</p></div>`
+      : ""
+  const inputStyle = "padding:8px 9px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px"
+  const table = (title: string, sub: string, branded: boolean) => `
+    <div class="card">
+      <h3 style="margin:0 0 2px;font-size:14px">${title}</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 8px">${sub}</p>
+      <table style="width:100%;border-collapse:collapse"><thead><tr class="muted" style="font-size:11px;text-transform:uppercase">
+        <th style="text-align:left;padding:4px 6px">From</th><th style="text-align:left;padding:4px 6px">${branded ? "Goes to" : "To"}</th><th style="text-align:left;padding:4px 6px">Type</th><th></th>
+      </tr></thead><tbody>${redirectRowsHtml(siteId, rows, branded)}</tbody></table>
+    </div>`
+  return `
+    ${notice}
+    <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}" style="color:#93c5fd">← ${escapeHtml(domain)}</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">Redirects</h2>
+      <p class="muted" style="font-size:13px">Send old or changed URLs to the right place (301/302), mark removed pages as gone (410), or make short branded links. <a href="/app/sites/${escapeAttr(siteId)}/404s" style="color:#93c5fd">See your 404s →</a></p>
+    </div>
+    ${chainWarnings(rows)}
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:14px">Add a redirect</h3>
+      <form method="post" action="/app/sites/${escapeAttr(siteId)}/redirects" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input name="from" required placeholder="/old-page/" style="${inputStyle};flex:1;min-width:160px" />
+        <span class="muted">→</span>
+        <input name="to" placeholder="/new-page/ or https://…" style="${inputStyle};flex:1;min-width:160px" />
+        <select name="kind" style="${inputStyle}"><option value="301">301 permanent</option><option value="302">302 temporary</option><option value="410">410 gone</option></select>
+        <select name="matchType" style="${inputStyle}"><option value="exact">exact</option><option value="prefix">prefix /*</option></select>
+        <button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:8px 15px;font-size:13px;cursor:pointer">Add</button>
+      </form>
+    </div>
+    ${table("Redirects", "301/302/410 rules, served at the edge before your pages.", false)}
+    ${table("Branded links", "Short, shareable links that forward to an external URL (e.g. /go/deal → an affiliate page).", true)}
+    <div class="card">
+      <h3 style="margin:0 0 8px;font-size:14px">Bulk import / export</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 8px">CSV columns: <code>from,to,kind,match</code>. <a href="/app/sites/${escapeAttr(siteId)}/redirects/export.csv" style="color:#93c5fd">Export current →</a></p>
+      <form method="post" action="/app/sites/${escapeAttr(siteId)}/redirects/import">
+        <textarea name="csv" rows="4" placeholder="/old/,/new/,301,exact" style="width:100%;${inputStyle}"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px"><button type="submit" style="background:#374151;color:#fff;border:0;border-radius:7px;padding:8px 15px;font-size:13px;cursor:pointer">Import CSV</button></div>
+      </form>
+    </div>`
+}
+
+export async function redirectsHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const rows = site.cms_site_id ? await listRedirects(master, site.cms_site_id).catch(() => []) : []
+  const body = renderRedirects(siteId, site.domain, rows, { saved: c.req.query("saved") ?? undefined, error: c.req.query("error") ?? undefined })
+  return c.html(renderSaasLayout({ title: "Redirects", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+export async function redirectsAddHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q: string) => new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/redirects${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back("?error=" + encodeURIComponent("Your trial has ended — subscribe to edit redirects."))
+
+  const form = await c.req.parseBody()
+  const input = {
+    from: String(form.from ?? ""), to: String(form.to ?? ""),
+    kind: String(form.kind ?? "301") as RedirectKind, matchType: String(form.matchType ?? "exact") as RedirectMatch,
+  }
+  const r = await upsertRedirect(c.env, customer.id, site.cms_site_id, site.repo_full_name, input, master)
+  if (!r.ok) return back("?error=" + encodeURIComponent(r.error ?? "Couldn't save."))
+  await audit(master, customer.id, "site.redirect_saved", site.domain, { from: input.from, kind: input.kind }).catch(() => {})
+  return back("?saved=" + encodeURIComponent(`Redirect saved: ${input.from} → ${input.kind === "410" ? "gone" : input.to}. Live on the next rebuild.`))
+}
+
+export async function redirectsDeleteHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  if (planGate(customer, nowSqlite()) !== "read_only") {
+    const form = await c.req.parseBody()
+    await deleteRedirect(c.env, customer.id, site.cms_site_id, site.repo_full_name, String(form.id ?? ""), master).catch(() => {})
+    await audit(master, customer.id, "site.redirect_deleted", site.domain).catch(() => {})
+  }
+  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/redirects?saved=${encodeURIComponent("Redirect removed. Live on the next rebuild.")}` } })
+}
+
+export async function redirectsImportHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q: string) => new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/redirects${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back("?error=" + encodeURIComponent("Your trial has ended — subscribe to import redirects."))
+  const form = await c.req.parseBody()
+  const res = await importRedirectsCsv(c.env, customer.id, site.cms_site_id, site.repo_full_name, String(form.csv ?? ""), master)
+  await audit(master, customer.id, "site.redirects_imported", site.domain, { added: res.added, errors: res.errors.length }).catch(() => {})
+  const msg = `Imported ${res.added} redirect${res.added === 1 ? "" : "s"}${res.errors.length ? ` — ${res.errors.length} row(s) skipped` : ""}. Live on the next rebuild.`
+  return back("?saved=" + encodeURIComponent(msg))
+}
+
+export async function redirectsExportHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response("not found", { status: 404 })
+  const rows = await listRedirects(master, site.cms_site_id).catch(() => [])
+  const csv = toRedirectsCsv(rows)
+  return new Response(csv, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="redirects-${site.domain}.csv"`,
+      "Cache-Control": "no-store, private",
+    },
+  })
 }
 
 /** Serve the cockpit's vanilla JS (no build step). Public — it's just a script. */

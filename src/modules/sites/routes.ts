@@ -395,6 +395,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/posts">SEO cockpit</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/images">Image SEO</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/seo-settings">SEO settings</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/redirects">Redirects</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/drafts">Drafts &amp; quality gate</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/insights">Internal linking</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/pseo">Programmatic SEO</a>
