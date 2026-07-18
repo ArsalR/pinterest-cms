@@ -17,6 +17,7 @@ import type { CloudflareEnv } from "../../lib/types"
 const OAUTH_AUTH = "https://accounts.google.com/o/oauth2/v2/auth"
 const OAUTH_TOKEN = "https://oauth2.googleapis.com/token"
 const WMX_API = "https://www.googleapis.com/webmasters/v3"
+const INSPECT_API = "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect"
 
 // Both scopes are requested: readonly powers the dashboard; the writable
 // webmasters scope is required to submit sitemaps. Order is stable for tests.
@@ -215,6 +216,61 @@ export async function fetchSitemapsStatus(accessToken: string, siteUrl: string):
         indexed,
       }
     })
+  } catch {
+    return null
+  }
+}
+
+export interface UrlInspection {
+  url: string
+  /** Overall verdict: PASS | FAIL | NEUTRAL | PARTIAL | VERDICT_UNSPECIFIED. */
+  verdict: string
+  /** Human-readable coverage state, e.g. "Submitted and indexed",
+   *  "Crawled - currently not indexed", "Excluded by 'noindex' tag". */
+  coverageState: string
+  robotsTxtState: string
+  indexingState: string
+  pageFetchState: string
+  lastCrawlTime: string | null
+  googleCanonical: string | null
+  userCanonical: string | null
+}
+
+/**
+ * URL Inspection API — per-URL index status for a property. Best-effort → null
+ * (mirrors the other GSC calls). `inspectionUrl` is the full page URL; `siteUrl`
+ * is the GSC property (sc-domain:… from siteUrlForDomain).
+ */
+export async function inspectUrl(accessToken: string, siteUrl: string, inspectionUrl: string): Promise<UrlInspection | null> {
+  try {
+    const resp = await fetch(INSPECT_API, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ inspectionUrl, siteUrl }),
+    })
+    if (!resp.ok) return null
+    const body = (await resp.json().catch(() => null)) as {
+      inspectionResult?: {
+        indexStatusResult?: {
+          verdict?: string; coverageState?: string; robotsTxtState?: string
+          indexingState?: string; pageFetchState?: string; lastCrawlTime?: string
+          googleCanonical?: string; userCanonical?: string
+        }
+      }
+    } | null
+    const r = body?.inspectionResult?.indexStatusResult
+    if (!r) return null
+    return {
+      url: inspectionUrl,
+      verdict: r.verdict ?? "VERDICT_UNSPECIFIED",
+      coverageState: r.coverageState ?? "",
+      robotsTxtState: r.robotsTxtState ?? "",
+      indexingState: r.indexingState ?? "",
+      pageFetchState: r.pageFetchState ?? "",
+      lastCrawlTime: r.lastCrawlTime ?? null,
+      googleCanonical: r.googleCanonical ?? null,
+      userCanonical: r.userCanonical ?? null,
+    }
   } catch {
     return null
   }
