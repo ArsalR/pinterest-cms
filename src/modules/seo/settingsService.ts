@@ -12,6 +12,7 @@ import {
   DEFAULT_SEO_SETTINGS, robotsWouldBlockMajorEngines, type SeoSettings,
 } from "./settings"
 import { parseProfiles, type ProfileId } from "./profiles"
+import { parseEnabledScripts, checkScriptBudget, type EnabledScript } from "./scripts"
 import { SEO_SAFETY_OVERRIDE_PHRASE } from "./safety"
 import { siteDbFor, dispatchRebuild } from "./service"
 
@@ -40,6 +41,7 @@ export async function loadSeoSettings(master: Client, cmsSiteId: string): Promis
   const p = rows[0]
   return {
     profiles: parseProfiles(p.profiles),
+    scripts: parseEnabledScripts(p.scripts),
     blockAiBots: Number(p.block_ai_bots) === 1,
     blockedBots: arr(p.blocked_bots),
     disallowPaths: arr(p.disallow_paths),
@@ -138,5 +140,32 @@ export async function saveProfiles(
     args: [JSON.stringify(profiles)],
   })
   await dispatchRebuild(env, master, customerId, repoFullName, "seo-profiles")
+  return { ok: true }
+}
+
+/**
+ * Persist the vetted-script enablements (V1.3, decision #2). The covenant
+ * budget gate runs HERE first — an over-budget selection refuses to save with
+ * the plain-language report (and the template build enforces the same gate
+ * independently, deploy-blocking). Touches only the scripts column.
+ */
+export async function saveScripts(
+  env: CloudflareEnv,
+  customerId: string,
+  cmsSiteId: string,
+  repoFullName: string | null,
+  scripts: EnabledScript[],
+  master: Client
+): Promise<{ ok: boolean; error?: string }> {
+  const budget = checkScriptBudget(scripts)
+  if (!budget.ok) return { ok: false, error: budget.report }
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return { ok: false, error: "The content workspace is unavailable." }
+  await siteDb.execute({
+    sql: `INSERT INTO seo_settings (id, scripts, updated_at) VALUES ('default', ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET scripts = excluded.scripts, updated_at = datetime('now')`,
+    args: [JSON.stringify(scripts)],
+  })
+  await dispatchRebuild(env, master, customerId, repoFullName, "site-scripts")
   return { ok: true }
 }

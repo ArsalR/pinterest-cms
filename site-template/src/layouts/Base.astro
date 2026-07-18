@@ -1,7 +1,7 @@
 ---
 // Base layout — zero client JS (P1), system font stack (P4), critical CSS
 // inlined by Astro (P5), semantic HTML + JSON-LD (K8/AEO).
-import { loadConfig, canonicalHost, fetchSeoSettings, globalSchemaFor } from "../lib/cms"
+import { loadConfig, canonicalHost, fetchSeoSettings, globalSchemaFor, scriptTagsFor } from "../lib/cms"
 import { presetRootCss, resolvePreset } from "../lib/presets"
 
 interface Props {
@@ -31,6 +31,8 @@ const socialDescription = ogDescription ?? description
 // owner enabled it in the SEO Control Center. Byte-identical when off.
 const seoSettings = await fetchSeoSettings(config)
 const globalLd = globalSchemaFor(seoSettings, config.name, `https://${host}`)
+// Vetted site scripts (V1.3): "" when none enabled — byte-identical zero-JS.
+const siteScriptTags = scriptTagsFor(seoSettings)
 const year = new Date().getFullYear()
 ---
 <!doctype html>
@@ -65,6 +67,7 @@ const year = new Date().getFullYear()
 
   {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
   {globalLd && <script type="application/ld+json" set:html={JSON.stringify(globalLd)} />}
+  {siteScriptTags && <Fragment set:html={siteScriptTags} />}
   <style set:html={`
     /* Design preset tokens (V1.1) — CSS variables only, zero JS (P1); system
        fonts only (P4); total CSS budget < 20KB (P5). */

@@ -176,6 +176,15 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE seo_settings ADD COLUMN profiles TEXT`,
     ],
   },
+  {
+    version: 9,
+    name: "009_script_controls",
+    statements: [
+      // V1.3 — vetted script-catalog enablements (JSON [{id, config}]).
+      // Additive; NULL/absent = no scripts = today's zero-JS output.
+      `ALTER TABLE seo_settings ADD COLUMN scripts TEXT`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

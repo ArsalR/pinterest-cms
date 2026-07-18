@@ -51,7 +51,7 @@ function buildRobots(s) {
 
 async function loadSeoSettings() {
   const key = process.env.CMS_API_KEY
-  const defaults = { blockAiBots: false, blockedBots: [], disallowPaths: [], robotsExtra: "" }
+  const defaults = { blockAiBots: false, blockedBots: [], disallowPaths: [], robotsExtra: "", scripts: [] }
   if (!key || !config.cmsApiUrl) return defaults
   try {
     const resp = await fetch(`${config.cmsApiUrl}/seo-settings`, { headers: { Authorization: `Bearer ${key}` } })
@@ -66,6 +66,53 @@ async function loadSeoSettings() {
 const seoSettings = await loadSeoSettings()
 writeFileSync(new URL("../dist/robots.txt", import.meta.url), buildRobots(seoSettings))
 console.log(`robots.txt: ${robotsIsDefault(seoSettings) ? "default (allow-all)" : "from SEO Control Center"} -> ${SITEMAP_URL}`)
+
+// ─────────── Vetted site scripts (V1.3): budget gate + CSP + zero-JS manifest ───────────
+// Mirrors src/lib/cms.ts TEMPLATE_SCRIPT_CATALOG / src/modules/seo/scripts.ts.
+// The budget gate here is DEPLOY-BLOCKING (exit 1) — same plain-language report
+// as the dashboard, enforced independently so nothing can sneak past it.
+const SCRIPT_META = {
+  plausible: { name: "Plausible Analytics", costKb: 1, cfg: /^[a-z0-9.-]+\.[a-z]{2,}$/i, scriptHosts: ["https://plausible.io"], connectHosts: ["https://plausible.io"], loader: false },
+  fathom: { name: "Fathom Analytics", costKb: 2, cfg: /^[A-Z0-9]{8}$/i, scriptHosts: ["https://cdn.usefathom.com"], connectHosts: ["https://cdn.usefathom.com"], loader: false },
+  ga4: { name: "Google Analytics 4", costKb: 55, cfg: /^G-[A-Z0-9]{6,12}$/i, scriptHosts: ["https://www.googletagmanager.com"], connectHosts: ["https://www.google-analytics.com", "https://analytics.google.com"], loader: true },
+  crisp: { name: "Crisp chat widget", costKb: 35, cfg: /^[a-f0-9-]{36}$/i, scriptHosts: ["https://client.crisp.chat"], connectHosts: ["https://client.crisp.chat", "wss://client.relay.crisp.chat"], loader: true },
+  cookieyes: { name: "CookieYes consent banner", costKb: 40, cfg: /^[a-z0-9]{10,40}$/i, scriptHosts: ["https://cdn-cookieyes.com"], connectHosts: ["https://cdn-cookieyes.com", "https://log.cookieyes.com"], loader: false },
+}
+const SCRIPT_BUDGET_KB = 100
+
+const enabledScripts = (seoSettings.scripts ?? []).filter(
+  (s) => SCRIPT_META[s.id] && SCRIPT_META[s.id].cfg.test(String(s.config ?? ""))
+)
+if (enabledScripts.length) {
+  const totalKb = enabledScripts.reduce((sum, s) => sum + SCRIPT_META[s.id].costKb, 0)
+  if (totalKb > SCRIPT_BUDGET_KB) {
+    const names = enabledScripts.map((s) => `${SCRIPT_META[s.id].name} (~${SCRIPT_META[s.id].costKb}KB)`).join(", ")
+    console.error(
+      `SCRIPT BUDGET GATE FAILED — enabled scripts weigh ~${totalKb}KB, over the ${SCRIPT_BUDGET_KB}KB budget that keeps pages fast.\n` +
+        `Enabled: ${names}.\nTurn one off in the dashboard (Site scripts) — or pick a lighter alternative (e.g. Plausible ~1KB instead of GA4 ~55KB) — and redeploy.`
+    )
+    process.exit(1)
+  }
+
+  // Zero-JS gate manifest: exactly which hosts (and the local loader) the
+  // enabled set sanctions. Absent when nothing is enabled.
+  const scriptHosts = [...new Set(enabledScripts.flatMap((s) => SCRIPT_META[s.id].scriptHosts))]
+  const connectHosts = [...new Set(enabledScripts.flatMap((s) => SCRIPT_META[s.id].connectHosts))]
+  const allowLoader = enabledScripts.some((s) => SCRIPT_META[s.id].loader)
+  writeFileSync(
+    new URL("../dist/.site-scripts.json", import.meta.url),
+    JSON.stringify({ scriptHosts, allowLoader }, null, 2) + "\n"
+  )
+
+  // Extend the CSP in dist/_headers for exactly the enabled hosts. Untouched
+  // when nothing is enabled (byte-identical _headers).
+  const headersUrl = new URL("../dist/_headers", import.meta.url)
+  let headersTxt = readFileSync(headersUrl, "utf8")
+  headersTxt = headersTxt.replace(/(script-src [^;]*)/, (m) => `${m} ${scriptHosts.join(" ")}`)
+  headersTxt = headersTxt.replace(/(connect-src [^;]*)/, (m) => `${m} ${connectHosts.join(" ")}`)
+  writeFileSync(headersUrl, headersTxt)
+  console.log(`site-scripts: ${enabledScripts.map((s) => s.id).join(", ")} (~${totalKb}KB of ${SCRIPT_BUDGET_KB}KB) — CSP extended, manifest written`)
+}
 
 // PWA manifest (SEO file set) — named + themed from config, SVG icon.
 writeFileSync(

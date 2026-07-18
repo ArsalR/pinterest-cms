@@ -94,6 +94,8 @@ export interface SeoSettings {
   socialProfiles: string[]
   /** V1.3 SEO profile activations (local/news/ecommerce/image/ai). [] = none. */
   profiles: string[]
+  /** V1.3 vetted script enablements [{id, config}]. [] = zero-JS as today. */
+  scripts: Array<{ id: string; config: string }>
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
@@ -101,6 +103,84 @@ export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   rssEnabled: true, archivesEnabled: true, globalSchemaEnabled: false,
   orgName: "", orgLogo: "", socialProfiles: [],
   profiles: [],
+  scripts: [],
+}
+
+// ─────────────── Vetted script catalog (V1.3, template copy) ───────────────
+// The build NEVER trusts wire input for script emission: enablements from the
+// API are validated against THIS closed catalog (id + config format), and only
+// these exact tag shapes can be emitted. Mirrors src/modules/seo/scripts.ts.
+
+export interface TemplateScript {
+  id: string
+  costKb: number
+  /** "tag" = plain deferred <script>; "loader" = bootstrapped/delayed via the
+   *  local /js/site-scripts.js endpoint. */
+  mode: "tag" | "loader"
+  scriptHosts: string[]
+  connectHosts: string[]
+  configPattern: RegExp
+  /** Build the exact tag (mode "tag" only). config is pattern-validated. */
+  tag?: (config: string) => string
+}
+
+export const TEMPLATE_SCRIPT_CATALOG: readonly TemplateScript[] = [
+  {
+    id: "plausible", costKb: 1, mode: "tag",
+    scriptHosts: ["https://plausible.io"], connectHosts: ["https://plausible.io"],
+    configPattern: /^[a-z0-9.-]+\.[a-z]{2,}$/i,
+    tag: (config) => `<script defer data-domain="${config}" src="https://plausible.io/js/script.js"></script>`,
+  },
+  {
+    id: "fathom", costKb: 2, mode: "tag",
+    scriptHosts: ["https://cdn.usefathom.com"], connectHosts: ["https://cdn.usefathom.com"],
+    configPattern: /^[A-Z0-9]{8}$/i,
+    tag: (config) => `<script src="https://cdn.usefathom.com/script.js" data-site="${config}" defer></script>`,
+  },
+  {
+    id: "ga4", costKb: 55, mode: "loader",
+    scriptHosts: ["https://www.googletagmanager.com"],
+    connectHosts: ["https://www.google-analytics.com", "https://analytics.google.com"],
+    configPattern: /^G-[A-Z0-9]{6,12}$/i,
+  },
+  {
+    id: "crisp", costKb: 35, mode: "loader",
+    scriptHosts: ["https://client.crisp.chat"],
+    connectHosts: ["https://client.crisp.chat", "wss://client.relay.crisp.chat"],
+    configPattern: /^[a-f0-9-]{36}$/i,
+  },
+  {
+    id: "cookieyes", costKb: 40, mode: "tag",
+    scriptHosts: ["https://cdn-cookieyes.com"],
+    connectHosts: ["https://cdn-cookieyes.com", "https://log.cookieyes.com"],
+    configPattern: /^[a-z0-9]{10,40}$/i,
+    tag: (config) => `<script id="cookieyes" src="https://cdn-cookieyes.com/client_data/${config}/script.js" defer></script>`,
+  },
+]
+
+/** Enabled scripts validated against the template catalog. Pure. */
+export function validScripts(s: SeoSettings): Array<{ entry: TemplateScript; config: string }> {
+  const out: Array<{ entry: TemplateScript; config: string }> = []
+  for (const e of s.scripts) {
+    const entry = TEMPLATE_SCRIPT_CATALOG.find((t) => t.id === e.id)
+    if (entry && entry.configPattern.test(e.config) && !out.some((o) => o.entry.id === entry.id)) {
+      out.push({ entry, config: e.config })
+    }
+  }
+  return out
+}
+
+/** The <head> script tags for enabled scripts. "" when none (byte-identical). */
+export function scriptTagsFor(s: SeoSettings): string {
+  const enabled = validScripts(s)
+  const tags: string[] = []
+  for (const { entry, config } of enabled) {
+    if (entry.mode === "tag" && entry.tag) tags.push(entry.tag(config))
+  }
+  if (enabled.some(({ entry }) => entry.mode === "loader")) {
+    tags.push(`<script src="/js/site-scripts.js" defer></script>`)
+  }
+  return tags.join("\n  ")
 }
 
 /** Is a V1.3 SEO profile enabled for this site? Absent settings ⇒ false. */
