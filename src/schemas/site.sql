@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS posts (
   schema_type     TEXT,                        -- Article|HowTo|FAQ|Product|Review
   faq_json        TEXT,                         -- FAQPage builder output
   author_id       TEXT,                         -- V1.3 P2: → authors.id (byline/E-E-A-T)
+  llms_exclude    INTEGER NOT NULL DEFAULT 0,   -- V1.3 P5: exclude from llms-full.txt
   scheduled_at    TEXT,
   created_at      TEXT DEFAULT (datetime('now')),
   updated_at      TEXT DEFAULT (datetime('now')),

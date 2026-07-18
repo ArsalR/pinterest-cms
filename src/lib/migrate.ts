@@ -253,6 +253,15 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE seo_settings ADD COLUMN image_license_json TEXT`,
     ],
   },
+  {
+    version: 14,
+    name: "014_llms_exclude",
+    statements: [
+      // V1.3 AI-SEO profile — per-page llms-full.txt inclusion control.
+      // Additive; 0 = included = default.
+      `ALTER TABLE posts ADD COLUMN llms_exclude INTEGER NOT NULL DEFAULT 0`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.
