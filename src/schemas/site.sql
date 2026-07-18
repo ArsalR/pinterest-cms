@@ -217,6 +217,26 @@ CREATE TABLE IF NOT EXISTS seo_settings (
   updated_at            TEXT DEFAULT (datetime('now'))
 );
 
+-- ─────────────── LOCAL SEO (V1.3 P1) ───────────────
+-- NAP stored once per location; multi-location = one row per location page.
+-- Empty table = no local output. Runtime truth: provision.ts + migrate.ts (010).
+CREATE TABLE IF NOT EXISTS business_locations (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  subtype       TEXT,     -- schema.org LocalBusiness subtype (closed list in seo/local.ts)
+  street        TEXT, city TEXT, region TEXT, postal TEXT, country TEXT,
+  phone         TEXT,
+  hours_json    TEXT,     -- {weekly:{mon:"09:00-17:00"|null,…}, holidays:[{date,hours|null}]}
+  latitude      REAL, longitude REAL,
+  service_areas TEXT,     -- JSON array (service-area businesses without a storefront)
+  price_range   TEXT,     -- $ | $$ | $$$
+  gbp_url       TEXT,     -- Google Business Profile link (→ sameAs)
+  rating_value  REAL, rating_count INTEGER,  -- ONLY real ratings; never scaffolded
+  is_primary    INTEGER NOT NULL DEFAULT 0,
+  slug          TEXT UNIQUE,
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+
 -- ─────────────── ECOMMERCE (amendment 2 — kind='ecommerce' sites) ───────────────
 -- Additive; inert for content sites. Products are a CMS content collection;
 -- orders are recorded by the platform Stripe webhook (4.5e). Runtime truth is

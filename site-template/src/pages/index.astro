@@ -1,6 +1,6 @@
 ---
 import Base from "../layouts/Base.astro"
-import { loadConfig, fetchAllPosts, canonicalHost } from "../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, fetchLocations, localBusinessLd } from "../lib/cms"
 
 const config = loadConfig()
 const posts = await fetchAllPosts(config)
@@ -10,13 +10,22 @@ const host = canonicalHost(config)
 // "classic" (default) is the single-column list. Selected at genesis.
 const layout = config.layout === "magazine" ? "magazine" : "classic"
 
-const schema = {
-  "@context": "https://schema.org",
+// Local SEO profile (V1.3): the primary location's LocalBusiness node joins
+// the homepage graph. fetchLocations returns [] when the profile is off —
+// byte-identical for every non-local site.
+const locations = await fetchLocations(config)
+const primary = locations.find((l) => l.isPrimary) ?? locations[0]
+const businessLd = primary ? localBusinessLd(primary, `https://${host}/`, `https://${host}/`) : null
+
+const website = {
   "@type": "WebSite",
   name: config.name,
   url: `https://${host}/`,
   description: config.niche,
 }
+const schema = businessLd
+  ? { "@context": "https://schema.org", "@graph": [website, businessLd] }
+  : { "@context": "https://schema.org", ...website }
 ---
 <Base title={config.name} description={config.niche} path="/" schema={schema}>
   <h1>{config.name}</h1>

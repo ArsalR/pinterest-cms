@@ -30,3 +30,52 @@ enhancements; LHCI live run on first template publish.
 2. Part E4: real subrequest/CPU count for worst-case provisioning step + report cron.
 3. Part F: build a mocked full-lifecycle integration test.
 4. Part G LHCI: run the Lighthouse budget assertions with Chromium (rest of G done).
+
+---
+
+# V1.3 PROGRESS CHECKPOINT (SEO profiles → audit → launch checklist)
+
+Say "continue" and resume from the Work-remaining list below. Branch series
+`seo-profiles-*`; every stage = own branch from latest main, full gate
+(typecheck + lint:structure + vitest) before PR, merge when CI green.
+
+## Decisions resolved by owner (V1.3 prompt)
+1. AI assists: WIRED via customer vault key (PR #55). 60/hr limit, no content
+   logging, hidden without key.
+2. Script controls: vetted defer-only catalog (PR #56). 100KB budget gate,
+   deploy-blocking in gen-redirects.mjs.
+3. Edge bot protection: customer CF token WAF (PR #57). Named managed rule,
+   non-clobbering, Firewall Services permission surfaced exactly.
+
+## Job 1 stages landed
+- #54 foundation: profiles registry/kind-defaults/hub toggles + migration 008
+  + MIGRATION-RUNNER IDEMPOTENCY FIX (HIGH bug: fresh sites crashed at
+  ALTER-migrations every cron; fixed via tolerant runner + _migrations seed).
+- #55 assists · #56 scripts (migration 009) · #57 edge WAF.
+- seo-profiles-local (THIS PR): migration 010 business_locations; pure
+  local.ts builders (LocalBusiness JSON-LD per Google docs — name+address/
+  areaServed required, honest-ratings guardrail); /v1/local; dashboard
+  /app/sites/:id/local; template homepage/contact/locations pages.
+
+## Work remaining
+- P2 news (branch seo-profiles-news): news sitemap 48h + NewsArticle +
+  authors table/pages (E-E-A-T) + IndexNow on publish + GSC resubmit hook.
+- P3 ecommerce (seo-profiles-ecommerce): Merchant-depth Product schema
+  (brand/GTIN/MPN/condition/shipping/returns cols on products), feed.xml at
+  build, category SEO + BreadcrumbList, faceted noindex.
+- P4 image (seo-profiles-image): image sitemap, EXIF/GPS strip on upload
+  (uploadToR2 path), ImageObject license/creator, captions surfaced.
+- P5 AEO/AI (seo-profiles-aeo): content blocks (TLDR/definition/QA/stat) with
+  schema, llms-full.txt + per-page llms exclude, about/mentions entity schema,
+  per-engine crawler presets (robots+WAF together via setAiBotWafRule), AI
+  checklist in content.ts rules.
+- Cross-profile: sitemap-index composition test (news+image children),
+  schema-graph merge without duplicate @ids (worst case: all profiles on).
+- Job 2 (branch v13-audit): FINAL_AUDIT_PROMPT.md rules; regression incl.
+  byte-identical build check (NOTE: whitespace-level head deltas from added
+  template expressions need honest verification), new-route security sweep
+  (assists/WAF/scripts/profiles/local), conflict hunt (robots vs edge vs AI
+  preset precedence — UI must say which wins), perf worst-case page, update
+  AUDIT_REPORT.md.
+- Job 3: LAUNCH_CHECKLIST.md consolidating OWNER_RUNBOOK + V1.3 additions
+  (WAF token permission, IndexNow key, Merchant feed submission, assists).

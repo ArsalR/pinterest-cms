@@ -36,6 +36,7 @@ capabilitiesRoutes.get("/", async (c) => {
       "GET  /api/public/v1/posts/:id",
       "GET  /api/public/v1/seo",
       "GET  /api/public/v1/seo-settings",
+      "GET  /api/public/v1/local",
       "POST /api/public/v1/posts",
       "POST /api/public/v1/posts/batch",
       "PUT  /api/public/v1/posts/:id",

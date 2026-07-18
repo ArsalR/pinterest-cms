@@ -92,6 +92,10 @@ export async function seoHubHandler(c: Context<AppEnv>): Promise<Response> {
     { href: "indexing", title: "Check Google indexing", desc: "How much of the site Google has indexed, page-by-page status, and a deindex watch." },
     { href: "scripts", title: "Site scripts", desc: "Vetted analytics, chat and consent tools — real download cost shown, budget-capped, defer-only." },
   ]
+  // Profile-gated tools appear only when their profile is on (one place per job).
+  if (active.has("local")) {
+    jobs.push({ href: "local", title: "Business info & locations", desc: "Name, address, phone, hours and locations — stored once, shown consistently everywhere, with LocalBusiness schema." })
+  }
   const cards = jobs.map((j) => `
     <a href="/app/sites/${escapeAttr(siteId)}/${j.href}" style="display:block;text-decoration:none;color:inherit">
       <div class="card" style="height:100%">

@@ -188,6 +188,129 @@ export function profileOn(s: SeoSettings, id: string): boolean {
   return s.profiles.includes(id)
 }
 
+// ─────────────── Local SEO profile (V1.3 P1) ───────────────
+
+export interface BusinessLocation {
+  id: string
+  name: string
+  subtype: string
+  street: string; city: string; region: string; postal: string; country: string
+  phone: string
+  hours: { weekly: Record<string, string | null>; holidays: Array<{ date: string; hours: string | null }> }
+  latitude: number | null
+  longitude: number | null
+  serviceAreas: string[]
+  priceRange: string
+  gbpUrl: string
+  ratingValue: number | null
+  ratingCount: number | null
+  isPrimary: boolean
+  slug: string
+}
+
+let _locationsCache: BusinessLocation[] | null = null
+
+/** Fetch business locations (memoized). Best-effort: [] on any error, and []
+ *  when the Local profile is off — byte-identical builds either way. */
+export async function fetchLocations(config: SiteConfig): Promise<BusinessLocation[]> {
+  if (_locationsCache) return _locationsCache
+  const key = process.env.CMS_API_KEY
+  const settings = await fetchSeoSettings(config)
+  if (!key || !profileOn(settings, "local")) return (_locationsCache = [])
+  try {
+    const resp = await fetch(`${config.cmsApiUrl}/local`, { headers: { Authorization: `Bearer ${key}` } })
+    if (!resp.ok) return (_locationsCache = [])
+    const data = (await resp.json()) as { locations?: BusinessLocation[] }
+    _locationsCache = Array.isArray(data.locations) ? data.locations : []
+    return _locationsCache
+  } catch {
+    return (_locationsCache = [])
+  }
+}
+
+const DAY_SCHEMA: Record<string, string> = {
+  mon: "Monday", tue: "Tuesday", wed: "Wednesday", thu: "Thursday",
+  fri: "Friday", sat: "Saturday", sun: "Sunday",
+}
+
+/** LocalBusiness JSON-LD node (mirrors src/modules/seo/local.ts — required
+ *  name + address/areaServed; honest ratings only). Null when incomplete. */
+export function localBusinessLd(loc: BusinessLocation, siteUrl: string, pageUrl: string): object | null {
+  const hasAddress = !!(loc.street && loc.city)
+  const hasArea = loc.serviceAreas.length > 0
+  if (!loc.name || (!hasAddress && !hasArea)) return null
+  const node: Record<string, unknown> = {
+    "@type": loc.subtype || "LocalBusiness",
+    "@id": `${pageUrl}#business`,
+    name: loc.name,
+    url: siteUrl,
+  }
+  if (hasAddress) {
+    node.address = {
+      "@type": "PostalAddress",
+      streetAddress: loc.street, addressLocality: loc.city,
+      ...(loc.region ? { addressRegion: loc.region } : {}),
+      ...(loc.postal ? { postalCode: loc.postal } : {}),
+      ...(loc.country ? { addressCountry: loc.country } : {}),
+    }
+  }
+  if (hasArea) node.areaServed = loc.serviceAreas.map((a) => ({ "@type": "Place", name: a }))
+  if (loc.phone) node.telephone = loc.phone
+  if (loc.latitude != null && loc.longitude != null) node.geo = { "@type": "GeoCoordinates", latitude: loc.latitude, longitude: loc.longitude }
+  const spans = new Map<string, string[]>()
+  for (const [d, span] of Object.entries(loc.hours?.weekly ?? {})) {
+    if (!span || !DAY_SCHEMA[d]) continue
+    const list = spans.get(span) ?? []
+    list.push(DAY_SCHEMA[d])
+    spans.set(span, list)
+  }
+  const spec: object[] = []
+  for (const [span, days] of spans) {
+    const [opens, closes] = span.split("-")
+    spec.push({ "@type": "OpeningHoursSpecification", dayOfWeek: days, opens, closes })
+  }
+  for (const h of loc.hours?.holidays ?? []) {
+    if (h.hours) { const [opens, closes] = h.hours.split("-"); spec.push({ "@type": "OpeningHoursSpecification", validFrom: h.date, validThrough: h.date, opens, closes }) }
+    else spec.push({ "@type": "OpeningHoursSpecification", validFrom: h.date, validThrough: h.date, opens: "00:00", closes: "00:00" })
+  }
+  if (spec.length) node.openingHoursSpecification = spec
+  if (loc.priceRange) node.priceRange = loc.priceRange
+  if (loc.gbpUrl) node.sameAs = [loc.gbpUrl]
+  if (loc.ratingValue != null && loc.ratingCount != null && loc.ratingValue > 0 && loc.ratingCount > 0) {
+    node.aggregateRating = { "@type": "AggregateRating", ratingValue: loc.ratingValue, reviewCount: loc.ratingCount }
+  }
+  return node
+}
+
+/** Static OSM map image URL (no JS map — covenant P1). */
+export function staticMapUrlFor(loc: BusinessLocation, w = 600, h = 300): string | null {
+  if (loc.latitude == null || loc.longitude == null) return null
+  return `https://staticmap.openstreetmap.de/staticmap.php?center=${loc.latitude},${loc.longitude}&zoom=15&size=${w}x${h}&markers=${loc.latitude},${loc.longitude},red-pushpin`
+}
+
+/** The address/NAP block HTML shared by contact + location pages. */
+export function napBlockHtml(loc: BusinessLocation): string {
+  const esc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c] ?? c)
+  const lines: string[] = [`<p><strong>${esc(loc.name)}</strong></p>`]
+  if (loc.street && loc.city) {
+    lines.push(`<p>${esc(loc.street)}<br>${esc([loc.city, loc.region, loc.postal].filter(Boolean).join(", "))}</p>`)
+  }
+  if (loc.phone) lines.push(`<p>Phone: <a href="tel:${esc(loc.phone.replace(/\s+/g, ""))}">${esc(loc.phone)}</a></p>`)
+  if (loc.serviceAreas.length) lines.push(`<p>Serving: ${esc(loc.serviceAreas.join(", "))}</p>`)
+  const days: Array<[string, string]> = [["mon", "Monday"], ["tue", "Tuesday"], ["wed", "Wednesday"], ["thu", "Thursday"], ["fri", "Friday"], ["sat", "Saturday"], ["sun", "Sunday"]]
+  const hourRows = days
+    .map(([k, label]) => {
+      const span = loc.hours?.weekly?.[k]
+      return span ? `<tr><td>${label}</td><td>${esc(span)}</td></tr>` : null
+    })
+    .filter(Boolean)
+  if (hourRows.length) lines.push(`<h3>Opening hours</h3><table>${hourRows.join("")}</table>`)
+  const map = staticMapUrlFor(loc)
+  if (map) lines.push(`<p><img src="${map}" alt="Map showing the location of ${esc(loc.name)}" width="600" height="300" loading="lazy"></p>`)
+  if (loc.gbpUrl) lines.push(`<p><a href="${esc(loc.gbpUrl)}" rel="noopener">Find us on Google</a></p>`)
+  return lines.join("\n")
+}
+
 let _seoSettingsCache: SeoSettings | null = null
 
 /** Load the site's SEO settings once (memoized). Best-effort: any error → the
