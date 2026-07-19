@@ -40,6 +40,7 @@ import { frontendRoutes } from "./routes/frontend"
 
 import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms, marketingExamples, clientPortal } from "./modules/app"
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
+import { formSubmitRoutes } from "./modules/forms"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 import { processDuePins } from "./modules/pinterest"
 import { runUptimeChecks } from "./modules/analytics"
@@ -86,6 +87,7 @@ app.get("/portal", clientPortal)
 app.route("/app", saasAppRoutes)
 app.route("/api/saas/hooks", saasHooksRoutes)
 app.route("/api/saas/forms", saasFormsRoutes)
+app.route("/api/saas/form", formSubmitRoutes)
 app.route("/api/saas/checkout", saasCheckoutRoutes)
 app.route("/api/saas/stripe-webhook", saasStripeWebhookRoutes)
 app.route("/api/saas/billing-webhook", platformBillingWebhookRoutes)

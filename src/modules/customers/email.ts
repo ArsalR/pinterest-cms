@@ -15,6 +15,8 @@ export interface SendEmailInput {
   subject: string
   html: string
   from?: string
+  /** V1.4: Reply-To (forms acks send from the platform, replies go to the owner). */
+  replyTo?: string
 }
 
 /** Send one email. Returns true when accepted (or dev-logged). */
@@ -35,6 +37,7 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
         to: [input.to],
         subject: input.subject,
         html: input.html,
+        ...(input.replyTo ? { reply_to: input.replyTo } : {}),
       }),
     })
     if (!resp.ok) {

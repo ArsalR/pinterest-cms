@@ -41,6 +41,7 @@ import { insightsPageHandler } from "../linking"
 import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
 import { designPageHandler, designApplyHandler } from "../design"
 import { seoHubHandler, seoProfilesToggleHandler, seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, seoSettingsEdgeHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler, indexingHandler, seoAssistHandler, imageAltSuggestHandler, siteScriptsHandler, siteScriptsSaveHandler, localSeoHandler, localSeoSaveHandler, localSeoDeleteHandler, authorsHandler, authorsSaveHandler, authorsDeleteHandler, merchantSeoHandler, merchantConfigSaveHandler, merchantProductsSaveHandler, imageLicenseSaveHandler } from "../seo"
+import { formsListHandler, formsCreateHandler, formEditHandler, formSaveHandler, sendingDomainHandler, sendingDomainCreateHandler, sendingDomainCheckHandler, sendingDomainRemoveHandler } from "../forms"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -165,6 +166,14 @@ saasAppRoutes.post("/sites/:id/redirects", prot(redirectsAddHandler))
 saasAppRoutes.post("/sites/:id/redirects/delete", prot(redirectsDeleteHandler))
 saasAppRoutes.post("/sites/:id/redirects/import", prot(redirectsImportHandler))
 saasAppRoutes.get("/sites/:id/indexing", prot(indexingHandler))
+saasAppRoutes.get("/sites/:id/forms", prot(formsListHandler))
+saasAppRoutes.post("/sites/:id/forms/create", prot(formsCreateHandler))
+saasAppRoutes.get("/sites/:id/forms/:formId", prot(formEditHandler))
+saasAppRoutes.post("/sites/:id/forms/:formId", prot(formSaveHandler))
+saasAppRoutes.get("/sites/:id/sending-domain", prot(sendingDomainHandler))
+saasAppRoutes.post("/sites/:id/sending-domain", prot(sendingDomainCreateHandler))
+saasAppRoutes.post("/sites/:id/sending-domain/check", prot(sendingDomainCheckHandler))
+saasAppRoutes.post("/sites/:id/sending-domain/remove", prot(sendingDomainRemoveHandler))
 saasAppRoutes.get("/sites/:id/seo", prot(seoHubHandler))
 saasAppRoutes.post("/sites/:id/seo/profiles", prot(seoProfilesToggleHandler))
 saasAppRoutes.post("/sites/:id/assist", prot(seoAssistHandler))
