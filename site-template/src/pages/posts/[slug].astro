@@ -1,7 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro"
 import Img from "../../components/Img.astro"
-import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, fetchSeoSettings, profileOn, fetchAuthors, personLd, imageObjectLd, extractAeoBlocks, fetchForms, injectFormEmbeds, type CmsPost } from "../../lib/cms"
+import { loadConfig, fetchAllPosts, canonicalHost, extractFaqs, computeRobots, fetchSeoSettings, profileOn, fetchAuthors, personLd, imageObjectLd, extractAeoBlocks, fetchForms, injectFormEmbeds, injectCtaBlocks, type CmsPost } from "../../lib/cms"
 
 export async function getStaticPaths() {
   const config = loadConfig()
@@ -82,8 +82,10 @@ const robots = computeRobots(post.noIndex, post.nofollow)
 // Forms Engine (V1.4): replace <div class="form-embed" data-form="slug"> markers
 // with the static form. Content without markers is untouched (byte-identical).
 const siteForms = await fetchForms(config)
-const contentHtml = injectFormEmbeds(post.content, siteForms, config, path)
-const hasFormEmbed = contentHtml !== post.content
+const contentHtml = injectCtaBlocks(injectFormEmbeds(post.content, siteForms, config, path))
+// Turnstile loads ONLY when an actual form widget landed on the page
+// (CTA-only injections must not pull the script — the zero-JS gate checks).
+const hasFormEmbed = contentHtml.includes("cf-turnstile")
 ---
 <Base
   title={post.seoTitle ?? `${post.title} — ${config.name}`}

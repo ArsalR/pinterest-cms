@@ -20,10 +20,10 @@ import { uploadToR2 } from "../../lib/r2"
 import { escapeHtml, cuid } from "../../lib/utils"
 import {
   validateSubmission, submitterEmail, renderAckTemplate,
-  HONEYPOT_FIELD, UPLOAD_ALLOWED, UPLOAD_MAX_BYTES,
+  HONEYPOT_FIELD, UPLOAD_ALLOWED, UPLOAD_MAX_BYTES, formsFromAddress,
 } from "./model"
 import { getActiveForm, storeSubmission } from "./service"
-import { formsFromAddress } from "./domainRoutes"
+import { fireFormWebhook, subscribePending } from "./hooks"
 
 export const formSubmitRoutes = new Hono<AppEnv>()
 
@@ -137,8 +137,24 @@ formSubmitRoutes.post("/:siteId/:formId", async (c, next) => {
     .filter((d) => result.values[d.key])
     .map((d) => `<p><strong>${escapeHtml(d.label)}:</strong> ${escapeHtml(result.values[d.key]).replace(/\n/g, "<br>")}</p>`)
     .join("")
+  const isNewsletter = def.slug.startsWith("newsletter")
   c.executionCtx.waitUntil(
     (async () => {
+      // F3: per-form outbound webhook (CRM/n8n/Make/Zapier) — best-effort,
+      // logged; failures retried by the existing webhook cron.
+      if (def.webhookUrl) {
+        await fireFormWebhook(siteDb, def, { id: submissionId, fields: result.values, page, country: country ? String(country) : null }, site.domain).catch(() => {})
+      }
+      // F3: newsletter capture — double-opt-in confirmation instead of the
+      // generic acknowledgment (legally-safer default).
+      if (isNewsletter) {
+        const to = submitterEmail(def.fields, result.values)
+        if (to) {
+          await subscribePending(c.env, siteDb, to, {
+            id: site.id, name: site.name, formsDomain: site.forms_domain, formsDomainStatus: site.forms_domain_status,
+          }, c.env.SAAS_APP_HOSTNAME || "arsal.app").catch(() => {})
+        }
+      }
       await sendEmail(c.env, {
         to: site.owner_email,
         from: "SiteNetwork Forms <forms@arsal.app>",
@@ -146,7 +162,7 @@ formSubmitRoutes.post("/:siteId/:formId", async (c, next) => {
         html: `${fieldsHtml}<hr><p>Form: ${escapeHtml(def.title)} · Page: ${escapeHtml(page)} · ${escapeHtml(String(country ?? ""))}</p>
                <p><a href="https://${c.env.SAAS_APP_HOSTNAME || "arsal.app"}/app/sites/${site.id}/inbox">Open in your inbox</a></p>`,
       }).catch(() => {})
-      if (def.ackEnabled) {
+      if (def.ackEnabled && !isNewsletter) {
         const to = submitterEmail(def.fields, result.values)
         if (to) {
           const extra = { site_name: site.name, form_title: def.title, submission_id: submissionId }

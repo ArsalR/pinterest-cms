@@ -239,3 +239,9 @@ export function formTemplate(id: string): FormTemplate | null {
 export function formSlug(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "form"
 }
+
+/** The From address for a site's form emails (custom domain when verified). Pure. */
+export function formsFromAddress(siteName: string, formsDomain: string | null, formsDomainStatus: string | null): string {
+  if (formsDomain && formsDomainStatus === "verified") return `${siteName} <forms@${formsDomain}>`
+  return `${siteName} <forms@arsal.app>`
+}

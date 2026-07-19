@@ -127,3 +127,32 @@ export async function storeSubmission(
   })
   return id
 }
+
+/** Save a form's outbound webhook. Also upserts a per-site webhook_endpoints
+ *  row (id form:<formId>) so the EXISTING retry cron can re-fire failures —
+ *  the delivery log JOINs on it. Clearing the URL removes both. */
+export async function setFormWebhook(
+  master: Client, cmsSiteId: string, formId: string, url: string, secret: string
+): Promise<{ ok: boolean; error?: string }> {
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return { ok: false, error: "The content workspace is unavailable." }
+  const cleanUrl = url.trim()
+  if (cleanUrl && !/^https:\/\/\S+$/.test(cleanUrl)) return { ok: false, error: "The webhook URL must be https://." }
+  const cleanSecret = secret.trim().slice(0, 128)
+  await siteDb.execute({
+    sql: "UPDATE forms SET webhook_url = ?, webhook_secret = ? WHERE id = ?",
+    args: [cleanUrl || null, cleanSecret || null, formId],
+  })
+  const epId = `form:${formId}`
+  if (cleanUrl) {
+    await siteDb.execute({
+      sql: `INSERT INTO webhook_endpoints (id, url, secret, secret_preview, events, active)
+            VALUES (?, ?, ?, ?, '["form.submission"]', 1)
+            ON CONFLICT(id) DO UPDATE SET url = excluded.url, secret = excluded.secret, secret_preview = excluded.secret_preview, active = 1`,
+      args: [epId, cleanUrl, cleanSecret || "none", (cleanSecret || "none").slice(-4)],
+    }).catch(() => {})
+  } else {
+    await siteDb.execute({ sql: "DELETE FROM webhook_endpoints WHERE id = ?", args: [epId] }).catch(() => {})
+  }
+  return { ok: true }
+}

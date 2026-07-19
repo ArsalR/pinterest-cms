@@ -281,6 +281,36 @@ export function injectFormEmbeds(html: string, forms: CmsForm[], config: SiteCon
   })
 }
 
+// ─────────────── CTA blocks (V1.4 F3, template mirror) ───────────────
+// Pure HTML/CSS, token-styled — mirrors src/modules/forms/hooks.ts.
+
+const CTA_BTN = "display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border-radius:8px;padding:0.7rem 1.4rem;font-weight:600"
+const ctaEsc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c] ?? c)
+
+export function injectCtaBlocks(html: string): string {
+  if (!html.includes("cta-block")) return html
+  return html.replace(/<div class="cta-block" data-cta="([a-z]+)"([^>]*)><\/div>/gi, (m, kind: string, attrs: string) => {
+    const attr = (name: string) => {
+      const mm = new RegExp(`data-${name}="([^"]*)"`, "i").exec(attrs)
+      return mm ? mm[1] : ""
+    }
+    const v = attr("value").trim()
+    const label = attr("label")
+    switch (kind) {
+      case "whatsapp": {
+        const url = `https://wa.me/${v.replace(/[^\d]/g, "")}${attr("prefill") ? `?text=${encodeURIComponent(attr("prefill"))}` : ""}`
+        return `<p class="cta"><a href="${ctaEsc(url)}" rel="noopener" style="${CTA_BTN};background:#25d366">${ctaEsc(label || "Chat on WhatsApp")}</a></p>`
+      }
+      case "call": return `<p class="cta"><a href="tel:${ctaEsc(v.replace(/\s+/g, ""))}" style="${CTA_BTN}">${ctaEsc(label || "Call now")}</a></p>`
+      case "email": return `<p class="cta"><a href="mailto:${ctaEsc(v)}" style="${CTA_BTN}">${ctaEsc(label || "Email us")}</a></p>`
+      case "book": return `<p class="cta"><a href="${ctaEsc(v)}" rel="noopener" style="${CTA_BTN}">${ctaEsc(label || "Book a time")}</a></p>`
+      case "download": return `<p class="cta"><a href="/forms/${ctaEsc(v)}/" style="${CTA_BTN}">${ctaEsc(label || "Get the download")}</a></p>`
+      case "subscribe": return `<p class="cta"><a href="/forms/${ctaEsc(v)}/" style="${CTA_BTN}">${ctaEsc(label || "Subscribe")}</a></p>`
+      default: return ""
+    }
+  })
+}
+
 // ─────────────── AI-SEO profile (V1.3 P5) — AEO blocks ───────────────
 // Mirrors src/modules/seo/aeo.ts: content blocks are plain-HTML conventions
 // (.aeo-tldr / .aeo-definition / .aeo-stat) turned into matching schema.
