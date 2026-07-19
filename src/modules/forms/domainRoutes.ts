@@ -153,9 +153,3 @@ export async function sendingDomainRemoveHandler(c: Context<AppEnv>): Promise<Re
   })
   return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/sending-domain?saved=${encodeURIComponent("Removed — back to the platform default.")}` } })
 }
-
-/** The From address for a site's form emails (custom domain when verified). */
-export function formsFromAddress(siteName: string, formsDomain: string | null, formsDomainStatus: string | null): string {
-  if (formsDomain && formsDomainStatus === "verified") return `${siteName} <forms@${formsDomain}>`
-  return `${siteName} <forms@arsal.app>`
-}

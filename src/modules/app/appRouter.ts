@@ -41,7 +41,7 @@ import { insightsPageHandler } from "../linking"
 import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
 import { designPageHandler, designApplyHandler } from "../design"
 import { seoHubHandler, seoProfilesToggleHandler, seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, seoSettingsEdgeHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler, indexingHandler, seoAssistHandler, imageAltSuggestHandler, siteScriptsHandler, siteScriptsSaveHandler, localSeoHandler, localSeoSaveHandler, localSeoDeleteHandler, authorsHandler, authorsSaveHandler, authorsDeleteHandler, merchantSeoHandler, merchantConfigSaveHandler, merchantProductsSaveHandler, imageLicenseSaveHandler } from "../seo"
-import { formsListHandler, formsCreateHandler, formEditHandler, formSaveHandler, sendingDomainHandler, sendingDomainCreateHandler, sendingDomainCheckHandler, sendingDomainRemoveHandler, inboxHandler, inboxDetailHandler, inboxStatusHandler, inboxNotesHandler, inboxReplyHandler, inboxRetentionHandler, allInboxesHandler } from "../forms"
+import { formsListHandler, formsCreateHandler, formEditHandler, formSaveHandler, sendingDomainHandler, sendingDomainCreateHandler, sendingDomainCheckHandler, sendingDomainRemoveHandler, formWebhookHandler, subscribersCsvHandler, inboxHandler, inboxDetailHandler, inboxStatusHandler, inboxNotesHandler, inboxReplyHandler, inboxRetentionHandler, allInboxesHandler } from "../forms"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -170,6 +170,8 @@ saasAppRoutes.get("/sites/:id/forms", prot(formsListHandler))
 saasAppRoutes.post("/sites/:id/forms/create", prot(formsCreateHandler))
 saasAppRoutes.get("/sites/:id/forms/:formId", prot(formEditHandler))
 saasAppRoutes.post("/sites/:id/forms/:formId", prot(formSaveHandler))
+saasAppRoutes.post("/sites/:id/forms/:formId/webhook", prot(formWebhookHandler))
+saasAppRoutes.get("/sites/:id/subscribers.csv", prot(subscribersCsvHandler))
 saasAppRoutes.get("/sites/:id/sending-domain", prot(sendingDomainHandler))
 saasAppRoutes.post("/sites/:id/sending-domain", prot(sendingDomainCreateHandler))
 saasAppRoutes.post("/sites/:id/sending-domain/check", prot(sendingDomainCheckHandler))

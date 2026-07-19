@@ -12,7 +12,9 @@ import { ensureMasterSchema, renderSaasLayout } from "../../shared"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, planGate, type Customer } from "../customers"
 import { FORM_TEMPLATES, FIELD_TYPES, formTemplate, parseFields, type FieldDef, type FieldType } from "./model"
-import { listForms, getForm, createForm, updateForm, deleteForm, type FormInput } from "./service"
+import { listForms, getForm, createForm, updateForm, deleteForm, setFormWebhook, type FormInput } from "./service"
+import { formWebhookLog, fireFormWebhook, listSubscribers, subscribersToCsv } from "./hooks"
+import { siteDbFor } from "../seo"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 const IN = "width:100%;padding:7px 9px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:12px"
@@ -125,6 +127,14 @@ export async function formEditHandler(c: Context<AppEnv>): Promise<Response> {
         <button type="submit" name="remove" value="${i}" title="Remove" style="background:none;border:1px solid #7f1d1d;border-radius:5px;color:#fca5a5;cursor:pointer;padding:2px 7px">✕</button>
       </td></tr>`).join("")
 
+  const siteDb = await siteDbFor(master, site.cms_site_id)
+  const log = siteDb ? await formWebhookLog(siteDb, f.id).catch(() => []) : []
+  const webhookLogHtml = log.length
+    ? `<div style="margin-top:10px"><div class="muted" style="font-size:11px;text-transform:uppercase">Recent deliveries</div>${log.map((l) => `<div style="font-size:12px;padding:3px 0;border-top:1px solid #1f2937">${escapeHtml(l.at.slice(0, 16))} — <span style="color:${l.status === "delivered" ? "#86efac" : "#fca5a5"}">${escapeHtml(l.status)}</span>${l.httpStatus ? ` (HTTP ${l.httpStatus})` : ""}</div>`).join("")}</div>`
+    : ""
+  const subs = f.slug.startsWith("newsletter") && siteDb ? await listSubscribers(siteDb).catch(() => []) : []
+  const subscriberStats = `${subs.filter((x) => x.confirmed && !x.unsubscribed).length} confirmed · ${subs.filter((x) => !x.confirmed && !x.unsubscribed).length} pending · ${subs.filter((x) => x.unsubscribed).length} unsubscribed`
+
   const body = `
     ${notice(c)}
     <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/forms" style="color:#93c5fd">← Forms</a></p>
@@ -159,7 +169,28 @@ export async function formEditHandler(c: Context<AppEnv>): Promise<Response> {
         <button type="submit" name="delete" value="1" onclick="return confirm('Delete this form and keep its submissions?')" style="background:#7f1d1d;color:#fff;border:0;border-radius:7px;padding:9px 14px;font-size:13px;cursor:pointer">Delete form</button>
         <button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save form</button>
       </div>
-    </form>`
+    </form>
+    <form method="post" action="/app/sites/${escapeAttr(siteId)}/forms/${escapeAttr(f.id)}/webhook">
+      <div class="card">
+        <h3 style="margin:0 0 4px;font-size:14px">Automation webhook</h3>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">POST each submission (JSON, HMAC-signed with your secret as <code>X-Webhook-Signature</code>) to any URL — n8n, Make, Zapier, your CRM. One field, infinite automations.</p>
+        <label class="muted" style="font-size:12px">Webhook URL</label>
+        <input name="webhookUrl" value="${escapeAttr(f.webhookUrl)}" placeholder="https://hooks.example.com/…" style="${IN}" />
+        <label class="muted" style="font-size:12px;display:block;margin-top:6px">Signing secret (optional)</label>
+        <input name="webhookSecret" value="${escapeAttr(f.webhookSecret)}" style="${IN}" />
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+          ${f.webhookUrl ? `<button type="submit" name="testfire" value="1" class="btn ghost" style="font-size:12px">Send test event</button>` : ""}
+          <button type="submit" style="background:#374151;color:#fff;border:0;border-radius:7px;padding:8px 15px;font-size:13px;cursor:pointer">Save webhook</button>
+        </div>
+        ${webhookLogHtml}
+      </div>
+    </form>
+    ${f.slug.startsWith("newsletter") ? `<div class="card">
+      <h3 style="margin:0 0 4px;font-size:14px">Subscribers</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 8px">Double-opt-in: people confirm by email before they count. No campaign sending here — <a href="#" style="color:#93c5fd" onclick="return false">connect your email tool via the webhook above</a> or export CSV.</p>
+      <p style="font-size:13px">${subscriberStats}</p>
+      <a class="btn ghost" style="font-size:12px" href="/app/sites/${escapeAttr(siteId)}/subscribers.csv">Export subscribers CSV</a>
+    </div>` : ""}`
   return c.html(renderSaasLayout({ title: f.title, active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
 
@@ -219,4 +250,55 @@ export async function formSaveHandler(c: Context<AppEnv>): Promise<Response> {
   if (!r.ok) return back("?error=" + encodeURIComponent(r.error ?? "Couldn't save."))
   await audit(master, customer.id, "site.form_saved", site.domain).catch(() => {})
   return back("?saved=" + encodeURIComponent("Form saved."))
+}
+
+
+export async function formWebhookHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const formId = c.req.param("formId") ?? ""
+  const master = await masterDb(c)
+  const site = await loadFormsSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q: string) => new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/forms/${formId}${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back("?error=" + encodeURIComponent("Your trial has ended — subscribe to edit."))
+
+  const form = (await c.req.parseBody()) as Record<string, unknown>
+  const url = String(form.webhookUrl ?? "")
+  const secret = String(form.webhookSecret ?? "")
+  const r = await setFormWebhook(master, site.cms_site_id, formId, url, secret)
+  if (!r.ok) return back("?error=" + encodeURIComponent(r.error ?? "Couldn't save."))
+
+  if (form.testfire === "1" && url.trim()) {
+    const siteDb = await siteDbFor(master, site.cms_site_id)
+    const def = await getForm(master, site.cms_site_id, formId)
+    if (siteDb && def?.webhookUrl) {
+      const res = await fireFormWebhook(siteDb, def, {
+        id: "test-" + Date.now().toString(36),
+        fields: Object.fromEntries(def.fields.map((fd) => [fd.key, `(test ${fd.type})`])),
+        page: "/test/", country: "XX",
+      }, site.domain)
+      await audit(master, customer.id, "site.form_webhook_tested", site.domain, { ok: res.ok }).catch(() => {})
+      return back("?saved=" + encodeURIComponent(res.ok ? `Test event delivered (HTTP ${res.status}).` : `Test event FAILED${res.status ? ` (HTTP ${res.status})` : " (unreachable)"} — check the URL.`))
+    }
+  }
+  await audit(master, customer.id, "site.form_webhook_saved", site.domain).catch(() => {})
+  return back("?saved=" + encodeURIComponent("Webhook saved."))
+}
+
+export async function subscribersCsvHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadFormsSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response("not found", { status: 404 })
+  const siteDb = await siteDbFor(master, site.cms_site_id)
+  const subs = siteDb ? await listSubscribers(siteDb).catch(() => []) : []
+  return new Response(subscribersToCsv(subs), {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="subscribers-${site.domain}.csv"`,
+      "Cache-Control": "no-store, private",
+    },
+  })
 }

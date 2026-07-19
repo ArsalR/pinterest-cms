@@ -12,7 +12,7 @@ import { audit, planGate, sendEmail, type Customer } from "../customers"
 import { siteDbFor } from "../seo"
 import { loadFormsSite } from "./formsRoutes"
 import { listForms } from "./service"
-import { formsFromAddress } from "./domainRoutes"
+import { formsFromAddress } from "./model"
 import {
   listSubmissions, getSubmission, setStatus, saveNotes, appendReply,
   submissionsToCsv, countNew, crossSiteNew,
