@@ -5,11 +5,14 @@
 //   STUB_POSTS=N        emit N synthetic published posts
 //   STUB_PROFILES=a,b   enable SEO profiles (local,news,ecommerce,image,ai)
 //   STUB_PRODUCTS=N     emit N synthetic products
+//   STUB_FORMS=N        emit N active forms (V1.4 audit); when >0, post 0 also
+//                       carries a form-embed marker + CTA markers in content
 // Listens on :8799.
 import { createServer } from "node:http"
 
 const POSTS = Number(process.env.STUB_POSTS ?? 0)
 const PRODUCTS = Number(process.env.STUB_PRODUCTS ?? 0)
+const FORMS = Number(process.env.STUB_FORMS ?? 0)
 const PROFILES = (process.env.STUB_PROFILES ?? "").split(",").map((s) => s.trim()).filter(Boolean)
 
 const now = Date.now()
@@ -25,6 +28,12 @@ const post = (i) => ({
     `<h2>How does it work in practice?</h2>` +
     `<p>${"More paragraphs of body copy for weight. ".repeat(40)}</p>` +
     `<div class="aeo-stat"><p>Adoption grew 42% last year. <a href="https://example.org/report">Source</a></p></div>` +
+    // V1.4: post 0 exercises the form-embed + CTA injection paths.
+    (FORMS > 0 && i === 0
+      ? `<div class="form-embed" data-form="stub-contact"></div>` +
+        `<div class="cta-block" data-cta="whatsapp" data-value="+44 7700 900123" data-prefill="Hi from article"></div>` +
+        `<div class="cta-block" data-cta="book" data-value="https://cal.com/audit" data-label="Book an audit"></div>`
+      : "") +
     // no remote images: the audit stub stays hermetic (Astro fetches +
     // optimizes remote images at build, which would need real hosts).
     ``,
@@ -75,6 +84,21 @@ createServer((req, res) => {
     return res.end(JSON.stringify({ success: true,
       config: PROFILES.includes("ecommerce") ? { shippingRateCents: 499, shippingCurrency: "usd", shipCountry: "GB", handlingDaysMax: 1, transitDaysMax: 5, returnDays: 30, returnFees: "free" } : null,
       products: PROFILES.includes("ecommerce") ? Array.from({ length: PRODUCTS }, (_, i) => ({ id: `prod-${i}`, slug: `product-${i}`, brand: "AuditBrand", gtin: null, mpn: `MPN-${i}`, condition: "new", ratingValue: 4.5, ratingCount: 7 })) : [] }))
+  }
+  if (url.includes("/forms")) {
+    // Mirrors GET /api/public/v1/forms (formDefRoutes). Form 0 is the embed
+    // target; the rest render standalone /forms/<slug>/ pages.
+    return res.end(JSON.stringify({ success: true, forms: Array.from({ length: FORMS }, (_, i) => ({
+      id: `form-${i}`,
+      slug: i === 0 ? "stub-contact" : `stub-form-${i}`,
+      title: i === 0 ? "Stub contact" : `Stub form ${i}`,
+      fields: [
+        { key: "name", label: "Name", type: "text", required: true },
+        { key: "email", label: "Email", type: "email", required: true },
+        { key: "service", label: "Service", type: "select", required: false, options: ["Repair", "Install"] },
+        { key: "message", label: "Message", type: "textarea", required: false },
+      ],
+    })) }))
   }
   if (url.includes("/seo")) {
     return res.end(JSON.stringify({ success: true, seo: Array.from({ length: POSTS }, (_, i) => seoRow(i)) }))

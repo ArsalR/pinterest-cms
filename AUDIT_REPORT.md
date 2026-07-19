@@ -407,3 +407,105 @@ double-build byte diff · 4× deliberate gate breaks (all exit 1) · worst-case
 500-post all-profiles build + artifact/window/exclusion counts · JSON-LD
 parsed from built HTML (post/home/product) · LHCI live (4 URLs, exit 0) ·
 IDOR handler scan · appRouter prot() scan.
+
+---
+
+# V1.4 WHOLE-SYSTEM VERIFICATION (July 2026 — Forms & Automation Engine + everything before it)
+
+Scope: F1 Forms Engine · F2 Submissions Inbox · F3 Automation hooks · F4 ✨
+Submission intelligence — verified on top of the full V1.0–V1.3 system.
+Stance unchanged: hostile, evidence-only; every claim below was executed in
+this session unless marked NOT-VERIFIED.
+
+## Verdict: **GO**
+
+No CRITICAL or HIGH findings. The forms surface follows every established
+covenant: additive-only tenant API, saas-flag fall-through, zero-JS static
+rendering (Turnstile the single allowed script, only where a widget exists),
+tenant-scoped loaders everywhere, counts-only audit rows for AI paths.
+
+## 1. Full regression — EXECUTED (cold)
+
+- `rm -rf node_modules && npm ci` → clean install, then:
+  `tsc --noEmit` ✓ · `lint:structure` ✓ (**25 modules, no cycles, barrel-only**)
+  · `vitest run` ✓ **474 tests / 64 files** (V1.3 audit baseline was 434 —
+  all 40 net-new tests are V1.4 forms/hooks/intel suites).
+- Frozen contracts: `errors.test.ts` (pinned 16-code vocabulary) passes
+  untouched; `/v1/forms` appended to BOTH discovery lists
+  (`capabilities.ts:42`, `public/index.ts:47` notFound `available`) — additive.
+- Flag discipline: every new public route self-gates —
+  `submitRoutes.ts:41`, `newsletterRoutes.ts:45,55` `if (!saasActive(c)) return next()`
+  → with `SAAS_MODE=""` the routes fall through to the tenant catch-all,
+  byte-identical (same mechanism the V1.3 audit byte-verified).
+
+## 2. Template composition build — EXECUTED (cold)
+
+Stub gained a `STUB_FORMS` knob (mirrors `/v1/forms` exactly; post 0 carries a
+form-embed marker + WhatsApp/Book CTA markers). Worst-case build:
+30 posts · 10 products · ALL profiles (local,news,ecommerce,image,ai) ·
+plausible script · **3 forms**, cold `npm install`:
+
+- Build green; `/forms/stub-contact/`, `/forms/stub-form-1/`, `/forms/stub-form-2/`
+  emitted as static pages; the embed landed inside post 0 with the Turnstile
+  widget; the WhatsApp CTA rendered digits-only `wa.me/447700900123`.
+- **All three gates green with forms present**: zero-js ✓ (Turnstile allowed on
+  `/forms/*` + widget-bearing pages ONLY) · headers ✓ · seo-files ✓.
+- Negative control: a post with CTA blocks but NO form embed carries **no
+  Turnstile script** (grep count 0 on `synthetic-article-1`).
+- Break-tests re-run: rogue external `<script src=https://evil.example/x.js>`
+  injected into a built form page → gate names the file and fails; inline
+  `<script>alert(1)</script>` on the homepage → **exit 1**. Restored, green.
+
+## 3. Lighthouse budgets — EXECUTED (live LHCI, this build)
+
+| URL | Perf | A11y | BP | SEO |
+|---|---|---|---|---|
+| `/` (home, all profiles) | **1.0** | 1.0 | 0.96 | 1.0 |
+| `/posts/synthetic-article-0/` (**embedded form + Turnstile + CTAs**) | **1.0** | 0.94 | 0.96 | 1.0 |
+| `/about/` | **1.0** | 0.9 | 0.96 | 1.0 |
+
+All budget assertions passed (`lhci autorun` exit 0). The page that carries the
+form + the one allowed script still scores 1.0 performance.
+
+## 4. New-surface security — EXECUTED (code-level)
+
+| Attack | Defense | Evidence |
+|---|---|---|
+| IDOR on forms/inbox/webhook/subscribers/domain routes | every handler resolves the site via `loadFormsSite(master, siteId, customer.id)` → `WHERE id = ? AND customer_id = ?` | `formsRoutes.ts:31-37`; 18 call sites across the three route files; zero direct-by-id loads |
+| Upload smuggling (exe/php/svg behind image field) | closed magic-byte allowlist (jpeg/png/gif/webp/pdf) — `sniffUploadMime` returns null for anything else (incl. `MZ`/ELF headers) → request rejected; 5MB cap; R2 keys are `cuid().ext` under `<host>/form-uploads` (no user filename, unguessable) | `submitRoutes.ts:30-37,115-129` |
+| Ack-email spam relay | recipient is ONLY `submitterEmail()` — the first **email-typed field of the STORED definition** (attacker cannot add fields; extra POST keys are dropped at validation); `renderAckTemplate` HTML-escapes all values and blanks unknown placeholders; From is the verified sending domain or platform address, never user input | `model.ts:119-122`, ack tests in `model.test.ts` |
+| Form-spam flood | 5/hr per IP per form + 100/hr per site (before Turnstile), honeypot pretend-success, Turnstile verify with per-site vault secret | `submitRoutes.ts:76-94` |
+| PII retention | stored meta is page path + `cf.country` (2 chars) — **no raw IP ever written**; retention purge setting 30/90/365 days | `submitRoutes.ts:131-133`, `inboxService.ts:53-61` |
+| Newsletter abuse | double-opt-in (nothing sent to a list; confirmation only), idempotent, unsubscribe honored in exports; public confirm/unsub endpoints mutate only flag columns via ≥20-char single-use token / row id | `hooks.ts:140-179` |
+| F4 key/content leakage | `grep console\.` across the module → **none**; key travels only into the `x-api-key` header; audit rows are counts-only tags (`site.intel_draft`, `site.inbox_digest_set`); prompt/output never persisted anywhere except the summary/score columns the customer owns | `intel.ts`, `inboxRoutes.ts` |
+| Webhook SSRF-ish | outbound URL must match `^https:\/\/\S+$`; HMAC-signed with the existing scheme; delivery log + existing retry cron | `hooks.ts:36`, `service.ts` setFormWebhook |
+
+## 5. Email paths — verified at the unit level
+
+`sendEmail` (Resend) is exercised by pure tests for template rendering
+(escaped ack, digest HTML) and by inspection for addressing: owner
+notification → owner email; ack/inbox-reply → submitter address only, with
+`Reply-To: owner`; From = `forms@<verified custom domain>` else
+`forms@arsal.app` (`formsFromAddress`, status-gated). A live send needs real
+Resend credentials → runbook smoke item (NOT-VERIFIED here, by design).
+
+## 6. Findings register (V1.4)
+
+- **M-1 (accepted, surfaced)**: form-webhook **retries** ride the existing
+  cron which is gated on `FEATURE_WEBHOOKS` (default OFF in wrangler.toml).
+  First-attempt delivery always fires; retry of failures requires the flag.
+  → launch-checklist step added. (Alternative — un-gating the cron — would
+  change existing-tenant behavior; rejected as non-additive.)
+- **L-6**: drag-reorder shipped as keyboard ↑/↓ buttons (zero-JS covenant);
+  spec said "drag" — surfaced in F1 PR, accepted.
+- **L-7**: digest rides the `0 4 * * *` UTC branch (gotcha #8 — no new cron
+  string), so "morning email" is 4-6am Europe / prior evening US. Cosmetic.
+- **L-8**: `/about` a11y 0.9 pre-existing (L-3), unchanged by V1.4.
+
+## Evidence appendix (V1.4 commands)
+
+cold `npm ci` + typecheck + lint:structure + 474 tests · cold template
+`npm install` + worst-case build (posts+products+profiles+script+**forms**) ·
+3 static gates with forms · 2 deliberate gate breaks (both blocked) ·
+CTA-only-no-Turnstile grep · LHCI live 3 URLs exit 0 · IDOR call-site scan ·
+console-log scan · frozen-contract test run.

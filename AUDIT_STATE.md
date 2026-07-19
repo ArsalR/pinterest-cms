@@ -116,3 +116,16 @@ Remaining: Job 3 — LAUNCH_CHECKLIST.md (docs PR).
   customer key? — per-customer assist limits reuse; drafted reply; daily digest
   cron `0 7 * * *` w/ exact-match branch gotcha #8) · Job 2 verify battery ·
   Job 3 final checklist (file + PRINTED IN CHAT).
+
+## V1.4 checkpoint — Job 2 COMPLETE (2026-07-19)
+- F1 (#65) F2 (#66) F3 (#67) F4 (#68) all merged. F4 shipped: intel.ts
+  (arrival summary+score → ai_summary/ai_score, drafted reply via formaction
+  button, daily digest riding the 0 4 * * * branch — NOT a new 0 7 cron),
+  shared assist:{customer} 60/hr bucket, counts-only audit.
+- Job 2 executed: cold ci + gates (474 tests) · cold template composition
+  build w/ new STUB_FORMS knob · gate break-tests · LHCI (perf 1.0 incl. the
+  form-bearing page) · security sweep (IDOR/uploads/spam-relay/PII/F4 leaks).
+  Full evidence in AUDIT_REPORT.md "V1.4 WHOLE-SYSTEM VERIFICATION". GO.
+- REMAINING: Job 3 — final LAUNCH_CHECKLIST.md (supersede, add V1.4 steps:
+  FEATURE_WEBHOOKS note, demo form submission + ack email as a live criterion)
+  + print the complete numbered checklist in the chat reply.
