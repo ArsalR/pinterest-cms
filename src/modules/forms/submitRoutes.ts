@@ -24,6 +24,7 @@ import {
 } from "./model"
 import { getActiveForm, storeSubmission } from "./service"
 import { fireFormWebhook, subscribePending } from "./hooks"
+import { runFormIntel, saveIntel } from "./intel"
 
 export const formSubmitRoutes = new Hono<AppEnv>()
 
@@ -140,6 +141,13 @@ formSubmitRoutes.post("/:siteId/:formId", async (c, next) => {
   const isNewsletter = def.slug.startsWith("newsletter")
   c.executionCtx.waitUntil(
     (async () => {
+      // F4: ✨ submission intelligence — one-line summary + lead score on
+      // arrival, on the CUSTOMER'S OWN key (silently skipped without one).
+      // Prompt/output never logged; the submission is stored either way.
+      const intel = await runFormIntel(c.env, db, site.customer_id, {
+        formTitle: def.title, siteName: site.name, fields: result.values,
+      }).catch(() => null)
+      if (intel) await saveIntel(siteDb, submissionId, intel)
       // F3: per-form outbound webhook (CRM/n8n/Make/Zapier) — best-effort,
       // logged; failures retried by the existing webhook cron.
       if (def.webhookUrl) {

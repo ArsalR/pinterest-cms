@@ -41,7 +41,7 @@ import { insightsPageHandler } from "../linking"
 import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, marketingExamplesHandler } from "../marketing"
 import { designPageHandler, designApplyHandler } from "../design"
 import { seoHubHandler, seoProfilesToggleHandler, seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, seoSettingsEdgeHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler, indexingHandler, seoAssistHandler, imageAltSuggestHandler, siteScriptsHandler, siteScriptsSaveHandler, localSeoHandler, localSeoSaveHandler, localSeoDeleteHandler, authorsHandler, authorsSaveHandler, authorsDeleteHandler, merchantSeoHandler, merchantConfigSaveHandler, merchantProductsSaveHandler, imageLicenseSaveHandler } from "../seo"
-import { formsListHandler, formsCreateHandler, formEditHandler, formSaveHandler, sendingDomainHandler, sendingDomainCreateHandler, sendingDomainCheckHandler, sendingDomainRemoveHandler, formWebhookHandler, subscribersCsvHandler, inboxHandler, inboxDetailHandler, inboxStatusHandler, inboxNotesHandler, inboxReplyHandler, inboxRetentionHandler, allInboxesHandler } from "../forms"
+import { formsListHandler, formsCreateHandler, formEditHandler, formSaveHandler, sendingDomainHandler, sendingDomainCreateHandler, sendingDomainCheckHandler, sendingDomainRemoveHandler, formWebhookHandler, subscribersCsvHandler, inboxHandler, inboxDetailHandler, inboxStatusHandler, inboxNotesHandler, inboxReplyHandler, inboxRetentionHandler, allInboxesHandler, inboxDraftHandler, inboxDigestHandler } from "../forms"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -181,7 +181,9 @@ saasAppRoutes.get("/sites/:id/inbox/:subId", prot(inboxDetailHandler))
 saasAppRoutes.post("/sites/:id/inbox/:subId/status", prot(inboxStatusHandler))
 saasAppRoutes.post("/sites/:id/inbox/:subId/notes", prot(inboxNotesHandler))
 saasAppRoutes.post("/sites/:id/inbox/:subId/reply", prot(inboxReplyHandler))
+saasAppRoutes.post("/sites/:id/inbox/:subId/draft", prot(inboxDraftHandler))
 saasAppRoutes.post("/sites/:id/inbox/retention", prot(inboxRetentionHandler))
+saasAppRoutes.post("/sites/:id/inbox/digest", prot(inboxDigestHandler))
 saasAppRoutes.get("/inboxes", prot(allInboxesHandler))
 saasAppRoutes.get("/sites/:id/seo", prot(seoHubHandler))
 saasAppRoutes.post("/sites/:id/seo/profiles", prot(seoProfilesToggleHandler))
