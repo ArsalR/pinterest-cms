@@ -1,0 +1,31 @@
+---
+// Form pages (V1.4 Forms Engine): one static page per active form. Pure HTML
+// form (zero-JS covenant) + the Turnstile widget — the same single allowed
+// script as the contact page. Zero forms ⇒ zero pages — byte-identical.
+import Base from "../../layouts/Base.astro"
+import { loadConfig, fetchForms, renderCmsForm, type CmsForm } from "../../lib/cms"
+
+export async function getStaticPaths() {
+  const config = loadConfig()
+  const forms = await fetchForms(config)
+  if (!config.formsEndpoint) return []
+  return forms.map((f) => ({ params: { slug: f.slug }, props: { form: f } }))
+}
+
+interface Props { form: CmsForm }
+const { form } = Astro.props
+const config = loadConfig()
+const page = `/forms/${form.slug}/`
+const siteId = (config.formsEndpoint ?? "").split("/").pop() ?? ""
+const base = (config.formsEndpoint ?? "").replace(/\/api\/saas\/forms\/.*$/, "")
+const action = `${base}/api/saas/form/${siteId}/${form.id}`
+const formHtml = renderCmsForm(form, action, config.turnstileSitekey, page)
+---
+<Base title={`${form.title} — ${config.name}`} description={`${form.title} — ${config.name}.`} path={page} robots="noindex">
+  <article>
+    <h1>{form.title}</h1>
+    <p style="color:var(--muted);font-size:0.9rem">Fields marked * are required. We'll confirm by email.</p>
+    <div set:html={formHtml} />
+  </article>
+  {config.turnstileSitekey && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+</Base>

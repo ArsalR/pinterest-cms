@@ -42,13 +42,16 @@ function walk(dir) {
       const html = readFileSync(p, "utf8")
       const rel = p.replace(dist, "")
       const isContact = /^\/contact\//.test(rel)
+      // V1.4 Forms Engine: form pages and pages with an embedded form carry
+      // the SAME single allowed widget script (Turnstile) as /contact/.
+      const isFormPage = /^\/forms\//.test(rel) || html.includes('class="cf-turnstile"')
       const isCartPage = /^\/(products\/|shop\/|cart\/)/.test(rel)
       const isOrderPage = /^\/order\//.test(rel)
       const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0])
       const bad = scripts.filter(
         (tag) =>
           !/type\s*=\s*["']application\/ld\+json["']/i.test(tag) &&
-          !(isContact && TURNSTILE.test(tag)) &&
+          !((isContact || isFormPage) && TURNSTILE.test(tag)) &&
           !(isCartPage && CART_JS.test(tag)) &&
           !(isOrderPage && ORDER_JS.test(tag)) &&
           !isSanctionedScript(tag)

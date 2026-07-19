@@ -271,6 +271,17 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `ALTER TABLE customer_sites ADD COLUMN tone TEXT`,
     ],
   },
+  {
+    version: 11,
+    name: "011_forms_sending_domain",
+    statements: [
+      // V1.4 F1 — optional per-site custom sending domain (Resend-verified).
+      // NULL = platform default (forms@arsal.app).
+      `ALTER TABLE customer_sites ADD COLUMN forms_domain TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN forms_domain_id TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN forms_domain_status TEXT`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO

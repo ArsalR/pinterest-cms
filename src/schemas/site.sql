@@ -254,6 +254,46 @@ CREATE TABLE IF NOT EXISTS authors (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- ─────────────── FORMS ENGINE (V1.4) ───────────────
+-- One machinery, many template variants. Runtime truth: provision.ts + migrate.ts (015).
+CREATE TABLE IF NOT EXISTS forms (
+  id             TEXT PRIMARY KEY,
+  slug           TEXT UNIQUE NOT NULL,
+  title          TEXT NOT NULL,
+  fields_json    TEXT NOT NULL,   -- [{key,label,type,required,options,help,max}]
+  ack_enabled    INTEGER NOT NULL DEFAULT 0,
+  ack_subject    TEXT,            -- {{placeholders}} from field keys
+  ack_body       TEXT,
+  webhook_url    TEXT,            -- V1.4 F3: per-form outbound webhook
+  webhook_secret TEXT,
+  active         INTEGER NOT NULL DEFAULT 1,
+  created_at     TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS form_submissions (
+  id          TEXT PRIMARY KEY,
+  form_id     TEXT NOT NULL,
+  fields_json TEXT NOT NULL,
+  page        TEXT,               -- page the form was on
+  country     TEXT,               -- IP-derived country ONLY (no raw IP kept)
+  status      TEXT NOT NULL DEFAULT 'new',  -- new|read|replied|archived
+  notes       TEXT,
+  thread_json TEXT,               -- inbox replies
+  ai_summary  TEXT,               -- V1.4 F4 (✨) — never prompt content
+  ai_score    TEXT,               -- hot|warm|cold + reason
+  created_at  TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (form_id) REFERENCES forms(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS subscribers (
+  id            TEXT PRIMARY KEY,
+  email         TEXT UNIQUE NOT NULL,
+  confirmed     INTEGER NOT NULL DEFAULT 0,  -- double-opt-in
+  confirm_token TEXT,
+  unsubscribed  INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_form_submissions_form ON form_submissions(form_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status);
+
 -- ─────────────── ECOMMERCE (amendment 2 — kind='ecommerce' sites) ───────────────
 -- Additive; inert for content sites. Products are a CMS content collection;
 -- orders are recorded by the platform Stripe webhook (4.5e). Runtime truth is

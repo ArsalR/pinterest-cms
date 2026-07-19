@@ -94,3 +94,25 @@ which wins) + composition test suite + audit-grade stub knobs. Open: M-1
 byte-identity re-baseline note, L-1..L-5 (see report).
 
 Remaining: Job 3 — LAUNCH_CHECKLIST.md (docs PR).
+
+
+---
+
+# V1.4 PROGRESS (Forms & Automation Engine)
+
+- F1 (forms-f1, THIS PR): migration 015 (forms/form_submissions/subscribers) +
+  master migration 011 (sending domain cols); pure model.ts (field schema →
+  BOTH static HTML + server validation; 12 templates; escaped ack templating;
+  honeypot; upload allowlist); public submit pipeline /api/saas/form/:site/:form
+  (rate→honeypot→Turnstile→validate→R2 uploads magic-sniffed→store country-only
+  →notify+ack, custom-domain From when verified); dashboard builder (↑/↓
+  reorder — drag shipped as buttons, surfaced); /v1/forms; template /forms/
+  pages + form-embed injection; zero-js gate extended for Turnstile on form
+  pages; Resend sending-domain wizard.
+- REMAINING: F2 inbox (list/status/search/notes/CSV/reply+thread/all-inboxes/
+  retention) · F3 hooks (per-form HMAC webhook+log+test-fire; CTA blocks;
+  newsletter double-opt-in+unsub+CSV; confirm/unsub endpoints on the submit
+  router) · F4 ✨ (summary+score on arrival via newsProfileOn-style read of
+  customer key? — per-customer assist limits reuse; drafted reply; daily digest
+  cron `0 7 * * *` w/ exact-match branch gotcha #8) · Job 2 verify battery ·
+  Job 3 final checklist (file + PRINTED IN CHAT).

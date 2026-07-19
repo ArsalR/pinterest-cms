@@ -197,6 +197,90 @@ export function profileOn(s: SeoSettings, id: string): boolean {
   return s.profiles.includes(id)
 }
 
+// ─────────────── Forms Engine (V1.4 F1) ───────────────
+// Static rendering mirror of src/modules/forms/model.ts renderFormHtml —
+// native HTML controls only (zero-JS covenant; Turnstile is the one allowed
+// script and the PAGE adds its tag, matching the contact-form pattern).
+
+export interface CmsFormField {
+  key: string
+  label: string
+  type: string
+  required?: boolean
+  options?: string[]
+  help?: string
+}
+export interface CmsForm {
+  id: string
+  slug: string
+  title: string
+  fields: CmsFormField[]
+}
+
+let _formsCache: CmsForm[] | null = null
+
+/** Active forms (memoized). [] on error — byte-identical for form-less sites. */
+export async function fetchForms(config: SiteConfig): Promise<CmsForm[]> {
+  if (_formsCache) return _formsCache
+  const key = process.env.CMS_API_KEY
+  if (!key) return (_formsCache = [])
+  try {
+    const resp = await fetch(`${config.cmsApiUrl}/forms`, { headers: { Authorization: `Bearer ${key}` } })
+    if (!resp.ok) return (_formsCache = [])
+    const data = (await resp.json()) as { forms?: CmsForm[] }
+    _formsCache = Array.isArray(data.forms) ? data.forms.filter((f) => f.slug && Array.isArray(f.fields)) : []
+    return _formsCache
+  } catch {
+    return (_formsCache = [])
+  }
+}
+
+const fEsc = (s: string) => s.replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" })[c] ?? c)
+
+/** Render one form as pure static HTML. `action` = platform submit endpoint. */
+export function renderCmsForm(form: CmsForm, action: string, turnstileSitekey: string | undefined, page: string): string {
+  const rows = form.fields.map((d) => {
+    const req = d.required ? " required" : ""
+    const name = fEsc(d.key)
+    const label = `<label for="f-${name}"><strong>${fEsc(d.label)}</strong>${d.required ? " *" : ""}</label>`
+    const help = d.help ? `<p style="font-size:0.85rem;color:var(--muted);margin:0.1rem 0">${fEsc(d.help)}</p>` : ""
+    let control: string
+    switch (d.type) {
+      case "textarea": control = `<textarea id="f-${name}" name="${name}" rows="5"${req} style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px"></textarea>`; break
+      case "select": control = `<select id="f-${name}" name="${name}"${req} style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px"><option value="">Choose…</option>${(d.options ?? []).map((o) => `<option value="${fEsc(o)}">${fEsc(o)}</option>`).join("")}</select>`; break
+      case "radio": control = (d.options ?? []).map((o, i) => `<label style="display:block"><input type="radio" name="${name}" value="${fEsc(o)}"${i === 0 && d.required ? " required" : ""}> ${fEsc(o)}</label>`).join(""); break
+      case "checkbox": return `<p>${label ? "" : ""}<label><input type="checkbox" id="f-${name}" name="${name}"${req}> ${fEsc(d.help ?? d.label)}</label></p>`
+      case "file": control = `<input type="file" id="f-${name}" name="${name}" accept="image/*,.pdf"${req}>`; break
+      case "hidden": return `<input type="hidden" name="${name}" value="">`
+      default: {
+        const map: Record<string, string> = { email: "email", phone: "tel", date: "date", number: "number" }
+        control = `<input type="${map[d.type] ?? "text"}" id="f-${name}" name="${name}"${req} style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px">`
+      }
+    }
+    return `<p>${label}${help}${control}</p>`
+  })
+  const hasFile = form.fields.some((d) => d.type === "file")
+  return `<form method="POST" action="${fEsc(action)}"${hasFile ? ` enctype="multipart/form-data"` : ""} style="max-width:32rem">
+${rows.join("\n")}
+<input type="text" name="website_url_confirm" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
+<input type="hidden" name="_page" value="${fEsc(page)}">
+${turnstileSitekey ? `<div class="cf-turnstile" data-sitekey="${fEsc(turnstileSitekey)}"></div>` : ""}
+<p><button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:0.6rem 1.4rem;font-size:1rem;cursor:pointer">Send</button></p>
+</form>`
+}
+
+/** Replace <div class="form-embed" data-form="slug"></div> markers in post
+ *  content with the rendered form. No markers = content untouched. */
+export function injectFormEmbeds(html: string, forms: CmsForm[], config: SiteConfig, page: string): string {
+  if (!html.includes("form-embed")) return html
+  return html.replace(/<div class="form-embed" data-form="([a-z0-9-]+)"><\/div>/gi, (m, slug: string) => {
+    const f = forms.find((x) => x.slug === slug)
+    if (!f || !config.formsEndpoint) return ""
+    const base = config.formsEndpoint.replace(/\/api\/saas\/forms\/.*$/, "")
+    return renderCmsForm(f, `${base}/api/saas/form/${config.formsEndpoint.split("/").pop()}/${f.id}`, config.turnstileSitekey, page)
+  })
+}
+
 // ─────────────── AI-SEO profile (V1.3 P5) — AEO blocks ───────────────
 // Mirrors src/modules/seo/aeo.ts: content blocks are plain-HTML conventions
 // (.aeo-tldr / .aeo-definition / .aeo-stat) turned into matching schema.

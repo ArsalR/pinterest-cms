@@ -262,6 +262,51 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE posts ADD COLUMN llms_exclude INTEGER NOT NULL DEFAULT 0`,
     ],
   },
+  {
+    version: 15,
+    name: "015_forms_engine",
+    statements: [
+      // V1.4 F1 — Forms Engine. One machinery, template variants. Additive;
+      // empty tables = no forms = today's behavior.
+      `CREATE TABLE IF NOT EXISTS forms (
+         id TEXT PRIMARY KEY,
+         slug TEXT UNIQUE NOT NULL,
+         title TEXT NOT NULL,
+         fields_json TEXT NOT NULL,
+         ack_enabled INTEGER NOT NULL DEFAULT 0,
+         ack_subject TEXT,
+         ack_body TEXT,
+         webhook_url TEXT,
+         webhook_secret TEXT,
+         active INTEGER NOT NULL DEFAULT 1,
+         created_at TEXT DEFAULT (datetime('now'))
+       )`,
+      `CREATE TABLE IF NOT EXISTS form_submissions (
+         id TEXT PRIMARY KEY,
+         form_id TEXT NOT NULL,
+         fields_json TEXT NOT NULL,
+         page TEXT,
+         country TEXT,
+         status TEXT NOT NULL DEFAULT 'new',
+         notes TEXT,
+         thread_json TEXT,
+         ai_summary TEXT,
+         ai_score TEXT,
+         created_at TEXT DEFAULT (datetime('now')),
+         FOREIGN KEY (form_id) REFERENCES forms(id) ON DELETE CASCADE
+       )`,
+      `CREATE TABLE IF NOT EXISTS subscribers (
+         id TEXT PRIMARY KEY,
+         email TEXT UNIQUE NOT NULL,
+         confirmed INTEGER NOT NULL DEFAULT 0,
+         confirm_token TEXT,
+         unsubscribed INTEGER NOT NULL DEFAULT 0,
+         created_at TEXT DEFAULT (datetime('now'))
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_form_submissions_form ON form_submissions(form_id, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status)`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.
