@@ -129,3 +129,12 @@ Remaining: Job 3 — LAUNCH_CHECKLIST.md (docs PR).
 - REMAINING: Job 3 — final LAUNCH_CHECKLIST.md (supersede, add V1.4 steps:
   FEATURE_WEBHOOKS note, demo form submission + ack email as a live criterion)
   + print the complete numbered checklist in the chat reply.
+
+## V1.4 checkpoint — Job 3 COMPLETE (2026-07-19)
+- LAUNCH_CHECKLIST.md rewritten as the FINAL superseding version: V1.4 steps
+  folded in (FEATURE_WEBHOOKS="1" recommendation in §4, forms drill in §9,
+  /v1/forms in smoke item 9, forms lines in the 48h watch) and the
+  "YOU ARE LIVE" list now has 9 criteria incl. one acknowledged demo form
+  submission and one completed+refunded test subscription. Checklist also
+  printed in full in the chat reply. V1.4 spec complete: F1–F4 + verify +
+  go-live deliverable all merged.
