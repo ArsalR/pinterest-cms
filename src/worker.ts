@@ -40,7 +40,7 @@ import { frontendRoutes } from "./routes/frontend"
 
 import { saasAppRoutes, saasRootHandler, saasApiRoutes, marketingHome, marketingPrivacy, marketingTerms, marketingExamples, clientPortal } from "./modules/app"
 import { saasHooksRoutes, saasFormsRoutes } from "./modules/webhooks"
-import { formSubmitRoutes, newsletterRoutes } from "./modules/forms"
+import { formSubmitRoutes, newsletterRoutes, runInboxDigest } from "./modules/forms"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 import { processDuePins } from "./modules/pinterest"
 import { runUptimeChecks } from "./modules/analytics"
@@ -237,6 +237,8 @@ export default {
         ctx.waitUntil(runDeadLinkCron(env, Date.now()).then(() => undefined).catch(() => undefined))
         // Monthly client reports (K11) — self-throttled to ~monthly per seat.
         ctx.waitUntil(runMonthlyReports(env, Date.now()).then(() => undefined).catch(() => undefined))
+        // ✨ Inbox daily digest (V1.4 F4) — opt-in per site, self-throttled ~daily.
+        ctx.waitUntil(runInboxDigest(env, Date.now()).then(() => undefined).catch(() => undefined))
       }
     } else {
       await runScheduler(env)

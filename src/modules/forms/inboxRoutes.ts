@@ -9,10 +9,11 @@ import { getMasterDb } from "../../lib/turso"
 import { ensureMasterSchema, renderSaasLayout } from "../../shared"
 import { escapeHtml, escapeAttr } from "../../lib/utils"
 import { audit, planGate, sendEmail, type Customer } from "../customers"
-import { siteDbFor } from "../seo"
+import { siteDbFor, assistAvailable } from "../seo"
 import { loadFormsSite } from "./formsRoutes"
 import { listForms } from "./service"
 import { formsFromAddress } from "./model"
+import { runDraftReply } from "./intel"
 import {
   listSubmissions, getSubmission, setStatus, saveNotes, appendReply,
   submissionsToCsv, countNew, crossSiteNew,
@@ -58,6 +59,14 @@ export async function inboxHandler(c: Context<AppEnv>): Promise<Response> {
   }
   const retention = await retentionDays(master, site.cms_site_id)
   const subs = await listSubmissions(master, site.cms_site_id, q, retention).catch(() => [])
+  // ✨ digest is an F4 surface — shown only with the customer's key connected.
+  const intelOn = await assistAvailable(master, customer.id).catch(() => false)
+  let digestOn = false
+  if (intelOn) {
+    const sdb = await siteDbFor(master, site.cms_site_id)
+    const r = sdb ? await sdb.execute({ sql: "SELECT value FROM settings WHERE key = 'inbox_digest_enabled' LIMIT 1", args: [] }).catch(() => null) : null
+    digestOn = String(r?.rows[0]?.value ?? "") === "1"
+  }
 
   // CSV export of the CURRENT filter.
   if (c.req.query("export") === "csv") {
@@ -112,7 +121,20 @@ export async function inboxHandler(c: Context<AppEnv>): Promise<Response> {
         </select>
         <button type="submit" class="btn ghost" style="font-size:12px">Save</button>
       </div>
-    </form>`
+    </form>
+    ${intelOn
+      ? `<form method="post" action="/app/sites/${escapeAttr(siteId)}/inbox/digest">
+          <div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:13px">✨ Daily digest email</span>
+            <select name="enabled" style="${IN};max-width:120px">
+              <option value="0" ${digestOn ? "" : "selected"}>off</option>
+              <option value="1" ${digestOn ? "selected" : ""}>on</option>
+            </select>
+            <button type="submit" class="btn ghost" style="font-size:12px">Save</button>
+            <span class="muted" style="font-size:11px">One morning email with yesterday's submissions and lead scores — only on days there's something new.</span>
+          </div>
+        </form>`
+      : ""}`
   await audit(master, customer.id, "site.inbox_viewed", site.domain).catch(() => {})
   return c.html(renderSaasLayout({ title: "Inbox", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
@@ -127,8 +149,17 @@ export async function inboxDetailHandler(c: Context<AppEnv>): Promise<Response> 
   const sub = await getSubmission(master, site.cms_site_id, subId)
   if (!sub) return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/inbox` } })
   if (sub.status === "new") await setStatus(master, site.cms_site_id, subId, "read")
+  return renderDetail(c, master, customer, site, siteId, subId, sub, "")
+}
 
+async function renderDetail(
+  c: Context<AppEnv>, master: Awaited<ReturnType<typeof masterDb>>, customer: Customer,
+  site: NonNullable<Awaited<ReturnType<typeof loadFormsSite>>>, siteId: string, subId: string,
+  sub: NonNullable<Awaited<ReturnType<typeof getSubmission>>>, draft: string
+): Promise<Response> {
   const email = submissionEmail(sub.fields)
+  // ✨ surfaces exist only when the customer's own key is connected (F4).
+  const intelOn = await assistAvailable(master, customer.id).catch(() => false)
   const fieldsHtml = Object.entries(sub.fields)
     .map(([k, v]) => `<p style="margin:4px 0"><span class="muted" style="font-size:11px;text-transform:uppercase">${escapeHtml(k)}</span><br>${/^https:\/\/\S+$/.test(v) ? `<a href="${escapeAttr(v)}" rel="noopener" style="color:#93c5fd">${escapeHtml(v)}</a>` : escapeHtml(v).replace(/\n/g, "<br>")}</p>`)
     .join("")
@@ -158,12 +189,35 @@ export async function inboxDetailHandler(c: Context<AppEnv>): Promise<Response> 
       ${email
         ? `<form method="post" action="/app/sites/${escapeAttr(siteId)}/inbox/${escapeAttr(subId)}/reply" style="margin-top:10px">
             <input name="subject" value="Re: ${escapeAttr(sub.formTitle)} — ${escapeAttr(site.name)}" style="${IN}" />
-            <textarea name="body" rows="5" placeholder="Write your reply to ${escapeAttr(email)}…" style="${IN};margin-top:6px">${sub.aiScore && sub.thread.length === 0 ? "" : ""}</textarea>
-            <div style="display:flex;justify-content:flex-end;margin-top:8px"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:8px 15px;font-size:13px;cursor:pointer">Send reply</button></div>
+            <textarea name="body" rows="7" placeholder="Write your reply to ${escapeAttr(email)}…" style="${IN};margin-top:6px">${escapeHtml(draft)}</textarea>
+            <div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px">
+              ${intelOn ? `<button type="submit" formaction="/app/sites/${escapeAttr(siteId)}/inbox/${escapeAttr(subId)}/draft" class="btn ghost" style="font-size:12px">✨ Draft a reply</button>` : "<span></span>"}
+              <button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:8px 15px;font-size:13px;cursor:pointer">Send reply</button>
+            </div>
+            ${intelOn ? `<p class="muted" style="font-size:11px;margin:6px 0 0">Drafts are suggestions on your own Anthropic key — nothing is ever sent until you press Send.</p>` : ""}
           </form>`
         : `<p class="muted" style="font-size:12px">This submission has no email address — nothing to reply to.</p>`}
     </div>`
   return c.html(renderSaasLayout({ title: "Submission", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+/** ✨ Generate a reply draft and re-render the detail page with the compose
+ *  box prefilled. NEVER sends — content is never logged (counts-only audit). */
+export async function inboxDraftHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const subId = c.req.param("subId") ?? ""
+  const master = await masterDb(c)
+  const site = await loadFormsSite(master, siteId, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const sub = await getSubmission(master, site.cms_site_id, subId)
+  if (!sub) return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/inbox` } })
+  const draft = await runDraftReply(c.env, master, customer.id, { formTitle: sub.formTitle, siteName: site.name, fields: sub.fields })
+  await audit(master, customer.id, "site.intel_draft", site.domain).catch(() => {})
+  if (!draft) {
+    return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/inbox/${subId}?saved=${encodeURIComponent("Couldn't draft just now — check your Anthropic connection or try again.")}` } })
+  }
+  return renderDetail(c, master, customer, site, siteId, subId, sub, draft)
 }
 
 export async function inboxStatusHandler(c: Context<AppEnv>): Promise<Response> {
@@ -248,6 +302,27 @@ export async function inboxRetentionHandler(c: Context<AppEnv>): Promise<Respons
     await audit(master, customer.id, "site.inbox_retention_set", site.domain, { days }).catch(() => {})
   }
   return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/inbox?saved=${encodeURIComponent("Retention saved.")}` } })
+}
+
+/** ✨ Daily digest opt-in (site setting; the walker rides the daily cron). */
+export async function inboxDigestHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const siteId = c.req.param("id") ?? ""
+  const master = await masterDb(c)
+  const site = await loadFormsSite(master, siteId, customer.id)
+  if (site?.cms_site_id) {
+    const form = await c.req.parseBody()
+    const enabled = String(form.enabled) === "1" ? "1" : "0"
+    const siteDb = await siteDbFor(master, site.cms_site_id)
+    if (siteDb) {
+      await siteDb.execute({
+        sql: `INSERT INTO settings (key, value) VALUES ('inbox_digest_enabled', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        args: [enabled],
+      }).catch(() => {})
+    }
+    await audit(master, customer.id, "site.inbox_digest_set", site.domain, { enabled }).catch(() => {})
+  }
+  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/inbox?saved=${encodeURIComponent("Digest setting saved.")}` } })
 }
 
 /** Cross-site "All inboxes" — network operators live here. */
