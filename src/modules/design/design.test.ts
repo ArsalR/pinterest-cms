@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import {
   PRESETS, PRESET_IDS, isPreset, layoutsFor, isLayout, defaultLayout,
-  TONE_IDS, isTone, toneDirective, DEFAULT_PRESET,
+  TONE_IDS, isTone, toneDirective, DEFAULT_PRESET, recommendDesign,
 } from "./catalog"
 
 const ROOT = fileURLToPath(new URL("../../..", import.meta.url))
@@ -35,6 +35,28 @@ describe("catalog validators (server-side enum — never free-form)", () => {
     expect(isTone("friendly")).toBe(true)
     expect(isTone("angry")).toBe(false)
     expect(toneDirective("expert")).toMatch(/expert|technical/i)
+  })
+})
+
+describe("recommendDesign (D4 niche → art direction)", () => {
+  it("matches niche worlds to fitting presets", () => {
+    expect(recommendDesign("family law firm", "portfolio").preset).toBe("editorial")
+    expect(recommendDesign("artisan sourdough bakery", "content").preset).toBe("warm")
+    expect(recommendDesign("developer API platform", "content").preset).toBe("tech")
+    expect(recommendDesign("yoga & wellness studio", "local-business").preset).toBe("calm")
+    expect(recommendDesign("streetwear fashion brand", "ecommerce").preset).toBe("bold")
+  })
+  it("always returns valid catalog ids (preset/layout/tone)", () => {
+    for (const kind of ["content", "ecommerce", "local-business", "portfolio"]) {
+      const r = recommendDesign("something totally generic", kind)
+      expect(isPreset(r.preset)).toBe(true)
+      expect(isLayout(kind, r.layout)).toBe(true)
+      expect(isTone(r.tone)).toBe(true)
+      expect(r.why.length).toBeGreaterThan(0)
+    }
+  })
+  it("falls back to a versatile default when no niche keyword hits", () => {
+    expect(recommendDesign("", "content").preset).toBe("modern")
   })
 })
 

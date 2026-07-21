@@ -77,6 +77,35 @@ export function defaultLayout(kind: string): string {
   return "classic"
 }
 
+// ─────────────────────── niche → design recommendation (D4) ───────────────────────
+// Art-direction as data: match the niche's world to the right preset, layout and
+// tone instead of always defaulting to "modern / classic / professional". Pure
+// and unit-tested. A specific hit wins; otherwise the site kind decides.
+
+interface DesignRec { preset: string; layout: string; tone: string; why: string }
+
+// Ordered keyword → aesthetic map. First match wins, so put specific worlds first.
+const NICHE_RULES: Array<{ re: RegExp; preset: string; tone: string; why: string }> = [
+  { re: /\b(law|lawyer|attorney|legal|accountant|accounting|tax|finance|financial|insurance|consult|advisor|notary)\b/i, preset: "editorial", tone: "professional", why: "trust-first professional services read best in a classic, editorial voice" },
+  { re: /\b(bakery|cafe|coffee|restaurant|food|recipe|catering|florist|craft|handmade|candle|artisan|wedding|kids|children|nursery)\b/i, preset: "warm", tone: "friendly", why: "warm, hand-made and hospitality niches want an earthy, friendly feel" },
+  { re: /\b(saas|software|api|developer|dev|tech|startup|ai|data|cloud|cyber|crypto|analytics|platform|app)\b/i, preset: "tech", tone: "expert", why: "technical products read as precise and credible in the cool tech preset" },
+  { re: /\b(gym|fitness|crossfit|nightlife|music|gaming|streetwear|fashion|agency|creative|photography|photographer|film|filmmaker|events?)\b/i, preset: "bold", tone: "friendly", why: "high-energy and creative brands earn a dramatic, high-contrast look" },
+  { re: /\b(yoga|wellness|spa|meditation|therapy|counsel|health|clinic|dental|medical|skincare|beauty|garden|plant|eco|sustainab|nature)\b/i, preset: "calm", tone: "friendly", why: "wellness and care niches feel right in a soft, calm, rounded palette" },
+]
+
+/** Recommend a preset + layout + tone for a niche & kind. Pure. */
+export function recommendDesign(niche: string, kind: string): DesignRec {
+  const n = (niche || "").toLowerCase()
+  const hit = NICHE_RULES.find((r) => r.re.test(n))
+  const preset = hit?.preset ?? (kind === "portfolio" ? "bold" : kind === "ecommerce" ? "modern" : "modern")
+  const tone = hit?.tone ?? "professional"
+  // Prefer the richer, more visual layout for each kind (still a real catalog id).
+  const visual: Record<string, string> = { content: "magazine", ecommerce: "grid", "local-business": "services", portfolio: "gallery" }
+  const layout = visual[kind] ?? "classic"
+  const why = hit?.why ?? "a clean, versatile default that suits most niches"
+  return { preset, layout, tone, why }
+}
+
 // ─────────────────────── tone of voice (seed content) ───────────────────────
 
 export const TONES = [
