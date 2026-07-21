@@ -13,6 +13,7 @@ import { createServer } from "node:http"
 const POSTS = Number(process.env.STUB_POSTS ?? 0)
 const PRODUCTS = Number(process.env.STUB_PRODUCTS ?? 0)
 const FORMS = Number(process.env.STUB_FORMS ?? 0)
+const SECTIONS = process.env.STUB_SECTIONS === "1" // D5.1: exercise the section library
 const PAGES = Number(process.env.STUB_PAGES ?? 0)  // CMS Pages (type='page'), rendered at /<slug>/
 const PROFILES = (process.env.STUB_PROFILES ?? "").split(",").map((s) => s.trim()).filter(Boolean)
 
@@ -29,6 +30,15 @@ const post = (i) => ({
     `<h2>How does it work in practice?</h2>` +
     `<p>${"More paragraphs of body copy for weight. ".repeat(40)}</p>` +
     `<div class="aeo-stat"><p>Adoption grew 42% last year. <a href="https://example.org/report">Source</a></p></div>` +
+    // D5.1: post 0 exercises the section component library.
+    (SECTIONS && i === 0
+      ? `<div class="stats"><div class="stat"><span class="n">12k</span><span class="l">clients</span></div><div class="stat"><span class="n">98%</span><span class="l">satisfaction</span></div></div>` +
+        `<div class="grid-2"><blockquote class="card quote-card"><p>Genuinely the best.</p><div class="who"><b>A. Client</b><span>Founder</span></div></blockquote><blockquote class="card quote-card"><p>Fast and lovely.</p><div class="who"><b>B. Buyer</b><span>CEO</span></div></blockquote></div>` +
+        `<div class="grid-3"><div class="card price-card"><h3>Starter</h3><div class="amt">$9<small>/mo</small></div><ul><li>One site</li><li>Email</li></ul><a class="btn" href="/contact/">Choose</a></div><div class="card price-card featured"><h3>Pro</h3><div class="amt">$29<small>/mo</small></div><ul><li>Ten sites</li><li>Priority</li></ul><a class="btn" href="/contact/">Choose</a></div></div>` +
+        `<details class="faq"><summary>Is it fast?</summary><p>Yes — Lighthouse 1.0.</p></details><details class="faq"><summary>Zero JS?</summary><p>Correct.</p></details>` +
+        `<div class="timeline"><div class="timeline-item"><div class="when">2021</div><h3>Founded</h3><p>Started up.</p></div><div class="timeline-item"><div class="when">2024</div><h3>Grew</h3><p>Scaled.</p></div></div>` +
+        `<div class="logos"><span>BrandA</span><span>BrandB</span><span>BrandC</span></div>`
+      : "") +
     // V1.4: post 0 exercises the form-embed + CTA injection paths.
     (FORMS > 0 && i === 0
       ? `<div class="form-embed" data-form="stub-contact"></div>` +

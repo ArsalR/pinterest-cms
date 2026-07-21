@@ -164,6 +164,56 @@ const year = new Date().getFullYear()
     .cta-band h2 { margin:0 0 .4rem; font-size:var(--fs-h3); }
     .cta-band p { margin:0 auto 1.2rem; max-width:48ch; color:var(--muted); }
 
+    /* Section component library (D5.1) — all zero-JS, token-styled. Genesis and
+       prompt-edits compose pages from these classes. */
+    .grid-2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(16rem,1fr)); gap:1.1rem; }
+    .grid-3 { display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr)); gap:1.1rem; }
+    /* Testimonials */
+    .quote-card { padding:1.4rem; }
+    .quote-card p { font-size:var(--fs-md); margin:0 0 .9rem; max-width:none; }
+    .quote-card .who { display:flex; align-items:center; gap:.6rem; font-size:var(--fs-sm); }
+    .quote-card .who b { color:var(--fg); } .quote-card .who span { color:var(--muted); }
+    /* Pricing */
+    .price-card { display:flex; flex-direction:column; padding:1.5rem; }
+    .price-card.featured { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), var(--shadow); }
+    .price-card .amt { font-family:var(--font-head); font-weight:var(--fw-head); font-size:var(--fs-h2);
+      letter-spacing:var(--ls-head); margin:.3rem 0; } .price-card .amt small { font-size:var(--fs-sm); color:var(--muted); font-weight:400; }
+    .price-card ul { list-style:none; padding:0; margin:1rem 0 1.3rem; } .price-card li { padding:.3rem 0; color:var(--muted); }
+    .price-card li::before { content:"✓"; color:var(--accent); font-weight:700; margin-right:.5rem; }
+    .price-card .btn { margin-top:auto; text-align:center; }
+    /* FAQ — native details/summary, no JS */
+    .faq { border-bottom:1px solid var(--border); }
+    .faq summary { cursor:pointer; list-style:none; padding:1rem 0; font-family:var(--font-head);
+      font-weight:var(--fw-head); font-size:var(--fs-h4); letter-spacing:var(--ls-head);
+      display:flex; justify-content:space-between; gap:1rem; align-items:center; }
+    .faq summary::-webkit-details-marker { display:none; }
+    .faq summary::after { content:"+"; color:var(--accent); font-size:1.4em; line-height:1; transition:transform .2s; }
+    .faq[open] summary::after { transform:rotate(45deg); }
+    .faq > *:not(summary) { padding-bottom:1rem; color:var(--muted); margin-top:-.2rem; }
+    /* Stats band */
+    .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr)); gap:1.2rem; text-align:center; }
+    .stat .n { font-family:var(--font-head); font-weight:var(--fw-head); font-size:var(--fs-h2);
+      letter-spacing:var(--ls-head); color:var(--accent); line-height:1; display:block; }
+    .stat .l { font-size:var(--fs-sm); color:var(--muted); margin-top:.35rem; display:block; }
+    /* Logo strip */
+    .logos { display:flex; flex-wrap:wrap; align-items:center; gap:1.4rem 2rem; justify-content:center; }
+    .logos span, .logos img { color:var(--muted); font-family:var(--font-head); font-weight:600; opacity:.75; filter:grayscale(1); max-height:2rem; }
+    /* Team */
+    .member { text-align:center; padding:1.2rem; }
+    .member img { width:5rem; height:5rem; border-radius:50%; object-fit:cover; margin:0 auto .7rem; display:block; }
+    .member .name { font-family:var(--font-head); font-weight:var(--fw-head); }
+    .member .role { font-size:var(--fs-sm); color:var(--muted); }
+    /* Gallery */
+    .gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(11rem,1fr)); gap:.6rem; }
+    .gallery img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:var(--radius); }
+    /* Timeline */
+    .timeline { border-left:2px solid var(--accent-line); padding-left:1.3rem; margin-left:.3rem; }
+    .timeline-item { position:relative; padding-bottom:1.4rem; }
+    .timeline-item::before { content:""; position:absolute; left:calc(-1.3rem - 6px); top:.35rem;
+      width:9px; height:9px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px var(--bg); }
+    .timeline-item .when { font-size:var(--fs-sm); color:var(--accent); font-weight:600; }
+    .timeline-item h3 { margin:.15rem 0 .3rem; }
+
     footer { max-width:var(--wide); border-top:1px solid var(--border); margin-top:var(--sp-16);
       padding-top:1.4rem; padding-bottom:2.6rem; font-size:var(--fs-sm); color:var(--muted); }
     footer nav { display:flex; flex-wrap:wrap; gap:.4rem 1.1rem; margin-bottom:.7rem; }
