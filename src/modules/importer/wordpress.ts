@@ -32,6 +32,11 @@ export interface WpPost {
   publishedAt: string | null // ISO, from wp:post_date_gmt when present
   categories: string[]
   originalUrl: string   // the old permalink — drives the edge redirect map
+  /** WP object type. Pages come in only when the caller opts in; they are
+   *  imported as live/editable content so the migrated site matches the old
+   *  one (the static template renders type='post', so a page is stored as a
+   *  post and its old URL is 301'd to the new path). */
+  type: "post" | "page"
   /** Yoast / Rank Math SEO meta, when the export carried it. */
   seo?: WpSeoMeta
 }
@@ -156,15 +161,22 @@ export function slugify(title: string): string {
 
 export interface ParseResult {
   posts: WpPost[]
-  skipped: number   // non-post items (pages, attachments, nav_menu_item, …)
+  skipped: number   // items not imported (attachments, nav_menu_item, …; pages too unless includePages)
+}
+
+export interface ParseOptions {
+  /** Include WordPress Pages (post_type='page') as importable content.
+   *  Default false keeps the original posts-only behavior. When true, pages
+   *  come through tagged type:'page' so the migration recreates them. */
+  includePages?: boolean
 }
 
 /**
- * Parse a WXR export string into normalized posts. Only `post` items are
- * returned; pages/attachments/menu items are counted as skipped. Robust to
- * missing fields — a malformed item is skipped, never throws. Pure.
+ * Parse a WXR export string into normalized posts (and, when opted in, pages).
+ * Attachments/menu items are always counted as skipped. Robust to missing
+ * fields — a malformed item is skipped, never throws. Pure.
  */
-export function parseWxr(xml: string): ParseResult {
+export function parseWxr(xml: string, opts: ParseOptions = {}): ParseResult {
   const posts: WpPost[] = []
   let skipped = 0
   const itemRe = /<item\b[\s\S]*?<\/item>/gi
@@ -172,8 +184,11 @@ export function parseWxr(xml: string): ParseResult {
   while ((m = itemRe.exec(xml)) !== null) {
     const item = m[0]
     try {
-      const type = tagText(item, "wp:post_type") || "post"
-      if (type !== "post") { skipped++; continue }
+      const wpType = tagText(item, "wp:post_type") || "post"
+      const isPage = wpType === "page"
+      // Posts always; pages only when asked; everything else (attachment,
+      // nav_menu_item, revision, custom types) is skipped.
+      if (wpType !== "post" && !(isPage && opts.includePages)) { skipped++; continue }
       const title = tagText(item, "title")
       const content = tagText(item, "content:encoded")
       // An item with neither title nor content isn't worth importing.
@@ -188,6 +203,7 @@ export function parseWxr(xml: string): ParseResult {
         publishedAt: toIso(tagText(item, "wp:post_date_gmt") || tagText(item, "wp:post_date")),
         categories: categoriesOf(item),
         originalUrl: tagText(item, "link"),
+        type: isPage ? "page" : "post",
         seo: extractSeoMeta(postMeta(item)),
       })
     } catch {
@@ -237,6 +253,7 @@ export function parseRestPosts(json: unknown): WpPost[] {
         publishedAt: toIso(raw.date_gmt ?? ""),
         categories: cats,
         originalUrl: raw.link ?? "",
+        type: "post",
       })
     } catch {
       // skip a malformed record, keep the rest
