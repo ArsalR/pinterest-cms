@@ -47,6 +47,9 @@ jobs:
       - name: "Gate: security headers (Security Covenant S2)"
         run: npm run check:headers
 
+      - name: "Gate: self-hosted fonts only (Performance Covenant P4)"
+        run: npm run check:fonts
+
       - name: "Gate: SEO file set + tags (amendment 3 — sitemap, robots, RSS, llms.txt, manifest, favicon, 404, redirects, canonical, OG/Twitter, JSON-LD)"
         run: node scripts/check-seo-files.mjs
 
