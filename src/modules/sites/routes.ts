@@ -21,7 +21,7 @@ import { audit } from "../customers"
 import { countNew } from "../forms"
 import {
   PRESETS, TONES, LAYOUTS, isPreset, isLayout, isTone, toneDirective,
-  DEFAULT_PRESET, DEFAULT_TONE, type SiteKindId,
+  DEFAULT_TONE, recommendDesign, type SiteKindId,
 } from "../design"
 
 /** Preset swatch cards + kind-aware layout radios + tone — for the create form.
@@ -29,9 +29,22 @@ import {
  *  this panel). Layout groups for non-selected kinds are disabled so only the
  *  active kind's layout submits. */
 function designOptionsHtml(): string {
-  const presetCards = PRESETS.map(
+  // "Auto" is the default (D4): the design is matched to the niche you type.
+  const autoCard = `<label style="cursor:pointer;display:block">
+      <input type="radio" name="preset" value="auto" checked style="position:absolute;opacity:0" onchange="dsel(this)">
+      <span class="dcard" style="display:block;border:2px solid #404040;border-radius:10px;overflow:hidden">
+        <span style="display:block;height:44px;background:linear-gradient(120deg,#2563eb,#9a4a2f 45%,#4f7a5f);position:relative">
+          <span style="position:absolute;left:10px;top:11px;font-size:16px">✨</span>
+        </span>
+        <span style="display:block;padding:7px 9px;background:#171717">
+          <span style="font-size:13px;font-weight:600">Auto</span>
+          <span class="muted" style="display:block;font-size:11px">Best match for your niche</span>
+        </span>
+      </span>
+    </label>`
+  const presetCards = autoCard + PRESETS.map(
     (p) => `<label style="cursor:pointer;display:block">
-      <input type="radio" name="preset" value="${escapeAttr(p.id)}" ${p.id === DEFAULT_PRESET ? "checked" : ""} style="position:absolute;opacity:0" onchange="dsel(this)">
+      <input type="radio" name="preset" value="${escapeAttr(p.id)}" style="position:absolute;opacity:0" onchange="dsel(this)">
       <span class="dcard" style="display:block;border:2px solid #404040;border-radius:10px;overflow:hidden">
         <span style="display:block;height:44px;background:${p.swatch.bg};position:relative">
           <span style="position:absolute;left:10px;top:12px;width:20px;height:20px;border-radius:5px;background:${p.swatch.accent}"></span>
@@ -243,12 +256,16 @@ export async function createSitePostHandler(c: Context<AppEnv>): Promise<Respons
   const kindRaw = String(form.get("kind") || "content")
   const kind = isSiteKind(kindRaw) ? kindRaw : "content"
   // Design options (V1.1) — validated against the catalog, never free-form.
+  // "auto" (the default) and any invalid value fall back to a niche-aware
+  // recommendation (D4) instead of a fixed default, so the starting design
+  // suits the site's world.
+  const rec = recommendDesign(niche, kind)
   const presetRaw = String(form.get("preset") || "")
-  const preset = isPreset(presetRaw) ? presetRaw : DEFAULT_PRESET
+  const preset = presetRaw === "auto" ? rec.preset : isPreset(presetRaw) ? presetRaw : rec.preset
   const layoutRaw = String(form.get("layout") || "")
-  const layout = isLayout(kind, layoutRaw) ? layoutRaw : "classic"
+  const layout = layoutRaw === "auto" ? rec.layout : isLayout(kind, layoutRaw) ? layoutRaw : rec.layout
   const toneRaw = String(form.get("tone") || "")
-  const tone = isTone(toneRaw) ? toneRaw : DEFAULT_TONE
+  const tone = toneRaw === "auto" ? rec.tone : isTone(toneRaw) ? toneRaw : rec.tone
 
   if (!zoneId || !domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)) return fail("Pick a domain from the list.")
   if (!name) return fail("Give the site a name.")
