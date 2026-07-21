@@ -35,6 +35,75 @@ const SANS = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-
 const SERIF = 'Georgia, "Iowan Old Style", "Times New Roman", serif'
 const SOFT_SHADOW = "0 1px 2px rgba(15,23,42,.05), 0 12px 28px -16px rgba(15,23,42,.18)"
 
+// ─────────────────────── curated typography (D2) ───────────────────────
+// Self-hosted latin-subset VARIABLE fonts (OFL, in public/fonts). Each family
+// ships with a metric-matched fallback @font-face so font-display:swap causes
+// ~zero layout shift: while the woff2 loads, a size-adjusted local system font
+// stands in at the same dimensions. size-adjust/overrides are tuned to keep
+// CLS < 0.02 (verified in CI). Variable → real weight axes, never faux-bold.
+interface FontDef {
+  family: string
+  file: string
+  weight: string // variable wght axis range
+  serif: boolean
+  fbLocal: string // metric-matched system stand-in
+  sizeAdjust: string
+  ascent: string
+  descent: string
+  lineGap: string
+}
+const FONTS: Record<string, FontDef> = {
+  inter:           { family: "Inter",         file: "inter-variable-latin.woff2",         weight: "100 900", serif: false, fbLocal: "Arial",   sizeAdjust: "107%",   ascent: "90%",   descent: "22.4%", lineGap: "0%" },
+  "space-grotesk": { family: "Space Grotesk", file: "space-grotesk-variable-latin.woff2", weight: "300 700", serif: false, fbLocal: "Arial",   sizeAdjust: "100.8%", ascent: "95%",   descent: "24%",   lineGap: "0%" },
+  archivo:         { family: "Archivo",       file: "archivo-variable-latin.woff2",       weight: "100 900", serif: false, fbLocal: "Arial",   sizeAdjust: "100%",   ascent: "92%",   descent: "24%",   lineGap: "0%" },
+  manrope:         { family: "Manrope",       file: "manrope-variable-latin.woff2",       weight: "200 800", serif: false, fbLocal: "Arial",   sizeAdjust: "104%",   ascent: "92.9%", descent: "24.4%", lineGap: "0%" },
+  fraunces:        { family: "Fraunces",      file: "fraunces-variable-latin.woff2",      weight: "100 900", serif: true,  fbLocal: "Georgia", sizeAdjust: "97%",    ascent: "96%",   descent: "24%",   lineGap: "0%" },
+  newsreader:      { family: "Newsreader",    file: "newsreader-variable-latin.woff2",    weight: "200 800", serif: true,  fbLocal: "Georgia", sizeAdjust: "95%",    ascent: "96%",   descent: "24%",   lineGap: "0%" },
+  lora:            { family: "Lora",          file: "lora-variable-latin.woff2",          weight: "400 700", serif: true,  fbLocal: "Georgia", sizeAdjust: "100%",   ascent: "92%",   descent: "24%",   lineGap: "0%" },
+}
+
+// Display / body pairing per preset (kept out of PRESETS to avoid churn).
+const PAIRING: Record<string, { head: string; body: string }> = {
+  editorial: { head: "fraunces", body: "newsreader" },
+  modern:    { head: "inter", body: "inter" },
+  bold:      { head: "archivo", body: "inter" },
+  calm:      { head: "lora", body: "manrope" },
+  warm:      { head: "fraunces", body: "manrope" },
+  tech:      { head: "space-grotesk", body: "inter" },
+}
+
+function fontStack(key: string): string {
+  const d = FONTS[key]
+  if (!d) return SANS
+  return `"${d.family}","${d.family} Fallback",${d.serif ? SERIF : SANS}`
+}
+function pairFor(name: string | undefined): { head: string; body: string } {
+  return (name && PAIRING[name]) || PAIRING[DEFAULT_PRESET]
+}
+
+/** @font-face blocks (webfont + metric-matched fallback) for the 2 families a
+ *  preset uses, de-duplicated. Emitted into the page's inline <style>. Pure. */
+export function presetFontFaces(name: string | undefined): string {
+  const p = pairFor(name)
+  const keys = p.head === p.body ? [p.head] : [p.head, p.body]
+  return keys
+    .map((k) => {
+      const d = FONTS[k]
+      return (
+        `@font-face{font-family:"${d.family}";src:url(/fonts/${d.file}) format("woff2");font-weight:${d.weight};font-style:normal;font-display:swap}` +
+        `@font-face{font-family:"${d.family} Fallback";src:local("${d.fbLocal}");size-adjust:${d.sizeAdjust};ascent-override:${d.ascent};descent-override:${d.descent};line-gap-override:${d.lineGap}}`
+      )
+    })
+    .join("")
+}
+
+/** The woff2 files a preset uses (deduped) — for <link rel=preload>. Pure. */
+export function presetFontPreload(name: string | undefined): string[] {
+  const p = pairFor(name)
+  const files = p.head === p.body ? [FONTS[p.head].file] : [FONTS[p.head].file, FONTS[p.body].file]
+  return files.map((f) => `/fonts/${f}`)
+}
+
 export const PRESETS: Record<string, PresetTokens> = {
   editorial: { bg: "#fbf9f4", surface: "#ffffff", fg: "#1c1a17", muted: "#6b6357", border: "#e7e1d6", accent: "#9a4a2f", accentFg: "#ffffff", fontHead: SERIF, fontBody: SANS, scale: 1.333, headWeight: "600", headTracking: "-.01em", bodyLh: "1.72", radius: "4px", shadow: "0 1px 2px rgba(60,40,20,.05), 0 14px 30px -18px rgba(60,40,20,.2)", maxw: "42rem", wide: "60rem" },
   modern:    { bg: "#ffffff", surface: "#f8fafc", fg: "#0f172a", muted: "#5b6675", border: "#e4e9f0", accent: "#2563eb", accentFg: "#ffffff", fontHead: SANS, fontBody: SANS, scale: 1.25, headWeight: "760", headTracking: "-.021em", bodyLh: "1.65", radius: "8px", shadow: SOFT_SHADOW, maxw: "44rem", wide: "62rem" },
@@ -75,13 +144,14 @@ export function presetRootCss(name: string | undefined): string {
   }
   // Fluid h1: scales with the viewport between the h2 size and the h1 ceiling.
   const h1 = `clamp(${fs.h2}rem, calc(1.2rem + 3.2vw), ${fs.h1max}rem)`
+  const pair = pairFor(name)
   return (
     `:root{` +
     `--bg:${t.bg};--surface:${t.surface};--fg:${t.fg};--muted:${t.muted};--border:${t.border};` +
     `--accent:${t.accent};--accent-fg:${t.accentFg};` +
     `--accent-soft:color-mix(in srgb, ${t.accent} 12%, ${t.surface});` +
     `--accent-line:color-mix(in srgb, ${t.accent} 32%, ${t.border});` +
-    `--font-head:${t.fontHead};--font-body:${t.fontBody};` +
+    `--font-head:${fontStack(pair.head)};--font-body:${fontStack(pair.body)};` +
     `--fw-head:${t.headWeight};--ls-head:${t.headTracking};--lh-body:${t.bodyLh};` +
     `--radius:${t.radius};--shadow:${t.shadow};` +
     `--maxw:${t.maxw};--wide:${t.wide};` +

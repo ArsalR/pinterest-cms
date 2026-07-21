@@ -2,7 +2,7 @@
 // Base layout — zero client JS (P1), system font stack (P4), critical CSS
 // inlined by Astro (P5), semantic HTML + JSON-LD (K8/AEO).
 import { loadConfig, canonicalHost, fetchSeoSettings, globalSchemaFor, scriptTagsFor } from "../lib/cms"
-import { presetRootCss, resolvePreset } from "../lib/presets"
+import { presetRootCss, resolvePreset, presetFontFaces, presetFontPreload } from "../lib/presets"
 
 interface Props {
   title: string
@@ -44,6 +44,11 @@ const year = new Date().getFullYear()
   <meta name="description" content={description} />
   {robots && <meta name="robots" content={robots} />}
   <link rel="canonical" href={canonical} />
+  {/* Curated typography (D2): preload only the two self-hosted faces this
+      preset uses, so the webfont paints without a swap flash. */}
+  {presetFontPreload(config.preset).map((href) => (
+    <link rel="preload" href={href} as="font" type="font/woff2" crossorigin="anonymous" />
+  ))}
   <link rel="sitemap" href="/sitemap-index.xml" />
   <link rel="alternate" type="application/rss+xml" title={config.name} href="/rss.xml" />
 
@@ -72,6 +77,7 @@ const year = new Date().getFullYear()
     /* Design system (D1) — CSS variables + a lean content stylesheet. Zero JS
        (P1); system fonts in D1, curated faces in D2 (P4); CSS stays well under
        budget (P5). Tokens drive type scale, spacing, elevation and components. */
+    ${presetFontFaces(config.preset)}
     ${presetRootCss(config.preset)}
     *,*::before,*::after { box-sizing:border-box; }
     html { -webkit-text-size-adjust:100%; }
