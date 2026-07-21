@@ -67,6 +67,8 @@ export function genesisPrompt(name: string, niche: string, kind: string = "conte
     `• Logo strip: <div class="logos"><span>BrandA</span><span>BrandB</span>…</div>`,
     `• CTA band: <div class="cta-band"><h2>Ready?</h2><p>One line.</p><a class="btn" href="/contact/">Get started</a></div>`,
     `• Comparison: a normal <table> (already themed). Use these where they fit the page's job — don't force all of them.`,
+    `Optional: add class "reveal" to a section BELOW the first screen for a subtle scroll-in`,
+    `(never on the hero/first section). It degrades gracefully and respects reduced-motion.`,
     ``,
     `Content — do ALL of the following via the CMS API (see the rules above for how to call it).`,
     ...(toneLine ? [`TONE: ${toneLine}`] : []),
