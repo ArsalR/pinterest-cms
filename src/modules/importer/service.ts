@@ -219,6 +219,59 @@ async function importPosts(env: CloudflareEnv, site: ImportSite, posts: WpPost[]
   return res
 }
 
+// ─────────────────────── cleanup queue (K9 follow-up) ───────────────────────
+
+export interface CleanupPostRow { id: string; title: string; slug: string; type: string; content: string; published: number }
+
+/** List imported (source='wordpress') posts/pages for the cleanup queue. */
+export async function listImportedPosts(env: CloudflareEnv, cmsSiteId: string): Promise<CleanupPostRow[]> {
+  const master = getMasterDb(env)
+  await ensureMasterSchema(master)
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return []
+  const r = await siteDb.execute({
+    sql: "SELECT id, title, slug, type, content, published FROM posts WHERE source = 'wordpress' ORDER BY created_at DESC LIMIT 1000",
+    args: [],
+  }).catch(() => null)
+  return (r?.rows ?? []).map((row) => ({
+    id: String(row.id), title: String(row.title ?? ""), slug: String(row.slug ?? ""),
+    type: String(row.type ?? "post"), content: String(row.content ?? ""), published: Number(row.published) || 0,
+  }))
+}
+
+/** Load one imported post's content for preview. Tenant scoping is the route's job. */
+export async function getImportedPost(env: CloudflareEnv, cmsSiteId: string, id: string): Promise<CleanupPostRow | null> {
+  const master = getMasterDb(env)
+  await ensureMasterSchema(master)
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return null
+  const r = await siteDb.execute({
+    sql: "SELECT id, title, slug, type, content, published FROM posts WHERE id = ? AND source = 'wordpress' LIMIT 1",
+    args: [id],
+  }).catch(() => null)
+  if (!r?.rows.length) return null
+  const row = r.rows[0]
+  return { id: String(row.id), title: String(row.title ?? ""), slug: String(row.slug ?? ""), type: String(row.type ?? "post"), content: String(row.content ?? ""), published: Number(row.published) || 0 }
+}
+
+/** Write approved cleaned content back to a post + rebuild if it's live. */
+export async function savePostContent(env: CloudflareEnv, site: ImportSite, id: string, html: string): Promise<boolean> {
+  const master = getMasterDb(env)
+  await ensureMasterSchema(master)
+  const siteDb = await siteDbFor(master, site.cmsSiteId)
+  if (!siteDb) return false
+  const r = await siteDb.execute({
+    sql: "UPDATE posts SET content = ?, updated_at = datetime('now') WHERE id = ? AND source = 'wordpress'",
+    args: [html, id],
+  }).catch(() => null)
+  if (!r || Number(r.rowsAffected) === 0) return false
+  const pub = await siteDb.execute({ sql: "SELECT published FROM posts WHERE id = ? LIMIT 1", args: [id] }).catch(() => null)
+  if (pub?.rows.length && Number(pub.rows[0].published) === 1) {
+    await dispatchRebuild(env, master, site.customerId, site.repoFullName, "content-cleanup").catch(() => {})
+  }
+  return true
+}
+
 /** Import from a pasted or uploaded WXR export string. */
 export async function importWordpress(env: CloudflareEnv, site: ImportSite, wxr: string, opts: ImportOptions = {}): Promise<ImportResult> {
   const parseOpts: ParseOptions = { includePages: opts.includePages }
