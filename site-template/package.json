@@ -10,6 +10,7 @@
     "check:zero-js": "node scripts/check-zero-js.mjs",
     "check:headers": "node scripts/check-headers.mjs",
     "check:fonts": "node scripts/check-fonts.mjs",
+    "check:contrast": "node scripts/check-contrast.mjs",
     "lhci": "node scripts/lhci-run.mjs"
   },
   "dependencies": {

@@ -20,7 +20,7 @@ export const PRESETS: PresetCard[] = [
   { id: "editorial", label: "Editorial", mood: "Warm & classic", swatch: { bg: "#fbf9f4", surface: "#ffffff", accent: "#9a4a2f", fg: "#1c1a17" }, font: "Serif / Sans" },
   { id: "bold", label: "Bold", mood: "Dark & high-contrast", swatch: { bg: "#0b0b0f", surface: "#16161e", accent: "#fb5c74", fg: "#f4f4f7" }, font: "Sans / Sans" },
   { id: "calm", label: "Calm", mood: "Soft & rounded", swatch: { bg: "#f6f7f4", surface: "#ffffff", accent: "#4f7a5f", fg: "#232f29" }, font: "Sans / Sans" },
-  { id: "warm", label: "Warm", mood: "Earthy & friendly", swatch: { bg: "#fdf8f3", surface: "#ffffff", accent: "#c2571f", fg: "#2a211b" }, font: "Serif / Sans" },
+  { id: "warm", label: "Warm", mood: "Earthy & friendly", swatch: { bg: "#fdf8f3", surface: "#ffffff", accent: "#b45016", fg: "#2a211b" }, font: "Serif / Sans" },
   { id: "tech", label: "Tech", mood: "Cool & precise", swatch: { bg: "#ffffff", surface: "#f5f5f8", accent: "#5b5bf0", fg: "#17171b" }, font: "Sans / Sans" },
 ]
 

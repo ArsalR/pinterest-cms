@@ -45,6 +45,8 @@ jobs:
         run: npm run check:headers
       - name: "Gate: self-hosted fonts only (P4)"
         run: npm run check:fonts
+      - name: "Gate: WCAG AA contrast (light + dark)"
+        run: npm run check:contrast
       - name: "Gate: full SEO file set"
         run: node scripts/check-seo-files.mjs
     env:
