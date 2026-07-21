@@ -27,6 +27,12 @@ const host = canonicalHost(config)
 const canonical = canonicalOverride ?? `https://${host}${path}`
 const socialTitle = ogTitle ?? title
 const socialDescription = ogDescription ?? description
+// Social image (D5.5): a custom image wins; otherwise every page gets a
+// designed OG card generated at build (scripts/gen-og.mjs) from the preset's
+// palette + typography. The filename is derived from the path so gen-og can
+// find and render it. Absolute URL, as OG requires.
+const ogSlug = (path.replace(/^\/|\/$/g, "").replace(/[^a-z0-9]+/gi, "-") || "home").toLowerCase()
+const ogFinal = ogImage ?? `https://${host}/og/${ogSlug}.png`
 // Global Organization/WebSite schema (S3) — null (no output) unless the site
 // owner enabled it in the SEO Control Center. Byte-identical when off.
 const seoSettings = await fetchSeoSettings(config)
@@ -65,11 +71,11 @@ const year = new Date().getFullYear()
   <meta property="og:title" content={socialTitle} />
   <meta property="og:description" content={socialDescription} />
   <meta property="og:url" content={canonical} />
-  {ogImage && <meta property="og:image" content={ogImage} />}
-  <meta name="twitter:card" content={ogImage ? "summary_large_image" : "summary"} />
+  <meta property="og:image" content={ogFinal} />
+  <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content={socialTitle} />
   <meta name="twitter:description" content={socialDescription} />
-  {ogImage && <meta name="twitter:image" content={ogImage} />}
+  <meta name="twitter:image" content={ogFinal} />
 
   {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
   {globalLd && <script type="application/ld+json" set:html={JSON.stringify(globalLd)} />}
