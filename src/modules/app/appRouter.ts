@@ -51,7 +51,7 @@ import {
   pinterestPageHandler, pinterestQueueHandler,
   pinterestStartHandler, pinterestCallbackHandler,
 } from "../pinterest"
-import { importPageHandler, importRunHandler } from "../importer"
+import { importPageHandler, importRunHandler, cleanupListHandler, cleanupDetailHandler, cleanupBasicHandler, cleanupAiHandler, cleanupAiApplyHandler } from "../importer"
 import { affiliatePageHandler, affiliateSaveHandler, affiliateApplyHandler } from "../affiliate"
 import { clonePageHandler, cloneSubmitHandler, cloneGenesisHandler } from "../cloning"
 import {
@@ -247,6 +247,11 @@ saasAppRoutes.get("/connections/pinterest/callback", prot(pinterestCallbackHandl
 // WordPress import (Phase 8, K9).
 saasAppRoutes.get("/sites/:id/import", prot(importPageHandler))
 saasAppRoutes.post("/sites/:id/import", prot(importRunHandler))
+saasAppRoutes.get("/sites/:id/cleanup", prot(cleanupListHandler))
+saasAppRoutes.get("/sites/:id/cleanup/:postId", prot(cleanupDetailHandler))
+saasAppRoutes.post("/sites/:id/cleanup/:postId/basic", prot(cleanupBasicHandler))
+saasAppRoutes.post("/sites/:id/cleanup/:postId/ai", prot(cleanupAiHandler))
+saasAppRoutes.post("/sites/:id/cleanup/:postId/ai-apply", prot(cleanupAiApplyHandler))
 // Affiliate compliance (Phase 8, K10).
 saasAppRoutes.get("/sites/:id/affiliate", prot(affiliatePageHandler))
 saasAppRoutes.post("/sites/:id/affiliate", prot(affiliateSaveHandler))
