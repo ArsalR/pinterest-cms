@@ -71,7 +71,8 @@ export async function importPageHandler(c: Context<AppEnv>): Promise<Response> {
     <div class="card">
       <p><a href="/app/sites/${escapeAttr(site.id)}" style="color:#93c5fd">← ${escapeHtml(site.domain)}</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">Import from WordPress</h2>
-      <p class="muted" style="font-size:13px">Bring your posts, pages, images, categories and SEO across. Everything becomes fully editable — by AI or by hand — just like content built here. Old URLs 301 to the new ones, so nothing breaks for visitors or Google.</p>
+      <p style="font-size:13px;margin:0 0 6px"><strong>Your content, URLs, images, and SEO come across exactly.</strong> Your design gets rebuilt on a fast, secure foundation — pick a preset, then refine it by prompt.</p>
+      <p class="muted" style="font-size:12px;margin:0">Posts, pages, images, categories and Yoast/Rank Math SEO all migrate and become fully editable — by AI or by hand — like content built here. Pages keep their <code>/page-name/</code> URLs; every old link 301s to its new home, so nothing breaks for visitors or Google. WordPress themes and page-builders (which rely on plugins and their own JavaScript) aren't carried over — that's what keeps these sites fast and secure.</p>
     </div>
     ${done ? `<div class="banner" style="border-color:#14532d;color:#86efac;background:#0f1a14">${escapeHtml(done)}</div>` : ""}
     ${error ? `<div class="banner" style="border-color:#7f1d1d;color:#fca5a5;background:#1c1212">${escapeHtml(error)}</div>` : ""}

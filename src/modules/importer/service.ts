@@ -16,7 +16,7 @@ import { dispatchRebuild } from "../seo"
 import { uploadToR2 } from "../../lib/r2"
 import { cuid } from "../../lib/utils"
 import {
-  parseWxr, parseRestPosts, slugify, originalPath, extractImageUrls, rewriteImageUrls,
+  parseWxr, parseRestPosts, slugify, originalPath, contentPath, extractImageUrls, rewriteImageUrls,
   type WpPost, type ParseOptions,
 } from "./wordpress"
 
@@ -129,14 +129,16 @@ async function importOne(
   const goLive = !!opts.publishLive && p.status === "publish"
   const published = goLive ? 1 : 0
   const publishedAt = goLive ? p.publishedAt || new Date().toISOString() : null
+  // Pages keep type='page' so the static template renders them at the root
+  // /<slug>/ (where they lived in WordPress); posts render under /posts/.
   await siteDb.execute({
     sql: `INSERT INTO posts
             (id, title, slug, content, excerpt, published, published_at, type, source, category_id,
              seo_title, seo_description, seo_keywords, og_title, og_description, og_image,
              canonical_url, no_index, nofollow)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'post', 'wordpress', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'wordpress', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [
-      cuid(), p.title || p.slug, p.slug, html, p.excerpt || null, published, publishedAt, categoryId,
+      cuid(), p.title || p.slug, p.slug, html, p.excerpt || null, published, publishedAt, p.type, categoryId,
       s?.seoTitle || null,
       s?.seoDescription || p.excerpt || null,
       s?.focusKeyword || null,
@@ -149,12 +151,13 @@ async function importOne(
     ],
   })
 
-  // Edge redirect map: old permalink → new post path (301). ON CONFLICT keeps
-  // re-import idempotent and never clobbers a manually-set redirect. This is
-  // what preserves a Page's original URL (e.g. /about/ → /posts/about/).
+  // Edge redirect map: old permalink → new path (301). ON CONFLICT keeps
+  // re-import idempotent and never clobbers a manually-set redirect. Pages keep
+  // their root URL (/about/ → /about/, a no-op skipped below); a moved permalink
+  // (/company/about/ → /about/) still gets its redirect.
   let redirect = false
   const from = originalPath(p.originalUrl)
-  const to = `/posts/${p.slug}/`
+  const to = contentPath(p.type, p.slug)
   if (from && from !== to) {
     try {
       await siteDb.execute({

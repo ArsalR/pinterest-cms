@@ -1,21 +1,48 @@
 ---
-// The K1 trust-page set — seven pages, generated site-specifically from
-// site.config.json (never lorem ipsum), dated, and footer-linked. These are
-// E-E-A-T signals and AdSense/affiliate-program requirements.
+// Root-level pages at /<slug>/. Two sources, one route (Astro allows only one
+// dynamic segment per directory):
+//   1. The K1 trust-page set (about/contact/privacy/terms/disclosure/cookies/
+//      editorial) — generated site-specifically from site.config.json.
+//   2. CMS Pages (type='page') — e.g. a WordPress migration's About/Contact —
+//      rendered at their real path /<slug>/ so the migrated site keeps the URLs
+//      Google already knows (no /posts/ prefix). A CMS page whose slug matches a
+//      trust slug OVERRIDES the generated one (the owner's real page wins).
+// Sites with no CMS pages build byte-identically to before.
 import Base from "../layouts/Base.astro"
-import { loadConfig, canonicalHost, fetchLocations, localBusinessLd, napBlockHtml } from "../lib/cms"
+import {
+  loadConfig, canonicalHost, fetchLocations, localBusinessLd, napBlockHtml,
+  fetchPages, fetchForms, injectFormEmbeds, injectCtaBlocks, computeRobots, type CmsPost,
+} from "../lib/cms"
 
-export function getStaticPaths() {
-  return ["about", "contact", "privacy", "terms", "disclosure", "cookies", "editorial"].map((trust) => ({
-    params: { trust },
-  }))
+export async function getStaticPaths() {
+  // Defined inside getStaticPaths — Astro evaluates it in isolation, so it does
+  // not see other module-level consts.
+  const RESERVED = new Set(["posts", "authors", "locations", "forms", "products", "shop", "cart", "order", "js"])
+  const TRUST_SLUGS = ["about", "contact", "privacy", "terms", "disclosure", "cookies", "editorial"]
+  const config = loadConfig()
+  const cmsPages = (await fetchPages(config)).filter((p) => p.slug && !RESERVED.has(p.slug))
+  const cmsSlugs = new Set(cmsPages.map((p) => p.slug))
+  const trustPaths = TRUST_SLUGS
+    .filter((slug) => !cmsSlugs.has(slug)) // a real CMS page overrides the generated trust page
+    .map((slug) => ({ params: { slug }, props: { cms: null as CmsPost | null } }))
+  const cmsPaths = cmsPages.map((page) => ({ params: { slug: page.slug }, props: { cms: page as CmsPost | null } }))
+  return [...trustPaths, ...cmsPaths]
 }
 
-const { trust } = Astro.params
+interface Props { cms: CmsPost | null }
+const { cms } = Astro.props
 const config = loadConfig()
 const host = canonicalHost(config)
-const dated = `Last updated: ${config.generatedAt}`
+const slug = Astro.params.slug!
 
+// ── CMS page branch data (owner's real page rendered at /<slug>/) ──
+const siteForms = cms ? await fetchForms(config) : []
+const cmsContentHtml = cms ? injectCtaBlocks(injectFormEmbeds(cms.content, siteForms, config, `/${cms.slug}/`)) : ""
+// Turnstile loads only when an actual form widget landed (zero-JS covenant).
+const cmsHasForm = cmsContentHtml.includes("cf-turnstile")
+
+// ── Trust-page branch data (generated E-E-A-T pages, unchanged K1 behavior) ──
+const dated = `Last updated: ${config.generatedAt}`
 const pages: Record<string, { title: string; body: string }> = {
   about: {
     title: `About ${config.name}`,
@@ -28,9 +55,6 @@ const pages: Record<string, { title: string; body: string }> = {
   },
   contact: {
     title: `Contact ${config.name}`,
-    // Working form (K1): posts to the platform relay (Turnstile-protected,
-    // emails the owner — no third-party form service, no tracking scripts).
-    // Falls back to mailto when the site was provisioned without Turnstile.
     body:
       config.turnstileSitekey && config.formsEndpoint
         ? `
@@ -117,21 +141,38 @@ const pages: Record<string, { title: string; body: string }> = {
       </ul>`,
   },
 }
-
-const page = pages[trust!]
+const trustPage = cms ? null : pages[slug]
 
 // Local SEO profile (V1.3): the contact page shows the primary location's NAP
-// block (address, phone, hours, static map) + LocalBusiness schema. Empty for
-// non-local sites — byte-identical.
-const locations = trust === "contact" ? await fetchLocations(config) : []
+// block + LocalBusiness schema. Empty for non-local sites — byte-identical.
+const locations = !cms && slug === "contact" ? await fetchLocations(config) : []
 const primary = locations.find((l) => l.isPrimary) ?? locations[0]
 const napHtml = primary ? napBlockHtml(primary) : ""
 const contactLd = primary ? localBusinessLd(primary, `https://${host}/`, `https://${host}/contact/`) : null
 const contactSchema = contactLd ? { "@context": "https://schema.org", ...contactLd } : null
 ---
-<Base title={page.title} description={`${page.title}.`} path={`/${trust}/`} schema={contactSchema}>
-  <h1>{page.title}</h1>
-  <p style="color:#777;font-size:0.85rem">{dated}</p>
-  <div set:html={page.body} />
-  {napHtml && <div set:html={napHtml} />}
-</Base>
+{cms ? (
+  <Base
+    title={cms.seoTitle ?? `${cms.title} — ${config.name}`}
+    description={cms.seoDescription ?? cms.excerpt ?? config.niche}
+    path={`/${cms.slug}/`}
+    robots={computeRobots(cms.noIndex, cms.nofollow)}
+    canonicalOverride={cms.canonicalUrl ?? null}
+    ogTitle={cms.ogTitle ?? null}
+    ogDescription={cms.ogDescription ?? null}
+    ogImage={cms.ogImage ?? null}
+  >
+    <article>
+      <h1>{cms.title}</h1>
+      <div set:html={cmsContentHtml} />
+    </article>
+    {cmsHasForm && config.turnstileSitekey && <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>}
+  </Base>
+) : (
+  <Base title={trustPage!.title} description={`${trustPage!.title}.`} path={`/${slug}/`} schema={contactSchema}>
+    <h1>{trustPage!.title}</h1>
+    <p style="color:#777;font-size:0.85rem">{dated}</p>
+    <div set:html={trustPage!.body} />
+    {napHtml && <div set:html={napHtml} />}
+  </Base>
+)}

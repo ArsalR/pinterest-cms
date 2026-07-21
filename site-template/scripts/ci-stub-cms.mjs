@@ -13,6 +13,7 @@ import { createServer } from "node:http"
 const POSTS = Number(process.env.STUB_POSTS ?? 0)
 const PRODUCTS = Number(process.env.STUB_PRODUCTS ?? 0)
 const FORMS = Number(process.env.STUB_FORMS ?? 0)
+const PAGES = Number(process.env.STUB_PAGES ?? 0)  // CMS Pages (type='page'), rendered at /<slug>/
 const PROFILES = (process.env.STUB_PROFILES ?? "").split(",").map((s) => s.trim()).filter(Boolean)
 
 const now = Date.now()
@@ -105,6 +106,25 @@ createServer((req, res) => {
   }
   if (url.includes("/products")) {
     return res.end(JSON.stringify({ products: Array.from({ length: PRODUCTS }, (_, i) => product(i)), total: PRODUCTS }))
+  }
+  // CMS Pages (type='page') — the WordPress-migration surface, rendered at root.
+  if (url.includes("type=page")) {
+    const names = ["About", "Our Story", "Services", "FAQ"]
+    return res.end(JSON.stringify({
+      posts: Array.from({ length: PAGES }, (_, i) => ({
+        id: `page-${i}`,
+        title: names[i % names.length] + (i >= names.length ? ` ${i}` : ""),
+        slug: (names[i % names.length].toLowerCase().replace(/[^a-z0-9]+/g, "-")) + (i >= names.length ? `-${i}` : ""),
+        // Page 1 carries a form embed to prove Turnstile loads on a root page.
+        content: `<p>${`Page body copy for the migrated page. `.repeat(20)}</p>` +
+          (i === 1 && FORMS > 0 ? `<div class="form-embed" data-form="stub-contact"></div>` : ""),
+        excerpt: `A migrated page.`, coverImage: null,
+        publishedAt: new Date(now - i * 86400 * 1000).toISOString(),
+        updatedAt: new Date(now - i * 3600 * 1000).toISOString(),
+        category: null, seoTitle: null, seoDescription: null,
+      })),
+      total: PAGES,
+    }))
   }
   res.end(JSON.stringify({ posts: Array.from({ length: POSTS }, (_, i) => post(i)), total: POSTS }))
 }).listen(8799, () => console.log(`ci-stub-cms on :8799 (posts=${POSTS} products=${PRODUCTS} profiles=${PROFILES.join("+") || "none"})`))

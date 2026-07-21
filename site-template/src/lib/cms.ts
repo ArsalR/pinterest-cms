@@ -662,6 +662,54 @@ export function canonicalHost(config: SiteConfig): string {
 
 /** Fetch all published posts (paged). Fails the build loudly on API errors —
  *  a silent empty site is worse than a red build. */
+/**
+ * Fetch published CMS Pages (type='page') — the About/Contact/etc. that a
+ * WordPress migration brings across, rendered at the root path /<slug>/ (not
+ * under /posts/). Best-effort: returns [] on any error or when there are no
+ * pages, so a site without pages builds byte-identically to before.
+ */
+export async function fetchPages(config: SiteConfig): Promise<CmsPost[]> {
+  const key = process.env.CMS_API_KEY
+  if (!key) return []
+  const out: CmsPost[] = []
+  const limit = 100
+  try {
+    for (let offset = 0; ; offset += limit) {
+      const resp = await fetch(`${config.cmsApiUrl}/posts?limit=${limit}&offset=${offset}&published=true&type=page`, {
+        headers: { Authorization: `Bearer ${key}` },
+      })
+      if (!resp.ok) return out
+      const data = (await resp.json()) as {
+        posts: Array<{
+          id: string; title: string; slug: string; content?: string; excerpt?: string | null
+          coverImage?: string | null; publishedAt?: string | null; updatedAt?: string | null
+          seoTitle?: string | null; seoDescription?: string | null
+          noIndex?: boolean; canonicalUrl?: string | null
+          ogTitle?: string | null; ogDescription?: string | null; ogImage?: string | null
+        }>
+        total: number
+      }
+      for (const p of data.posts) {
+        out.push({
+          id: p.id, title: p.title, slug: p.slug,
+          content: p.content ?? "", excerpt: p.excerpt ?? null,
+          coverImage: p.coverImage ?? null,
+          publishedAt: p.publishedAt ?? null, updatedAt: p.updatedAt ?? null,
+          category: null,
+          seoTitle: p.seoTitle ?? null, seoDescription: p.seoDescription ?? null,
+          noIndex: p.noIndex ?? false, canonicalUrl: p.canonicalUrl ?? null,
+          ogTitle: p.ogTitle ?? null, ogDescription: p.ogDescription ?? null, ogImage: p.ogImage ?? null,
+        })
+      }
+      if (out.length >= data.total || data.posts.length < limit) break
+    }
+    await mergeSeoOverrides(config, out)
+  } catch {
+    return out
+  }
+  return out
+}
+
 export async function fetchAllPosts(config: SiteConfig): Promise<CmsPost[]> {
   const key = process.env.CMS_API_KEY
   if (!key) throw new Error("CMS_API_KEY is not set (repo Actions secret)")
