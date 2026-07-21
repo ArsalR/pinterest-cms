@@ -28,27 +28,44 @@ const schema = businessLd
   : { "@context": "https://schema.org", ...website }
 ---
 <Base title={config.name} description={config.niche} path="/" schema={schema}>
-  <h1>{config.name}</h1>
-  <p style="color:var(--muted)">{config.niche}</p>
-
-  {layout === "magazine" ? (
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1.1rem;margin-top:1.5rem">
-      {posts.map((p) => (
-        <a href={`/posts/${p.slug}/`} style="display:block;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1.1rem">
-          <span style="font-family:var(--font-head);font-weight:700;font-size:1.05rem;display:block;line-height:1.3">{p.title}</span>
-          {p.excerpt && <span style="display:block;margin-top:0.4rem;color:var(--muted);font-size:0.92rem">{p.excerpt}</span>}
-        </a>
-      ))}
+  <section class="hero">
+    <h1>{config.name}</h1>
+    <p class="sub">{config.niche}</p>
+    <div class="actions">
+      {config.kind === "ecommerce"
+        ? <a class="btn" href="/shop/">Browse the shop</a>
+        : posts.length > 0 && <a class="btn" href={`/posts/${posts[0].slug}/`}>Read the latest</a>}
+      <a class="btn ghost" href="/contact/">Get in touch</a>
     </div>
-  ) : (
-    <ul style="list-style:none;padding:0">
-      {posts.map((p) => (
-        <li style="margin:0 0 1.4rem">
-          <a href={`/posts/${p.slug}/`} style="font-weight:700;font-size:1.1rem;text-decoration:none">{p.title}</a>
-          {p.excerpt && <p style="margin:0.25rem 0 0;color:var(--muted)">{p.excerpt}</p>}
-        </li>
-      ))}
-    </ul>
+  </section>
+
+  {posts.length > 0 && (
+    <>
+      <div class="section-head">
+        <h2>Latest</h2>
+        {posts.length > 6 && <a href="/posts/">All articles →</a>}
+      </div>
+      {layout === "magazine" ? (
+        <div class="grid">
+          {posts.slice(0, 9).map((p) => (
+            <a class="card post-card" href={`/posts/${p.slug}/`}>
+              <span class="t">{p.title}</span>
+              {p.excerpt && <span class="x">{p.excerpt}</span>}
+              <span class="more">Read →</span>
+            </a>
+          ))}
+        </div>
+      ) : (
+        <ul class="post-list">
+          {posts.slice(0, 12).map((p) => (
+            <li>
+              <a class="t" href={`/posts/${p.slug}/`}>{p.title}</a>
+              {p.excerpt && <p class="x" style="margin:.35rem 0 0;color:var(--muted);font-size:var(--fs-sm)">{p.excerpt}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   )}
-  {posts.length === 0 && <p>First articles are on their way.</p>}
+  {posts.length === 0 && <p class="lead">First articles are on their way.</p>}
 </Base>
