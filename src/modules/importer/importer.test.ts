@@ -8,6 +8,7 @@ import {
   originalPath, extractImageUrls, rewriteImageUrls,
   postMeta, extractSeoMeta,
 } from "./wordpress"
+import { isZip, listZipEntries, extractWxrFromZip } from "./backup"
 
 const WXR = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:wp="http://wordpress.org/export/1.2/" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:excerpt="http://wordpress.org/export/1.2/excerpt/">
@@ -43,6 +44,17 @@ describe("parseWxr (K9 WordPress import)", () => {
     const { posts, skipped } = parseWxr(WXR)
     expect(posts).toHaveLength(2)          // the two 'post' items
     expect(skipped).toBe(1)                // the 'page'
+    expect(posts.every((p) => p.type === "post")).toBe(true)
+  })
+
+  it("includes Pages (tagged type:'page') when opted in", () => {
+    const { posts, skipped } = parseWxr(WXR, { includePages: true })
+    expect(posts).toHaveLength(3)          // two posts + the About page
+    expect(skipped).toBe(0)
+    const about = posts.find((p) => p.title === "About")!
+    expect(about.type).toBe("page")
+    expect(about.slug).toBe("about")       // slugified fallback (no wp:post_name)
+    expect(about.status).toBe("publish")
   })
 
   it("maps fields including CDATA content, excerpt, slug, status, date", () => {
@@ -135,6 +147,87 @@ describe("extractSeoMeta (Yoast / Rank Math)", () => {
   it("parseWxr attaches seo meta to the post", () => {
     const { posts } = parseWxr(YOAST_ITEM)
     expect(posts[0].seo?.seoTitle).toBe("Custom SEO Title")
+  })
+})
+
+// ─────────────────────── .zip backup extraction (K9 extension) ───────────────────────
+
+const SMALL_WXR = `<?xml version="1.0"?><rss xmlns:wp="http://wordpress.org/export/1.2/"><channel><item><title>Zipped</title><wp:post_type>post</wp:post_type><wp:post_name>zipped</wp:post_name></item></channel></rss>`
+
+function u16(n: number): number[] { return [n & 0xff, (n >> 8) & 0xff] }
+function u32(n: number): number[] { return [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >>> 24) & 0xff] }
+
+async function deflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+  const src = new ReadableStream<Uint8Array>({ start(ctrl) { ctrl.enqueue(bytes); ctrl.close() } })
+  const cs = new CompressionStream("deflate-raw") as unknown as ReadableWritablePair<Uint8Array, Uint8Array>
+  return new Uint8Array(await new Response(src.pipeThrough(cs)).arrayBuffer())
+}
+
+/** Build a minimal ZIP (local headers only — enough for the front-walking
+ *  reader) from {name, text, method} entries. method 0 = stored, 8 = deflate. */
+async function buildZip(entries: Array<{ name: string; text: string; method: 0 | 8 }>): Promise<Uint8Array> {
+  const out: number[] = []
+  for (const e of entries) {
+    const nameBytes = [...new TextEncoder().encode(e.name)]
+    const raw = new TextEncoder().encode(e.text)
+    const data = e.method === 8 ? await deflateRaw(raw) : raw
+    out.push(...u32(0x04034b50))        // local file header signature
+    out.push(...u16(20), ...u16(0))     // version, flags
+    out.push(...u16(e.method))          // compression method
+    out.push(...u16(0), ...u16(0))      // mod time, date
+    out.push(...u32(0))                 // crc32 (ignored by the reader)
+    out.push(...u32(data.length))       // compressed size
+    out.push(...u32(raw.length))        // uncompressed size
+    out.push(...u16(nameBytes.length), ...u16(0)) // name len, extra len
+    out.push(...nameBytes)
+    out.push(...data)
+  }
+  return new Uint8Array(out)
+}
+
+describe("zip backup extraction", () => {
+  it("isZip detects the PK signature", async () => {
+    const zip = await buildZip([{ name: "x.xml", text: SMALL_WXR, method: 0 }])
+    expect(isZip(zip)).toBe(true)
+    expect(isZip(new TextEncoder().encode("<?xml"))).toBe(false)
+  })
+
+  it("lists entries by walking local headers", async () => {
+    const zip = await buildZip([
+      { name: "readme.txt", text: "hi", method: 0 },
+      { name: "export.xml", text: SMALL_WXR, method: 0 },
+    ])
+    const names = listZipEntries(zip).map((e) => e.name)
+    expect(names).toEqual(["readme.txt", "export.xml"])
+  })
+
+  it("extracts a stored WXR .xml", async () => {
+    const zip = await buildZip([{ name: "export.xml", text: SMALL_WXR, method: 0 }])
+    const wxr = await extractWxrFromZip(zip)
+    expect(wxr).not.toBeNull()
+    expect(parseWxr(wxr!).posts[0].title).toBe("Zipped")
+  })
+
+  it("inflates a deflated WXR .xml", async () => {
+    const zip = await buildZip([{ name: "wp/export.xml", text: SMALL_WXR, method: 8 }])
+    const wxr = await extractWxrFromZip(zip)
+    expect(wxr).not.toBeNull()
+    expect(wxr!).toContain("<wp:post_type>")
+  })
+
+  it("returns null for a backup with no WXR (e.g. a SQL dump)", async () => {
+    const zip = await buildZip([{ name: "db.sql", text: "CREATE TABLE wp_posts (...);", method: 0 }])
+    expect(await extractWxrFromZip(zip)).toBeNull()
+  })
+
+  it("picks the WXR even when a non-WXR .xml is also present", async () => {
+    const zip = await buildZip([
+      { name: "sitemap.xml", text: "<urlset><url><loc>x</loc></url></urlset>", method: 0 },
+      { name: "content.xml", text: SMALL_WXR, method: 0 },
+    ])
+    const wxr = await extractWxrFromZip(zip)
+    expect(wxr).not.toBeNull()
+    expect(wxr!).toContain("Zipped")
   })
 })
 
