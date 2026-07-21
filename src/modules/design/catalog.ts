@@ -11,17 +11,21 @@ export interface PresetCard {
   label: string
   mood: string
   swatch: { bg: string; surface: string; accent: string; fg: string }
+  /** Dark-mode swatch (D5.2/D5.6) — mirrors the template DARK map. "bold" is
+   *  already dark, so its dark swatch equals its light one. */
+  darkSwatch: { bg: string; surface: string; accent: string; fg: string }
   font: string
 }
 
-// Mirrors site-template/src/lib/presets.ts (names + colors must match).
+// Mirrors site-template/src/lib/presets.ts (names + colors must match — both
+// light PRESETS and the DARK map).
 export const PRESETS: PresetCard[] = [
-  { id: "modern", label: "Modern", mood: "Clean & crisp", swatch: { bg: "#ffffff", surface: "#f8fafc", accent: "#2563eb", fg: "#0f172a" }, font: "Sans / Sans" },
-  { id: "editorial", label: "Editorial", mood: "Warm & classic", swatch: { bg: "#fbf9f4", surface: "#ffffff", accent: "#9a4a2f", fg: "#1c1a17" }, font: "Serif / Sans" },
-  { id: "bold", label: "Bold", mood: "Dark & high-contrast", swatch: { bg: "#0b0b0f", surface: "#16161e", accent: "#fb5c74", fg: "#f4f4f7" }, font: "Sans / Sans" },
-  { id: "calm", label: "Calm", mood: "Soft & rounded", swatch: { bg: "#f6f7f4", surface: "#ffffff", accent: "#4f7a5f", fg: "#232f29" }, font: "Sans / Sans" },
-  { id: "warm", label: "Warm", mood: "Earthy & friendly", swatch: { bg: "#fdf8f3", surface: "#ffffff", accent: "#b45016", fg: "#2a211b" }, font: "Serif / Sans" },
-  { id: "tech", label: "Tech", mood: "Cool & precise", swatch: { bg: "#ffffff", surface: "#f5f5f8", accent: "#5b5bf0", fg: "#17171b" }, font: "Sans / Sans" },
+  { id: "modern", label: "Modern", mood: "Clean & crisp", swatch: { bg: "#ffffff", surface: "#f8fafc", accent: "#2563eb", fg: "#0f172a" }, darkSwatch: { bg: "#0b1120", surface: "#141c2e", accent: "#5b9bff", fg: "#e8eef7" }, font: "Inter / Inter" },
+  { id: "editorial", label: "Editorial", mood: "Warm & classic", swatch: { bg: "#fbf9f4", surface: "#ffffff", accent: "#9a4a2f", fg: "#1c1a17" }, darkSwatch: { bg: "#14120f", surface: "#1e1b17", accent: "#df9366", fg: "#f0ebe2" }, font: "Fraunces / Newsreader" },
+  { id: "bold", label: "Bold", mood: "Dark & high-contrast", swatch: { bg: "#0b0b0f", surface: "#16161e", accent: "#fb5c74", fg: "#f4f4f7" }, darkSwatch: { bg: "#0b0b0f", surface: "#16161e", accent: "#fb5c74", fg: "#f4f4f7" }, font: "Archivo / Inter" },
+  { id: "calm", label: "Calm", mood: "Soft & rounded", swatch: { bg: "#f6f7f4", surface: "#ffffff", accent: "#4f7a5f", fg: "#232f29" }, darkSwatch: { bg: "#131a16", surface: "#1b241f", accent: "#77b389", fg: "#e6efe8" }, font: "Lora / Manrope" },
+  { id: "warm", label: "Warm", mood: "Earthy & friendly", swatch: { bg: "#fdf8f3", surface: "#ffffff", accent: "#b45016", fg: "#2a211b" }, darkSwatch: { bg: "#17110c", surface: "#211812", accent: "#e89355", fg: "#f2e9df" }, font: "Fraunces / Manrope" },
+  { id: "tech", label: "Tech", mood: "Cool & precise", swatch: { bg: "#ffffff", surface: "#f5f5f8", accent: "#5b5bf0", fg: "#17171b" }, darkSwatch: { bg: "#0c0c12", surface: "#15151f", accent: "#9494f8", fg: "#eaeaf2" }, font: "Space Grotesk / Inter" },
 ]
 
 export const PRESET_IDS = PRESETS.map((p) => p.id)

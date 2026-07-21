@@ -136,23 +136,27 @@ export async function marketingHomeHandler(c: Context<AppEnv>): Promise<Response
 /** A token-accurate preview card for one preset, rendered from the REAL swatch
  *  values (no hand-drawn mockup that could drift from the template). */
 function presetCard(p: (typeof PRESETS)[number]): string {
-  return `<div style="border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.06)">
-    <div style="background:${p.swatch.bg};padding:16px">
-      <div style="font-weight:800;font-size:15px;color:${p.swatch.fg}">${escapeHtml(p.label)}</div>
-      <div style="height:8px"></div>
-      <div style="background:${p.swatch.surface};border:1px solid ${p.swatch.accent}22;border-radius:8px;padding:10px">
-        <div style="height:8px;width:70%;background:${p.swatch.fg};opacity:.85;border-radius:4px"></div>
-        <div style="height:6px;width:90%;background:${p.swatch.fg};opacity:.35;border-radius:3px;margin-top:6px"></div>
-        <div style="display:inline-block;margin-top:10px;background:${p.swatch.accent};color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px">Read more</div>
+  const mock = (s: { bg: string; surface: string; accent: string; fg: string }, tag: string) => `<div style="background:${s.bg};padding:13px;flex:1;position:relative">
+      <div style="position:absolute;top:8px;right:9px;font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:${s.fg};opacity:.45">${tag}</div>
+      <div style="font-weight:800;font-size:13px;color:${s.fg};margin-bottom:8px">${escapeHtml(p.label)}</div>
+      <div style="background:${s.surface};border:1px solid ${s.accent}30;border-radius:8px;padding:10px">
+        <div style="height:7px;width:72%;background:${s.fg};opacity:.85;border-radius:4px"></div>
+        <div style="height:5px;width:92%;background:${s.fg};opacity:.3;border-radius:3px;margin-top:6px"></div>
+        <div style="height:5px;width:58%;background:${s.fg};opacity:.3;border-radius:3px;margin-top:4px"></div>
+        <div style="display:inline-block;margin-top:9px;background:${s.accent};color:#fff;font-size:10px;font-weight:700;padding:3px 9px;border-radius:6px">Read more</div>
       </div>
+    </div>`
+  return `<div style="border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.06)">
+    <div style="display:flex">${mock(p.swatch, "Light")}${mock(p.darkSwatch, "Dark")}</div>
+    <div style="padding:8px 12px;background:#fff;font-size:12px;color:#6b7280;display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+      <span>${escapeHtml(p.mood)}</span><span style="font-weight:600;color:#374151">${escapeHtml(p.font)}</span>
     </div>
-    <div style="padding:8px 12px;background:#fff;font-size:12px;color:#6b7280">${escapeHtml(p.mood)} · ${escapeHtml(p.font)}</div>
   </div>`
 }
 
 export async function marketingExamplesHandler(c: Context<AppEnv>): Promise<Response> {
   const kinds = Object.keys(LAYOUTS) as SiteKindId[]
-  const presetGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin:14px 0 28px">${PRESETS.map(presetCard).join("")}</div>`
+  const presetGrid = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin:14px 0 28px">${PRESETS.map(presetCard).join("")}</div>`
 
   const kindSections = kinds
     .map((k) => {
@@ -171,7 +175,7 @@ export async function marketingExamplesHandler(c: Context<AppEnv>): Promise<Resp
     <h1>Every site, your way.</h1>
     <p class="lede">Pick from ${PRESETS.length} professionally-designed presets and per-kind layouts at creation — then change your mind anytime with a live preview. Every combination stays inside the same speed &amp; security guarantees.</p>
     <h2>Design presets</h2>
-    <p class="muted">Real token sets — the exact colors, fonts, and spacing your site ships with.</p>
+    <p class="muted">Real token sets — the exact palette, curated fonts, type scale and spacing your site ships with. Each renders in <strong>light and dark</strong> automatically, and every pairing is WCAG-AA and Lighthouse-1.0 verified.</p>
     ${presetGrid}
     <h2>By site kind</h2>
     ${kindSections}
