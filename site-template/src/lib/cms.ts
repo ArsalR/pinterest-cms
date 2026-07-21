@@ -22,6 +22,8 @@ export interface SiteConfig {
   formsEndpoint?: string
   /** Ecommerce checkout relay (set at provisioning for kind='ecommerce'). */
   checkoutEndpoint?: string
+  /** Auto dark mode via prefers-color-scheme (D5.2). Absent = on; false = light-only. */
+  darkMode?: boolean
 }
 
 export interface CmsProduct {

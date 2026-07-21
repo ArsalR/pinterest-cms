@@ -62,6 +62,20 @@ const FONTS: Record<string, FontDef> = {
   lora:            { family: "Lora",          file: "lora-variable-latin.woff2",          weight: "400 700", serif: true,  fbLocal: "Georgia", sizeAdjust: "100%",   ascent: "92%",   descent: "24%",   lineGap: "0%" },
 }
 
+// Per-preset DARK color variant (D5.2), emitted under prefers-color-scheme:dark
+// when the site opts in (default on). Only the light presets get one — "bold"
+// is already dark, so it renders the same in both modes. Every value here is
+// WCAG AA verified (the contrast gate checks the dark block too). Tokens only,
+// zero JS.
+interface DarkTokens { bg: string; surface: string; fg: string; muted: string; border: string; accent: string; accentFg: string }
+const DARK: Record<string, DarkTokens> = {
+  editorial: { bg: "#14120f", surface: "#1e1b17", fg: "#f0ebe2", muted: "#a99f90", border: "#322d26", accent: "#df9366", accentFg: "#14120f" },
+  modern:    { bg: "#0b1120", surface: "#141c2e", fg: "#e8eef7", muted: "#9aa8be", border: "#253046", accent: "#5b9bff", accentFg: "#08101f" },
+  calm:      { bg: "#131a16", surface: "#1b241f", fg: "#e6efe8", muted: "#98ac9f", border: "#2a352e", accent: "#77b389", accentFg: "#0a140e" },
+  warm:      { bg: "#17110c", surface: "#211812", fg: "#f2e9df", muted: "#b09e8d", border: "#342820", accent: "#e89355", accentFg: "#17110c" },
+  tech:      { bg: "#0c0c12", surface: "#15151f", fg: "#eaeaf2", muted: "#9d9db3", border: "#26263a", accent: "#9494f8", accentFg: "#0a0a12" },
+}
+
 // Display / body pairing per preset (kept out of PRESETS to avoid churn).
 const PAIRING: Record<string, { head: string; body: string }> = {
   editorial: { head: "fraunces", body: "newsreader" },
@@ -130,7 +144,7 @@ function r3(n: number): number {
  * modular type scale (rem sizes from the preset's ratio) and a fluid display
  * size. Pure. Every value is a CSS custom property — no JS ships.
  */
-export function presetRootCss(name: string | undefined): string {
+export function presetRootCss(name: string | undefined, dark = true): string {
   const t = resolvePreset(name)
   const s = t.scale
   const fs = {
@@ -158,6 +172,25 @@ export function presetRootCss(name: string | undefined): string {
     `--fs-sm:${fs.sm}rem;--fs-base:${fs.base}rem;--fs-md:${fs.md}rem;` +
     `--fs-h4:${fs.h4}rem;--fs-h3:${fs.h3}rem;--fs-h2:${fs.h2}rem;--fs-h1:${h1};` +
     `--sp-1:.25rem;--sp-2:.5rem;--sp-3:.75rem;--sp-4:1rem;--sp-6:1.5rem;--sp-8:2rem;--sp-12:3rem;--sp-16:4rem;` +
-    `}`
+    `}` +
+    darkCss(name, dark)
+  )
+}
+
+/** The prefers-color-scheme:dark override block for a preset (color tokens
+ *  only — type scale, fonts and spacing are shared). Empty when the site opted
+ *  out or the preset has no dark variant (e.g. "bold" is already dark). Pure. */
+function darkCss(name: string | undefined, enabled: boolean): string {
+  if (!enabled) return ""
+  const key = name && DARK[name] ? name : DARK[DEFAULT_PRESET] && (!name || !PRESETS[name]) ? DEFAULT_PRESET : name
+  const d = key ? DARK[key] : undefined
+  if (!d) return ""
+  return (
+    `@media (prefers-color-scheme:dark){:root{` +
+    `--bg:${d.bg};--surface:${d.surface};--fg:${d.fg};--muted:${d.muted};--border:${d.border};` +
+    `--accent:${d.accent};--accent-fg:${d.accentFg};` +
+    `--accent-soft:color-mix(in srgb, ${d.accent} 16%, ${d.surface});` +
+    `--accent-line:color-mix(in srgb, ${d.accent} 36%, ${d.border});` +
+    `}}`
   )
 }

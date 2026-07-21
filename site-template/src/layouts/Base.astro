@@ -40,6 +40,7 @@ const year = new Date().getFullYear()
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content={config.darkMode === false ? "light" : "light dark"} />
   <title>{title}</title>
   <meta name="description" content={description} />
   {robots && <meta name="robots" content={robots} />}
@@ -78,7 +79,7 @@ const year = new Date().getFullYear()
        (P1); system fonts in D1, curated faces in D2 (P4); CSS stays well under
        budget (P5). Tokens drive type scale, spacing, elevation and components. */
     ${presetFontFaces(config.preset)}
-    ${presetRootCss(config.preset)}
+    ${presetRootCss(config.preset, config.darkMode !== false)}
     *,*::before,*::after { box-sizing:border-box; }
     html { -webkit-text-size-adjust:100%; }
     body { margin:0; font-family:var(--font-body); color:var(--fg); background:var(--bg);
