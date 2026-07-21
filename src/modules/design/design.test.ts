@@ -80,6 +80,13 @@ describe("platform catalog stays in sync with the template preset tokens", () =>
       expect(tpl, `swatch drift for "${p.id}"`).toMatch(line)
     }
   })
+  it("platform DARK swatch hexes match the template DARK map (D5.2/D5.6)", () => {
+    for (const p of PRESETS) {
+      if (p.id === "bold") continue // bold is already dark — no DARK map entry
+      const line = new RegExp(`${p.id}:\\s*\\{[^}]*bg:\\s*"${p.darkSwatch.bg}"[^}]*accent:\\s*"${p.darkSwatch.accent}"`, "i")
+      expect(tpl, `dark swatch drift for "${p.id}"`).toMatch(line)
+    }
+  })
 })
 
 describe("every preset is covenant-safe (P4: no external font/CSS requests)", () => {
