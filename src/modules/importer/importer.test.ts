@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest"
 import {
   parseWxr, parseRestPosts, tagText, slugify,
-  originalPath, extractImageUrls, rewriteImageUrls,
+  originalPath, contentPath, extractImageUrls, rewriteImageUrls,
   postMeta, extractSeoMeta,
 } from "./wordpress"
 import { isZip, listZipEntries, extractWxrFromZip } from "./backup"
@@ -275,6 +275,17 @@ describe("parseRestPosts (REST API import)", () => {
   it("returns [] on non-array input", () => {
     expect(parseRestPosts(null)).toEqual([])
     expect(parseRestPosts({})).toEqual([])
+  })
+})
+
+describe("contentPath (root pages vs posts)", () => {
+  it("serves Pages at the root and posts under /posts/", () => {
+    expect(contentPath("page", "about")).toBe("/about/")
+    expect(contentPath("post", "my-article")).toBe("/posts/my-article/")
+  })
+  it("makes a root-slug page's own permalink a no-op redirect", () => {
+    // /about/ (original) === /about/ (new) → the service skips the redirect.
+    expect(originalPath("https://old.example/about/")).toBe(contentPath("page", "about"))
   })
 })
 

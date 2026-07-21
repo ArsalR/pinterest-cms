@@ -264,6 +264,12 @@ export function parseRestPosts(json: unknown): WpPost[] {
 
 // ─────────────────────── redirect + media helpers (pure) ───────────────────────
 
+/** The live path a migrated item is served at: Pages at the root /<slug>/
+ *  (matching where they lived in WordPress), posts under /posts/<slug>/. Pure. */
+export function contentPath(type: "post" | "page", slug: string): string {
+  return type === "page" ? `/${slug}/` : `/posts/${slug}/`
+}
+
 /** The path portion of an old permalink, for the redirect map. Pure. */
 export function originalPath(url: string): string | null {
   try {
