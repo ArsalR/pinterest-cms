@@ -105,6 +105,10 @@ export interface SeoSettings {
   indexnowKey: string
   /** V1.3 P4: image license/creator (licensable images). null = none. */
   imageLicense: { licenseUrl?: string; acquireLicenseUrl?: string; creatorName?: string } | null
+  /** V1.5 M3: first-party analytics beacon opt-in (Amendment 4a). false = off. */
+  analyticsEnabled?: boolean
+  /** V1.5 M3: public per-site analytics token the beacon carries. "" = none. */
+  analyticsKey?: string
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
@@ -115,6 +119,8 @@ export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   scripts: [],
   indexnowKey: "",
   imageLicense: null,
+  analyticsEnabled: false,
+  analyticsKey: "",
 }
 
 // ─────────────── Vetted script catalog (V1.3, template copy) ───────────────
@@ -267,7 +273,7 @@ ${rows.join("\n")}
 <input type="text" name="website_url_confirm" value="" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
 <input type="hidden" name="_page" value="${fEsc(page)}">
 ${turnstileSitekey ? `<div class="cf-turnstile" data-sitekey="${fEsc(turnstileSitekey)}"></div>` : ""}
-<p><button type="submit" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:0.6rem 1.4rem;font-size:1rem;cursor:pointer">Send</button></p>
+<p><button type="submit" data-ev="form:submit" style="background:var(--accent);color:#fff;border:none;border-radius:6px;padding:0.6rem 1.4rem;font-size:1rem;cursor:pointer">Send</button></p>
 </form>`
 }
 
@@ -298,16 +304,19 @@ export function injectCtaBlocks(html: string): string {
     }
     const v = attr("value").trim()
     const label = attr("label")
+    // V1.5 M3: tag each CTA so the first-party beacon auto-tracks clicks
+    // (data-ev is inert without analytics; the beacon is the only reader).
+    const ev = ` data-ev="cta:${kind}"`
     switch (kind) {
       case "whatsapp": {
         const url = `https://wa.me/${v.replace(/[^\d]/g, "")}${attr("prefill") ? `?text=${encodeURIComponent(attr("prefill"))}` : ""}`
-        return `<p class="cta"><a href="${ctaEsc(url)}" rel="noopener" style="${CTA_BTN};background:#25d366">${ctaEsc(label || "Chat on WhatsApp")}</a></p>`
+        return `<p class="cta"><a href="${ctaEsc(url)}" rel="noopener"${ev} style="${CTA_BTN};background:#25d366">${ctaEsc(label || "Chat on WhatsApp")}</a></p>`
       }
-      case "call": return `<p class="cta"><a href="tel:${ctaEsc(v.replace(/\s+/g, ""))}" style="${CTA_BTN}">${ctaEsc(label || "Call now")}</a></p>`
-      case "email": return `<p class="cta"><a href="mailto:${ctaEsc(v)}" style="${CTA_BTN}">${ctaEsc(label || "Email us")}</a></p>`
-      case "book": return `<p class="cta"><a href="${ctaEsc(v)}" rel="noopener" style="${CTA_BTN}">${ctaEsc(label || "Book a time")}</a></p>`
-      case "download": return `<p class="cta"><a href="/forms/${ctaEsc(v)}/" style="${CTA_BTN}">${ctaEsc(label || "Get the download")}</a></p>`
-      case "subscribe": return `<p class="cta"><a href="/forms/${ctaEsc(v)}/" style="${CTA_BTN}">${ctaEsc(label || "Subscribe")}</a></p>`
+      case "call": return `<p class="cta"><a href="tel:${ctaEsc(v.replace(/\s+/g, ""))}"${ev} style="${CTA_BTN}">${ctaEsc(label || "Call now")}</a></p>`
+      case "email": return `<p class="cta"><a href="mailto:${ctaEsc(v)}"${ev} style="${CTA_BTN}">${ctaEsc(label || "Email us")}</a></p>`
+      case "book": return `<p class="cta"><a href="${ctaEsc(v)}" rel="noopener"${ev} style="${CTA_BTN}">${ctaEsc(label || "Book a time")}</a></p>`
+      case "download": return `<p class="cta"><a href="/forms/${ctaEsc(v)}/"${ev} style="${CTA_BTN}">${ctaEsc(label || "Get the download")}</a></p>`
+      case "subscribe": return `<p class="cta"><a href="/forms/${ctaEsc(v)}/"${ev} style="${CTA_BTN}">${ctaEsc(label || "Subscribe")}</a></p>`
       default: return ""
     }
   })

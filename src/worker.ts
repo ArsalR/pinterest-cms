@@ -44,7 +44,7 @@ import { formSubmitRoutes, newsletterRoutes, runInboxDigest } from "./modules/fo
 import { saasMailInboundRoutes } from "./modules/mail"
 import { saasCheckoutRoutes, saasStripeWebhookRoutes } from "./modules/ecommerce"
 import { processDuePins } from "./modules/pinterest"
-import { runUptimeChecks } from "./modules/analytics"
+import { runUptimeChecks, beaconIngestRoutes, runAnalyticsRollup } from "./modules/analytics"
 import { runDeadLinkCron } from "./modules/affiliate"
 import { runMonthlyReports } from "./modules/agency"
 import { platformBillingWebhookRoutes } from "./modules/billing"
@@ -91,6 +91,7 @@ app.route("/api/saas/forms", saasFormsRoutes)
 app.route("/api/saas/form", formSubmitRoutes)
 app.route("/api/saas/newsletter", newsletterRoutes)
 app.route("/api/saas/mail", saasMailInboundRoutes)
+app.route("/api/saas/beacon", beaconIngestRoutes)
 app.route("/api/saas/checkout", saasCheckoutRoutes)
 app.route("/api/saas/stripe-webhook", saasStripeWebhookRoutes)
 app.route("/api/saas/billing-webhook", platformBillingWebhookRoutes)
@@ -241,6 +242,9 @@ export default {
         ctx.waitUntil(runMonthlyReports(env, Date.now()).then(() => undefined).catch(() => undefined))
         // ✨ Inbox daily digest (V1.4 F4) — opt-in per site, self-throttled ~daily.
         ctx.waitUntil(runInboxDigest(env, Date.now()).then(() => undefined).catch(() => undefined))
+        // First-party analytics rollup (V1.5 M3) — aggregate yesterday's beacon
+        // events into site_metrics. Gated on FEATURE_ANALYTICS inside the fn.
+        ctx.waitUntil(runAnalyticsRollup(env, Date.now()).then(() => undefined).catch(() => undefined))
       }
     } else {
       await runScheduler(env)

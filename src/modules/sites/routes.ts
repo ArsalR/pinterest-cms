@@ -424,6 +424,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/insights">Internal linking</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/pseo">Programmatic SEO</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/performance">Performance</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/analytics">Insights</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/search">Search Console</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/decay">Decay radar</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/aeo">AI visibility</a>

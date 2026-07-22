@@ -8,6 +8,14 @@ compatibility_flags = ["nodejs_compat"]
 binding     = "R2_BUCKET"
 bucket_name = "cms-media"
 
+# Workers Analytics Engine — first-party analytics beacon ingest (V1.5 M3).
+# High-volume, cheap, cardinality-safe writes; queried by the nightly rollup via
+# the AE SQL API. Inert until FEATURE_ANALYTICS = "1"; the binding is optional in
+# code (guarded), so a deploy without the dataset provisioned still runs.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "site_beacon"
+
 # Public-facing config (non-secret).
 [vars]
 TURSO_ORG              = "arsalr"
@@ -19,6 +27,7 @@ FEATURE_IDEMPOTENCY    = ""
 FEATURE_WEBHOOKS       = ""
 FEATURE_RATE_LIMIT     = ""
 FEATURE_BATCH_POSTS    = ""
+FEATURE_ANALYTICS      = ""
 GC_ENABLED             = ""
 RATE_LIMIT_RPM         = "60"
 # SaaS layer (saas_mode) — set SAAS_MODE = "1" + hostname to enable.

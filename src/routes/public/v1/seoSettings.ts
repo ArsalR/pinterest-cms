@@ -37,6 +37,8 @@ seoSettingsRoutes.get("/", async (c) => {
     scripts: [] as Array<{ id: string; config: string }>,
     indexnowKey: "",
     imageLicense: null as null | { licenseUrl?: string; acquireLicenseUrl?: string; creatorName?: string },
+    analyticsEnabled: false,
+    analyticsKey: "",
   }
   // Valid profile/script ids — mirror src/modules/seo/{profiles,scripts}.ts
   // (CMS core stays dependency-clean of the SaaS modules, so the closed sets
@@ -74,6 +76,8 @@ seoSettingsRoutes.get("/", async (c) => {
         profiles: jsonArr(p.profiles).filter((id) => PROFILE_IDS.has(id)),
         scripts: parseScripts(p.scripts),
         indexnowKey: String(p.indexnow_key ?? ""),
+        analyticsEnabled: Number(p.analytics_enabled) === 1,
+        analyticsKey: String(p.analytics_key ?? ""),
         imageLicense: (() => {
           try {
             const o = JSON.parse(String(p.image_license_json ?? "null")) as unknown

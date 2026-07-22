@@ -8,6 +8,10 @@ export interface CloudflareEnv {
   R2_BUCKET: R2Bucket
   R2_PUBLIC_URL: string
 
+  // Workers Analytics Engine — first-party analytics beacon ingest (V1.5 M3).
+  // Optional: absent in tests/dev and guarded at every call site.
+  ANALYTICS?: AnalyticsEngineDataset
+
   // Turso master
   TURSO_MASTER_URL: string
   TURSO_MASTER_TOKEN: string
@@ -35,6 +39,7 @@ export interface CloudflareEnv {
   FEATURE_WEBHOOKS?: string
   FEATURE_RATE_LIMIT?: string
   FEATURE_BATCH_POSTS?: string
+  FEATURE_ANALYTICS?: string   // "1" enables first-party analytics ingest + rollups (V1.5 M3)
   GC_ENABLED?: string
   // Optional tuning — defaults applied in code if absent.
   RATE_LIMIT_RPM?: string   // requests per minute per API key (default 60)

@@ -299,6 +299,18 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `ALTER TABLE customer_sites ADD COLUMN mail_from_name TEXT`,
     ],
   },
+  {
+    version: 13,
+    name: "013_site_analytics",
+    statements: [
+      // V1.5 M3 — first-party analytics. The public beacon POSTs an opaque
+      // per-site token; the ingest endpoint resolves it here (master-only, no
+      // hostname needed). The SAME token is mirrored into the site's CMS
+      // seo_settings so the static build embeds it. NULL = analytics off.
+      `ALTER TABLE customer_sites ADD COLUMN analytics_key TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_customer_sites_analytics_key ON customer_sites(analytics_key)`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO
