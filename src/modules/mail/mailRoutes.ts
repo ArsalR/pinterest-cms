@@ -17,12 +17,14 @@ import {
   listAddresses, addAddress, setAddressActive, appendOutbound, type MailFolder,
 } from "./service"
 import { isMailProvider, MAIL_PROVIDERS, MAIL_PROVIDER_LABELS, providerSend, providerStatus, type MailProviderId } from "./providers"
+import { provisionMailbox } from "./mailProvision"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 const IN = "width:100%;padding:8px 10px;border-radius:6px;border:1px solid #374151;background:#0b0f17;color:#fafafa;font-size:13px"
 
 interface MailSite {
-  id: string; customer_id: string; cms_site_id: string | null; domain: string; canonical_host: string
+  id: string; customer_id: string; cms_site_id: string | null; domain: string; canonical_host: string; zone_id: string | null
+  mail_inbound_secret: string | null
   mail_provider: string | null; mail_provider_secret_enc: string | null; mail_provider_status: string | null
   mail_from_name: string | null; mail_routing_status: string | null
 }
@@ -34,8 +36,8 @@ async function masterDb(c: Context<AppEnv>) {
 }
 async function loadMailSite(c: Context<AppEnv>, master: Awaited<ReturnType<typeof masterDb>>, customerId: string): Promise<MailSite | null> {
   const r = await master.execute({
-    sql: `SELECT id, customer_id, cms_site_id, domain, canonical_host, mail_provider, mail_provider_secret_enc,
-                 mail_provider_status, mail_from_name, mail_routing_status
+    sql: `SELECT id, customer_id, cms_site_id, domain, canonical_host, zone_id, mail_inbound_secret,
+                 mail_provider, mail_provider_secret_enc, mail_provider_status, mail_from_name, mail_routing_status
           FROM customer_sites WHERE id = ? AND customer_id = ? LIMIT 1`,
     args: [c.req.param("id") ?? "", customerId],
   })
@@ -227,7 +229,16 @@ export async function mailSetupHandler(c: Context<AppEnv>): Promise<Response> {
     ${err ? `<div class="card" style="border-color:#7f1d1d;background:#1c1212"><p style="margin:0;color:#fca5a5;font-size:13px">${escapeHtml(err)}</p></div>` : ""}
     <div class="card"><p><a href="/app/sites/${escapeAttr(site.id)}/mailbox" style="color:#93c5fd">← Mailbox</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">Mailbox setup</h2>
-      <p class="muted" style="font-size:13px">Cloudflare Email Routing <strong>receives</strong> your mail; a connected provider <strong>sends</strong> replies. Receiving is enabled during provisioning (MX records on your domain); sending needs a provider key on a verified domain.</p>
+      <p class="muted" style="font-size:13px">Cloudflare Email Routing <strong>receives</strong> your mail; a connected provider <strong>sends</strong> replies. Both use your own accounts.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 6px;font-size:14px">Receiving ${site.mail_routing_status === "on" ? '<span style="color:#4ade80;font-size:12px">● live</span>' : '<span style="color:#fbbf24;font-size:12px">● off</span>'}</h3>
+      <p class="muted" style="font-size:12px">${site.mail_routing_status === "on"
+        ? "Email Routing is enabled on your domain and points at your site's mailbox worker. New mail arrives in the inbox automatically."
+        : "Turn on Cloudflare Email Routing for this domain — we enable it, deploy a tiny mailbox worker into your Cloudflare account, and point the catch-all at it. Uses your connected Cloudflare token."}</p>
+      <form method="post" action="/app/sites/${escapeAttr(site.id)}/mailbox/enable" style="margin-top:8px">
+        <button class="btn" type="submit">${site.mail_routing_status === "on" ? "Re-check / repair receiving" : "Enable receiving on my domain"}</button>
+      </form>
     </div>
     <div class="card">
       <h3 style="margin:0 0 6px;font-size:14px">Addresses</h3>
@@ -314,6 +325,37 @@ export async function mailProviderHandler(c: Context<AppEnv>): Promise<Response>
   }).catch(() => {})
   await audit(master, customer.id, "site.mail_provider_saved", site.domain, { provider, ok: status.ok }).catch(() => {})
   return to(status.ok ? "done=" + encodeURIComponent(`${MAIL_PROVIDER_LABELS[provider]} connected.`) : "error=" + encodeURIComponent(status.error || "Key didn't verify."))
+}
+
+/** Enable/repair RECEIVING (Cloudflare Email Routing) for this site, then show
+ *  the combined DNS table. Idempotent — safe to re-run. Live-CF only. */
+export async function mailEnableReceivingHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const master = await masterDb(c)
+  const site = await loadMailSite(c, master, customer.id)
+  if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const back = (q: string) => new Response(null, { status: 302, headers: { Location: `/app/sites/${site.id}/mailbox/setup?${q}` } })
+  if (planGate(customer, nowSqlite()) === "read_only") return back("error=" + encodeURIComponent("Your trial has ended — subscribe to enable receiving."))
+
+  const res = await provisionMailbox(c.env, master, {
+    id: site.id, customer_id: site.customer_id, domain: site.domain, zone_id: site.zone_id, mail_inbound_secret: site.mail_inbound_secret,
+  })
+  await audit(master, customer.id, "site.mailbox_enabled", site.domain, { ok: res.ok }).catch(() => {})
+  if (!res.ok) return back("error=" + encodeURIComponent(res.problem || "Couldn't enable receiving."))
+
+  // Combined DNS table (Email Routing MX/SPF + a note on the sending provider's records).
+  const rows = res.dns.length
+    ? res.dns.map((r) => `<tr style="border-top:1px solid #1f2937"><td style="padding:6px;font-size:12px">${escapeHtml(r.purpose)}</td><td style="padding:6px;font-size:12px">${escapeHtml(r.type)}${r.priority != null ? ` (${r.priority})` : ""}</td><td style="padding:6px;font-size:12px;word-break:break-all">${escapeHtml(r.name)}</td><td style="padding:6px;font-size:12px;word-break:break-all">${escapeHtml(r.value)}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="muted" style="padding:8px;font-size:12px">Cloudflare manages these automatically on your zone — nothing to add by hand.</td></tr>`
+  const body = `
+    <div class="card" style="border-color:#166534;background:#052e16"><p style="margin:0;color:#86efac;font-size:13px">✅ Receiving is live. Mail to <strong>@${escapeHtml(site.domain)}</strong> now lands in your mailbox.</p></div>
+    <div class="card">
+      <h2 style="margin:0 0 4px;font-size:16px">Your email DNS — one table</h2>
+      <p class="muted" style="font-size:12px">Cloudflare adds the <strong>receiving</strong> (MX/SPF) records for you. For <strong>sending</strong>, your provider (Resend/Brevo/SendGrid) shows its own SPF/DKIM to verify your domain — add those in the provider, then it goes green.</p>
+      <table style="width:100%;border-collapse:collapse;margin-top:8px"><thead><tr style="text-align:left;color:#9ca3af;font-size:11px"><th style="padding:6px">Purpose</th><th style="padding:6px">Type</th><th style="padding:6px">Name</th><th style="padding:6px">Value</th></tr></thead><tbody>${rows}</tbody></table>
+      <p style="margin-top:12px"><a class="btn" href="/app/sites/${escapeAttr(site.id)}/mailbox/setup">Back to setup</a></p>
+    </div>`
+  return c.html(renderSaasLayout({ title: "Receiving enabled", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
 
 /** Unread badge for the site nav (mirrors the forms Inbox badge). */
