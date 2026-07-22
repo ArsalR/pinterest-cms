@@ -376,6 +376,16 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE seo_settings ADD COLUMN analytics_key TEXT`,
     ],
   },
+  {
+    version: 19,
+    name: "019_pixel_consent",
+    statements: [
+      // V1.5 M4 — EU consent mode for ad pixels (Amendment 4b). Tri-state:
+      // NULL = auto (ON when any consent-requiring pixel is enabled), 1 = forced
+      // ON, 0 = forced OFF. Pixels themselves ride the existing scripts column.
+      `ALTER TABLE seo_settings ADD COLUMN pixel_consent INTEGER`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

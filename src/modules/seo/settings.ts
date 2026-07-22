@@ -56,6 +56,10 @@ export interface SeoSettings {
   orgName: string
   orgLogo: string
   socialProfiles: string[]
+  /** EU consent mode for ad pixels (V1.5 M4), tri-state:
+   *  undefined = auto (ON when any consent-requiring pixel is enabled),
+   *  true = forced ON, false = forced OFF. */
+  pixelConsent?: boolean
 }
 
 export const DEFAULT_SEO_SETTINGS: SeoSettings = {

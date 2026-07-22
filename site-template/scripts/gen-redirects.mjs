@@ -97,6 +97,12 @@ const SCRIPT_META = {
   ga4: { name: "Google Analytics 4", costKb: 55, cfg: /^G-[A-Z0-9]{6,12}$/i, scriptHosts: ["https://www.googletagmanager.com"], connectHosts: ["https://www.google-analytics.com", "https://analytics.google.com"], loader: true },
   crisp: { name: "Crisp chat widget", costKb: 35, cfg: /^[a-f0-9-]{36}$/i, scriptHosts: ["https://client.crisp.chat"], connectHosts: ["https://client.crisp.chat", "wss://client.relay.crisp.chat"], loader: true },
   cookieyes: { name: "CookieYes consent banner", costKb: 40, cfg: /^[a-z0-9]{10,40}$/i, scriptHosts: ["https://cdn-cookieyes.com"], connectHosts: ["https://cdn-cookieyes.com", "https://log.cookieyes.com"], loader: false },
+  // V1.5 M4 ad pixels — loader-mode (injected on interaction, consent-gated).
+  meta_pixel: { name: "Meta Pixel", costKb: 30, cfg: /^\d{15,16}$/, scriptHosts: ["https://connect.facebook.net"], connectHosts: ["https://www.facebook.com"], loader: true },
+  google_ads: { name: "Google Ads tag", costKb: 55, cfg: /^AW-[0-9]{9,12}$/i, scriptHosts: ["https://www.googletagmanager.com"], connectHosts: ["https://www.google-analytics.com", "https://www.googleadservices.com", "https://googleads.g.doubleclick.net"], loader: true },
+  tiktok_pixel: { name: "TikTok Pixel", costKb: 45, cfg: /^[A-Z0-9]{16,24}$/i, scriptHosts: ["https://analytics.tiktok.com"], connectHosts: ["https://analytics.tiktok.com"], loader: true },
+  linkedin_insight: { name: "LinkedIn Insight Tag", costKb: 25, cfg: /^[0-9]{5,9}$/, scriptHosts: ["https://snap.licdn.com"], connectHosts: ["https://px.ads.linkedin.com"], loader: true },
+  pinterest_tag: { name: "Pinterest Tag", costKb: 15, cfg: /^\d{13}$/, scriptHosts: ["https://s.pinimg.com"], connectHosts: ["https://ct.pinterest.com"], loader: true },
 }
 const SCRIPT_BUDGET_KB = 100
 

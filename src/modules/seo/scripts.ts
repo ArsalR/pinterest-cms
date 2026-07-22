@@ -16,7 +16,7 @@ export type ScriptStrategy = "defer" | "interaction"
 export interface ScriptEntry {
   id: string
   name: string
-  category: "analytics" | "chat" | "consent"
+  category: "analytics" | "chat" | "consent" | "pixel"
   /** Honest transferred-bytes estimate (gzipped), shown before enabling. */
   costKb: number
   strategy: ScriptStrategy
@@ -28,6 +28,9 @@ export interface ScriptEntry {
   configPlaceholder: string
   /** Validate the config value (id/domain formats — never a URL or markup). */
   configPattern: RegExp
+  /** Ad/marketing pixels (V1.5 M4, Amendment 4b): don't fire until the visitor
+   *  consents when EU consent mode is on. Undefined/false = fires on load. */
+  requiresConsent?: boolean
 }
 
 export const SCRIPT_CATALOG: readonly ScriptEntry[] = [
@@ -91,6 +94,75 @@ export const SCRIPT_CATALOG: readonly ScriptEntry[] = [
     configPlaceholder: "a1b2c3d4e5f6...",
     configPattern: /^[a-z0-9]{10,40}$/i,
   },
+  // ── Ad & marketing pixels (V1.5 M4) — delay-until-interaction, consent-gated,
+  //    loaded ONLY through the vetted allowlist path (Amendment 4b). Costs are
+  //    honest gzipped transfer estimates; the budget gate binds the same as any
+  //    other script. img-src https: already covers each pixel's tracking image.
+  {
+    id: "meta_pixel",
+    name: "Meta Pixel (Facebook / Instagram)",
+    category: "pixel",
+    costKb: 30,
+    strategy: "interaction",
+    scriptHosts: ["https://connect.facebook.net"],
+    connectHosts: ["https://www.facebook.com"],
+    configLabel: "Pixel ID",
+    configPlaceholder: "123456789012345",
+    configPattern: /^\d{15,16}$/,
+    requiresConsent: true,
+  },
+  {
+    id: "google_ads",
+    name: "Google Ads tag",
+    category: "pixel",
+    costKb: 55,
+    strategy: "interaction",
+    scriptHosts: ["https://www.googletagmanager.com"],
+    connectHosts: ["https://www.google-analytics.com", "https://www.googleadservices.com", "https://googleads.g.doubleclick.net"],
+    configLabel: "Conversion ID",
+    configPlaceholder: "AW-123456789",
+    configPattern: /^AW-[0-9]{9,12}$/i,
+    requiresConsent: true,
+  },
+  {
+    id: "tiktok_pixel",
+    name: "TikTok Pixel",
+    category: "pixel",
+    costKb: 45,
+    strategy: "interaction",
+    scriptHosts: ["https://analytics.tiktok.com"],
+    connectHosts: ["https://analytics.tiktok.com"],
+    configLabel: "Pixel ID",
+    configPlaceholder: "CXXXXXXXXXXXXXXXXXXX",
+    configPattern: /^[A-Z0-9]{16,24}$/i,
+    requiresConsent: true,
+  },
+  {
+    id: "linkedin_insight",
+    name: "LinkedIn Insight Tag",
+    category: "pixel",
+    costKb: 25,
+    strategy: "interaction",
+    scriptHosts: ["https://snap.licdn.com"],
+    connectHosts: ["https://px.ads.linkedin.com"],
+    configLabel: "Partner ID",
+    configPlaceholder: "1234567",
+    configPattern: /^[0-9]{5,9}$/,
+    requiresConsent: true,
+  },
+  {
+    id: "pinterest_tag",
+    name: "Pinterest Tag",
+    category: "pixel",
+    costKb: 15,
+    strategy: "interaction",
+    scriptHosts: ["https://s.pinimg.com"],
+    connectHosts: ["https://ct.pinterest.com"],
+    configLabel: "Tag ID",
+    configPlaceholder: "2612345678901",
+    configPattern: /^\d{13}$/,
+    requiresConsent: true,
+  },
 ] as const
 
 /** Total third-party script weight allowed before the deploy is blocked.
@@ -105,6 +177,30 @@ export interface EnabledScript {
 
 export function catalogEntry(id: string): ScriptEntry | null {
   return SCRIPT_CATALOG.find((s) => s.id === id) ?? null
+}
+
+/** The enabled entries that are ad/marketing pixels (V1.5 M4). Pure. */
+export function pixelEntries(enabled: EnabledScript[]): ScriptEntry[] {
+  return enabled
+    .map((e) => catalogEntry(e.id))
+    .filter((e): e is ScriptEntry => !!e && e.category === "pixel")
+}
+
+/** Any enabled pixel that must wait for consent. Pure. */
+export function hasConsentPixels(enabled: EnabledScript[]): boolean {
+  return pixelEntries(enabled).some((e) => e.requiresConsent)
+}
+
+/**
+ * Effective EU consent mode. The stored preference is tri-state:
+ *   undefined → auto (ON whenever a consent-requiring pixel is enabled),
+ *   true      → forced ON, false → forced OFF.
+ * When ON, consent-gated pixels don't fire until the visitor accepts. Pure.
+ */
+export function effectiveConsentMode(enabled: EnabledScript[], pref: boolean | undefined): boolean {
+  if (pref === true) return true
+  if (pref === false) return false
+  return hasConsentPixels(enabled)
 }
 
 /** Parse the stored scripts JSON; junk/unknown ids/bad config → dropped. Pure. */

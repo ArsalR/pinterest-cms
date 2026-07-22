@@ -3,17 +3,58 @@ import { describe, it, expect } from "vitest"
 import {
   SCRIPT_CATALOG, SCRIPT_BUDGET_KB, parseEnabledScripts, totalScriptWeightKb,
   checkScriptBudget, cspAdditions, catalogEntry,
+  pixelEntries, hasConsentPixels, effectiveConsentMode,
 } from "./scripts"
 
 describe("catalog", () => {
   it("is a small closed set with honest costs and validated config", () => {
-    expect(SCRIPT_CATALOG.length).toBe(5)
+    expect(SCRIPT_CATALOG.length).toBe(10)
     for (const s of SCRIPT_CATALOG) {
       expect(s.costKb).toBeGreaterThan(0)
       expect(s.scriptHosts.length).toBeGreaterThan(0)
       expect(s.scriptHosts.every((h) => h.startsWith("https://"))).toBe(true)
       expect(["defer", "interaction"]).toContain(s.strategy)
     }
+  })
+
+  it("every ad pixel is consent-gated, interaction-loaded, with a validating pattern", () => {
+    const pixels = SCRIPT_CATALOG.filter((s) => s.category === "pixel")
+    expect(pixels.map((p) => p.id).sort()).toEqual(
+      ["google_ads", "linkedin_insight", "meta_pixel", "pinterest_tag", "tiktok_pixel"]
+    )
+    for (const p of pixels) {
+      expect(p.requiresConsent).toBe(true)
+      expect(p.strategy).toBe("interaction")
+      // config patterns must reject URLs/markup
+      expect(p.configPattern.test("https://evil.com")).toBe(false)
+      expect(p.configPattern.test("<script>")).toBe(false)
+    }
+    // known-good ids validate
+    expect(catalogEntry("meta_pixel")!.configPattern.test("123456789012345")).toBe(true)
+    expect(catalogEntry("google_ads")!.configPattern.test("AW-123456789")).toBe(true)
+    expect(catalogEntry("pinterest_tag")!.configPattern.test("2612345678901")).toBe(true)
+  })
+})
+
+describe("pixel consent helpers (V1.5 M4)", () => {
+  const meta = [{ id: "meta_pixel", config: "123456789012345" }]
+  const plausibleOnly = [{ id: "plausible", config: "example.com" }]
+
+  it("pixelEntries returns only enabled pixels", () => {
+    expect(pixelEntries([...meta, ...plausibleOnly]).map((e) => e.id)).toEqual(["meta_pixel"])
+    expect(pixelEntries(plausibleOnly)).toEqual([])
+  })
+
+  it("hasConsentPixels is true only when a consent-gated pixel is on", () => {
+    expect(hasConsentPixels(meta)).toBe(true)
+    expect(hasConsentPixels(plausibleOnly)).toBe(false)
+  })
+
+  it("effectiveConsentMode: auto follows pixels; forced overrides both ways", () => {
+    expect(effectiveConsentMode(meta, undefined)).toBe(true) // auto → on (pixel present)
+    expect(effectiveConsentMode(plausibleOnly, undefined)).toBe(false) // auto → off (no pixel)
+    expect(effectiveConsentMode(meta, false)).toBe(false) // forced off
+    expect(effectiveConsentMode(plausibleOnly, true)).toBe(true) // forced on
   })
 })
 

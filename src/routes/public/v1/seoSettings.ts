@@ -39,12 +39,17 @@ seoSettingsRoutes.get("/", async (c) => {
     imageLicense: null as null | { licenseUrl?: string; acquireLicenseUrl?: string; creatorName?: string },
     analyticsEnabled: false,
     analyticsKey: "",
+    pixelConsent: null as null | boolean,
   }
   // Valid profile/script ids — mirror src/modules/seo/{profiles,scripts}.ts
   // (CMS core stays dependency-clean of the SaaS modules, so the closed sets
   // are inlined; the template ALSO validates against its own catalog copy).
   const PROFILE_IDS = new Set(["local", "news", "ecommerce", "image", "ai"])
-  const SCRIPT_IDS = new Set(["plausible", "fathom", "ga4", "crisp", "cookieyes"])
+  const SCRIPT_IDS = new Set([
+    "plausible", "fathom", "ga4", "crisp", "cookieyes",
+    // V1.5 M4 ad pixels
+    "meta_pixel", "google_ads", "tiktok_pixel", "linkedin_insight", "pinterest_tag",
+  ])
   const parseScripts = (raw: unknown): Array<{ id: string; config: string }> => {
     if (typeof raw !== "string" || !raw.trim()) return []
     try {
@@ -78,6 +83,7 @@ seoSettingsRoutes.get("/", async (c) => {
         indexnowKey: String(p.indexnow_key ?? ""),
         analyticsEnabled: Number(p.analytics_enabled) === 1,
         analyticsKey: String(p.analytics_key ?? ""),
+        pixelConsent: p.pixel_consent == null ? null : Number(p.pixel_consent) === 1,
         imageLicense: (() => {
           try {
             const o = JSON.parse(String(p.image_license_json ?? "null")) as unknown

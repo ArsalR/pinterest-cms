@@ -1,7 +1,7 @@
 ---
 // Base layout — zero client JS (P1), system font stack (P4), critical CSS
 // inlined by Astro (P5), semantic HTML + JSON-LD (K8/AEO).
-import { loadConfig, canonicalHost, fetchSeoSettings, globalSchemaFor, scriptTagsFor } from "../lib/cms"
+import { loadConfig, canonicalHost, fetchSeoSettings, globalSchemaFor, scriptTagsFor, enabledPixels, pixelConsentMode } from "../lib/cms"
 import { presetRootCss, resolvePreset, presetFontFaces, presetFontPreload } from "../lib/presets"
 
 interface Props {
@@ -47,6 +47,13 @@ const beaconIngest = seoSettings.analyticsEnabled && seoSettings.analyticsKey &&
   ? config.formsEndpoint.replace(/\/api\/saas\/forms\/.*$/, "") + "/api/saas/beacon"
   : ""
 const year = new Date().getFullYear()
+// V1.5 M4: the baseline consent banner ships (hidden) only when a consent-gated
+// ad pixel is enabled AND EU consent mode is on. The sanctioned loader
+// (/js/site-scripts.js) reveals it for un-consented visitors and wires the
+// buttons — so consented/declined returning visitors never see a flash, and a
+// visitor with JS off simply gets no pixels (fail-safe). This is baseline
+// consent, not a full CMP.
+const showConsentBanner = enabledPixels(seoSettings).length > 0 && pixelConsentMode(seoSettings)
 ---
 <!doctype html>
 <html lang="en">
@@ -280,5 +287,22 @@ const year = new Date().getFullYear()
     </nav>
     <p>© {year} {config.name}. All rights reserved.</p>
   </footer>
+  {showConsentBanner && (
+    <div id="sn-consent" role="dialog" aria-label="Cookie consent" hidden
+         style="position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:var(--surface,#fff);color:var(--fg,#111);border-top:1px solid var(--border,#e5e7eb);box-shadow:0 -2px 12px rgba(0,0,0,.12);padding:.85rem 1rem">
+      <div style="max-width:960px;margin:0 auto;display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between">
+        <p style="margin:0;font-size:.9rem;line-height:1.4;flex:1 1 320px">
+          We use marketing cookies to measure ad performance. They load only if you accept.
+          <a href="/privacy/" style="color:var(--accent,#2563eb)">Privacy Policy</a>.
+        </p>
+        <div style="display:flex;gap:.5rem;flex-shrink:0">
+          <button type="button" id="sn-consent-decline"
+            style="background:transparent;color:inherit;border:1px solid var(--border,#cbd5e1);border-radius:6px;padding:.5rem 1rem;font-size:.9rem;cursor:pointer">Decline</button>
+          <button type="button" id="sn-consent-accept"
+            style="background:var(--accent,#2563eb);color:#fff;border:0;border-radius:6px;padding:.5rem 1.1rem;font-size:.9rem;cursor:pointer">Accept</button>
+        </div>
+      </div>
+    </div>
+  )}
 </body>
 </html>

@@ -25,8 +25,8 @@ import { detectChains, isBrandedLink, toRedirectsCsv, type RedirectKind, type Re
 import { listRedirects, upsertRedirect, deleteRedirect, importRedirectsCsv } from "./redirectsService"
 import { indexOverview, bulkInspect, BULK_INSPECT_CAP } from "./indexingService"
 import { assistAvailable, runAssist, type AssistTask } from "./assist"
-import { SCRIPT_CATALOG, parseEnabledScripts, checkScriptBudget, type EnabledScript } from "./scripts"
-import { saveScripts } from "./settingsService"
+import { SCRIPT_CATALOG, parseEnabledScripts, checkScriptBudget, hasConsentPixels, type EnabledScript } from "./scripts"
+import { saveScripts, savePixelConsent } from "./settingsService"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
@@ -834,7 +834,9 @@ export async function indexingHandler(c: Context<AppEnv>): Promise<Response> {
 // shows the total; an over-budget save is refused with the plain-language
 // report, and the template build enforces the same gate deploy-blocking.
 
-function renderScriptsPage(siteId: string, domain: string, enabled: EnabledScript[], opts: { error?: string; saved?: boolean } = {}): string {
+const CATEGORY_LABEL = { analytics: "Analytics", chat: "Chat widget", consent: "Consent tool", pixel: "Ad / marketing pixel" }
+
+function renderScriptsPage(siteId: string, domain: string, enabled: EnabledScript[], pixelConsent: boolean | undefined, opts: { error?: string; saved?: boolean } = {}): string {
   const byId = new Map(enabled.map((e) => [e.id, e]))
   const budget = checkScriptBudget(enabled)
   const notice = opts.saved
@@ -851,7 +853,7 @@ function renderScriptsPage(siteId: string, domain: string, enabled: EnabledScrip
         <h3 style="margin:0;font-size:14px">${escapeHtml(s.name)}</h3>
         <span class="muted" style="font-size:11px;white-space:nowrap">~${s.costKb}KB · ${s.strategy === "interaction" ? "loads on first interaction" : "deferred"}</span>
       </div>
-      <p class="muted" style="margin:4px 0 8px;font-size:12px">${s.category === "analytics" ? "Analytics" : s.category === "chat" ? "Chat widget" : "Consent tool"} — adds ~${s.costKb}KB for every visitor. ${s.strategy === "interaction" ? "Won't load until someone interacts with the page." : "Loads after your content (defer)."}</p>
+      <p class="muted" style="margin:4px 0 8px;font-size:12px">${CATEGORY_LABEL[s.category]} — adds ~${s.costKb}KB for every visitor. ${s.strategy === "interaction" ? "Won't load until someone interacts with the page." : "Loads after your content (defer)."}${s.requiresConsent ? " Waits for consent when EU consent mode is on." : ""}</p>
       <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin:6px 0"><input type="checkbox" name="on_${s.id}" ${cur ? "checked" : ""} /> Enable</label>
       <label style="display:block;font-size:12px;margin:6px 0 3px" class="muted">${escapeHtml(s.configLabel)}</label>
       <input name="cfg_${s.id}" value="${escapeAttr(cur?.config ?? "")}" placeholder="${escapeAttr(s.configPlaceholder)}" style="${inputStyle}" />
@@ -868,6 +870,16 @@ function renderScriptsPage(siteId: string, domain: string, enabled: EnabledScrip
     </div>
     <form method="post" action="/app/sites/${escapeAttr(siteId)}/scripts">
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">${cards}</div>
+      <div class="card" style="margin-top:12px">
+        <h3 style="margin:0 0 4px;font-size:14px">Ad pixel consent</h3>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">When EU consent mode is on, a lightweight cookie banner appears and pixels don't load until a visitor accepts. This is baseline consent (accept/decline) — not a full Consent Management Platform. Pixels also auto-fire conversion events on your form "thank you" pages and on checkout success.</p>
+        <label style="display:block;font-size:12px;margin:0 0 3px" class="muted">EU consent mode</label>
+        <select name="pixel_consent" style="${inputStyle}">
+          <option value="auto" ${pixelConsent === undefined ? "selected" : ""}>Automatic — on whenever an ad pixel is enabled (recommended)</option>
+          <option value="on" ${pixelConsent === true ? "selected" : ""}>Always on</option>
+          <option value="off" ${pixelConsent === false ? "selected" : ""}>Off — load pixels without asking (only where legally allowed)</option>
+        </select>
+      </div>
       <div class="card" style="display:flex;justify-content:flex-end;margin-top:12px"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save scripts</button></div>
     </form>`
 }
@@ -879,8 +891,14 @@ export async function siteScriptsHandler(c: Context<AppEnv>): Promise<Response> 
   const site = await loadSite(master, siteId, customer.id)
   if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
   const settings = site.cms_site_id ? await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS) : DEFAULT_SEO_SETTINGS
-  const body = renderScriptsPage(siteId, site.domain, settings.scripts, { saved: c.req.query("saved") === "1" })
+  const body = renderScriptsPage(siteId, site.domain, settings.scripts, settings.pixelConsent, { saved: c.req.query("saved") === "1" })
   return c.html(renderSaasLayout({ title: "Site scripts", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+/** Map the tri-state consent select to a stored preference. */
+function parseConsentPref(raw: unknown): boolean | undefined {
+  const v = String(raw ?? "auto")
+  return v === "on" ? true : v === "off" ? false : undefined
 }
 
 export async function siteScriptsSaveHandler(c: Context<AppEnv>): Promise<Response> {
@@ -889,11 +907,12 @@ export async function siteScriptsSaveHandler(c: Context<AppEnv>): Promise<Respon
   const master = await masterDb(c)
   const site = await loadSite(master, siteId, customer.id)
   if (!site || !site.cms_site_id) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const form = await c.req.parseBody()
+  const consent = parseConsentPref(form["pixel_consent"])
   const render = (enabled: EnabledScript[], error: string) =>
-    c.html(renderSaasLayout({ title: "Site scripts", active: "sites", customer, bodyHtml: renderScriptsPage(siteId, site.domain, enabled, { error }) }), 200, NO_STORE)
+    c.html(renderSaasLayout({ title: "Site scripts", active: "sites", customer, bodyHtml: renderScriptsPage(siteId, site.domain, enabled, consent, { error }) }), 200, NO_STORE)
   if (planGate(customer, nowSqlite()) === "read_only") return render([], "Your trial has ended — subscribe to change scripts.")
 
-  const form = await c.req.parseBody()
   const submitted: Array<{ id: string; config: string }> = []
   for (const s of SCRIPT_CATALOG) {
     if (form[`on_${s.id}`] !== "on") continue
@@ -907,7 +926,9 @@ export async function siteScriptsSaveHandler(c: Context<AppEnv>): Promise<Respon
   const enabled = parseEnabledScripts(JSON.stringify(submitted))
   const r = await saveScripts(c.env, customer.id, site.cms_site_id, site.repo_full_name, enabled, master)
   if (!r.ok) return render(enabled, r.error ?? "Couldn't save.")
-  await audit(master, customer.id, "site.scripts_changed", site.domain, { ids: enabled.map((e) => e.id) }).catch(() => {})
+  // Persist the consent preference too (its own column; harmless when no pixel).
+  await savePixelConsent(c.env, customer.id, site.cms_site_id, site.repo_full_name, consent, master).catch(() => {})
+  await audit(master, customer.id, "site.scripts_changed", site.domain, { ids: enabled.map((e) => e.id), consent: consent === undefined ? "auto" : consent ? "on" : "off", pixels: hasConsentPixels(enabled) }).catch(() => {})
   return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}/scripts?saved=1` } })
 }
 
