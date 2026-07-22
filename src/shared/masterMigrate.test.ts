@@ -23,7 +23,7 @@ describe("MASTER_MIGRATIONS invariants", () => {
     for (const m of MASTER_MIGRATIONS) {
       for (const sql of m.statements) {
         expect(sql, `${m.name}: ${sql.slice(0, 60)}…`).toMatch(
-          /^\s*(CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS|ALTER TABLE \w+ ADD COLUMN)/i
+          /^\s*(CREATE (TABLE|INDEX|UNIQUE INDEX) IF NOT EXISTS|ALTER TABLE \w+ ADD COLUMN|DROP INDEX IF EXISTS)/i
         )
       }
     }

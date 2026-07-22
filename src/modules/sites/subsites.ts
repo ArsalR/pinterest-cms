@@ -36,3 +36,28 @@ export function subdomainDomain(label: string, parentDomain: string): string {
   if (p.startsWith(`${l}.`)) return ""
   return `${l}.${p}`
 }
+
+// ── Subdirectory sites (domain.com/blog) — V1.5 M5 part 2 ──
+
+/** Path segments a subdirectory site can't take: they collide with a top-level
+ *  site's own routes/assets (so /blog would shadow the parent's /posts, etc.). */
+export const RESERVED_PATH_SEGMENTS = new Set([
+  "posts", "forms", "shop", "cart", "order", "products", "category", "categories",
+  "authors", "locations", "tags", "tag", "og", "js", "fonts", "_astro", "api",
+  "admin", "app", "rss", "feed", "sitemap", "robots", "well-known", ".well-known",
+])
+
+/** A single path segment for a subdirectory mount: 1–40 chars, a–z 0–9 and
+ *  hyphens, not a reserved route. Lowercased. */
+export function isValidPathSegment(raw: string): boolean {
+  const seg = raw.trim().toLowerCase().replace(/^\/+|\/+$/g, "")
+  if (!/^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/.test(seg)) return false
+  if (RESERVED_PATH_SEGMENTS.has(seg)) return false
+  return true
+}
+
+/** Compose the "/blog" base path from a validated segment. "" if invalid. */
+export function basePathFrom(segment: string): string {
+  const seg = segment.trim().toLowerCase().replace(/^\/+|\/+$/g, "")
+  return isValidPathSegment(seg) ? `/${seg}` : ""
+}

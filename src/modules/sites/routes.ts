@@ -16,7 +16,7 @@ import {
   type CustomerSiteRow,
 } from "../provisioning"
 import { dispatchPrompt, promptRuns, genesisPrompt } from "./prompts"
-import { isValidSubdomainLabel, subdomainDomain } from "./subsites"
+import { isValidSubdomainLabel, subdomainDomain, isValidPathSegment, basePathFrom } from "./subsites"
 import { installationToken, listCommits, rollbackToCommit } from "../connections"
 import { audit } from "../customers"
 import { countNew } from "../forms"
@@ -195,10 +195,12 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
   }
   const siteRow = (s: CustomerSiteRow, child: boolean): string => {
     const kids = childrenOf.get(s.id) ?? []
-    const childBadge = child ? `<span class="muted" style="font-size:11px;border:1px solid #374151;border-radius:4px;padding:1px 5px;margin-left:6px">subdomain</span>` : ""
-    const parentBadge = !child && kids.length ? `<span class="muted" style="font-size:11px;margin-left:6px">· ${kids.length} subdomain${kids.length === 1 ? "" : "s"}</span>` : ""
+    const kind = s.base_path ? "subdirectory" : "subdomain"
+    const shownHost = s.base_path ? `${s.domain}${s.base_path}` : s.domain
+    const childBadge = child ? `<span class="muted" style="font-size:11px;border:1px solid #374151;border-radius:4px;padding:1px 5px;margin-left:6px">${kind}</span>` : ""
+    const parentBadge = !child && kids.length ? `<span class="muted" style="font-size:11px;margin-left:6px">· ${kids.length} sub-site${kids.length === 1 ? "" : "s"}</span>` : ""
     return `<div class="site-row" style="${child ? "padding-left:20px;border-left:2px solid #262626;margin-left:6px" : ""}">
-        <span>${child ? '<span class="muted" style="margin-right:4px">↳</span>' : ""}<a href="/app/sites/${escapeAttr(s.id)}" style="color:#fafafa">${escapeHtml(s.domain)}</a>
+        <span>${child ? '<span class="muted" style="margin-right:4px">↳</span>' : ""}<a href="/app/sites/${escapeAttr(s.id)}" style="color:#fafafa">${escapeHtml(shownHost)}</a>
           <span class="muted" style="margin-left:8px">${escapeHtml(s.name)}</span>${childBadge}${parentBadge}</span>
         ${chip(s.status)}
       </div>` + kids.map((k) => siteRow(k, true)).join("")
@@ -237,6 +239,30 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
           <p class="muted" style="margin-top:8px;font-size:12px">The design is matched to your niche automatically — you can refine it by prompt after it's live.</p>
         </form></div>`
     : ""
+  // V1.5 M5 part 2 — subdirectory sites (domain.com/blog).
+  const subDirForm = ready && gate !== "read_only" && parentOptions
+    ? `<div class="card"><h2 style="margin:0 0 6px;font-size:16px">Add a subdirectory site</h2>
+        <p class="muted" style="font-size:13px;margin:0 0 12px">A full separate site under a path of one of your domains (e.g. <span style="color:#cbd5e1">yourdomain.com/blog</span>) — its own design and content, served from the same domain as a section. Best for SEO when you want everything under one domain.</p>
+        <form method="POST" action="/app/sites/subdirectory">
+          <label for="dparent">On which domain?</label>
+          <select id="dparent" name="parent" class="wide" required>${parentOptions}</select>
+          <label for="segment">Path</label>
+          <input class="wide" id="segment" name="segment" required maxlength="40" placeholder="blog" pattern="[A-Za-z0-9]([A-Za-z0-9-]{0,38}[A-Za-z0-9])?">
+          <label for="dkind">What kind of site?</label>
+          <select id="dkind" name="kind" class="wide" required>
+            <option value="content">Blog / content site</option>
+            <option value="ecommerce">Online store</option>
+            <option value="local-business">Local business</option>
+            <option value="portfolio">Portfolio / services</option>
+          </select>
+          <label for="dname">Site name</label>
+          <input class="wide" id="dname" name="name" required maxlength="80" placeholder="BrewCraft Blog">
+          <label for="dniche">Niche (one line — guides content and trust pages)</label>
+          <input class="wide" id="dniche" name="niche" required maxlength="200" placeholder="Espresso guides and reviews">
+          <button class="btn" type="submit" style="margin-top:16px">Create subdirectory site</button>
+          <p class="muted" style="margin-top:8px;font-size:12px">Every link, canonical and sitemap URL is built under your path automatically. Reserved sections (posts, shop, …) can't be used.</p>
+        </form></div>`
+    : ""
 
   const addForm = !ready
     ? `<p class="muted">Connect GitHub and Cloudflare first — <a href="/app/connections" style="color:#93c5fd">Connections</a>.</p>`
@@ -273,7 +299,8 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
     ${error ? `<div class="banner" style="border-color:#7f1d1d;color:#fca5a5;background:#1c1212">${escapeHtml(error)}</div>` : ""}
     <div class="card"><h2 style="margin:0 0 12px;font-size:16px">Your sites</h2>${listHtml}</div>
     <div class="card"><h2 style="margin:0 0 12px;font-size:16px">Add a site</h2>${addForm}</div>
-    ${subForm}`
+    ${subForm}
+    ${subDirForm}`
 
   return c.html(renderSaasLayout({ title: "Sites", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
@@ -400,6 +427,75 @@ export async function createSubdomainSiteHandler(c: Context<AppEnv>): Promise<Re
   })
   c.executionCtx.waitUntil(
     runProvisioning(db, c.env, siteId).catch((err) => console.error("subdomain provisioning crashed:", err))
+  )
+  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}` } })
+}
+
+// ─────────────────────── add a subdirectory site (V1.5 M5 part 2) ───────────────────────
+// A full separate site under a path of an existing site's domain
+// (domain.com/blog), reusing the parent's zone via a Worker path route. Its own
+// repo/preset/content; the build prefixes every URL with the base path.
+
+export async function createSubdirectorySiteHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const fail = (msg: string) =>
+    new Response(null, { status: 302, headers: { Location: `/app/sites?error=${encodeURIComponent(msg)}` } })
+
+  const db = await masterDb(c)
+  if (planGate(customer, nowSqlite()) === "read_only") return fail("Your trial has ended — subscribe to add new sites.")
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return fail("That form didn't come through — please try again.")
+  }
+  const parentId = String(form.get("parent") || "")
+  const segment = String(form.get("segment") || "").trim().toLowerCase()
+  const name = String(form.get("name") || "").trim()
+  const niche = String(form.get("niche") || "").trim()
+  const kindRaw = String(form.get("kind") || "content")
+  const kind = isSiteKind(kindRaw) ? kindRaw : "content"
+
+  if (!parentId) return fail("Pick which site's domain to add the section to.")
+  if (!isValidPathSegment(segment)) return fail("That path isn't available — use letters, numbers and hyphens (e.g. blog, shop, guide), and avoid reserved names like posts or shop.")
+  if (!name) return fail("Give the site a name.")
+  if (!niche) return fail("Describe the niche in one line — it drives the design and trust pages.")
+
+  const parentRow = await db.execute({
+    sql: "SELECT id, domain, canonical_host, zone_id, status, parent_site_id FROM customer_sites WHERE id = ? AND customer_id = ? LIMIT 1",
+    args: [parentId, customer.id],
+  })
+  if (!parentRow.rows.length) return fail("We couldn't find that parent site.")
+  const parent = parentRow.rows[0] as unknown as { id: string; domain: string; canonical_host: string; zone_id: string | null; status: string; parent_site_id: string | null }
+  if (parent.parent_site_id) return fail("You can't add a section to a sub-site — pick a top-level site.")
+  if (!parent.zone_id) return fail("That site isn't on a Cloudflare zone yet, so it can't host a subdirectory.")
+
+  const base = basePathFrom(segment)
+  if (!base) return fail("That path isn't valid.")
+
+  const dup = await db.execute({
+    sql: "SELECT id FROM customer_sites WHERE domain = ? AND COALESCE(base_path,'') = ?",
+    args: [parent.domain.toLowerCase(), base],
+  })
+  if (dup.rows.length) return fail("That section path is already taken on this domain.")
+
+  const rec = recommendDesign(niche, kind)
+  const siteId = await createProvisioningPlan(db, customer, {
+    domain: parent.domain,
+    canonicalHost: parent.canonical_host === "www" ? "www" : "apex",
+    name,
+    niche,
+    zoneId: parent.zone_id,
+    kind,
+    preset: rec.preset,
+    layout: rec.layout,
+    tone: rec.tone,
+    parentSiteId: parent.id,
+    basePath: base,
+  })
+  c.executionCtx.waitUntil(
+    runProvisioning(db, c.env, siteId).catch((err) => console.error("subdirectory provisioning crashed:", err))
   )
   return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}` } })
 }
