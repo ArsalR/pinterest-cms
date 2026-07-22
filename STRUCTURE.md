@@ -46,10 +46,28 @@ src/modules/
   publishing/       gated publishing pipeline (gate → publish → rebuild) + drafts UI
   pseo/             programmatic-SEO factory: CSV + template → gated batch (K2)
   linking/          internal-linking engine: related-post scorer + orphan detection (K5)
-  analytics/        real-user Core Web Vitals + alerts + third-party script-cost (Phase 6)
+  analytics/        real-user Core Web Vitals + alerts + third-party script-cost + V1.5 first-party beacon ingest/rollups/Insights
   webhooks/         CMS rebuild bridge + contact-form relay
   app/              the SaaS HTTP surface: /app dashboard router + /api/saas router
+  # ── added since the initial modularization (all follow the same barrel rules) ──
+  design/           design tokens/presets + art-direction options (contrast-gated)
+  seo/              the SEO suite: cockpit, profiles, settings, image/local/merchant SEO, script controls, optimization report (largest module)
+  network/          network brain: GSC + AEO/GEO + content-decay radar (distinct from the CMS-core src/routes/network admin surface)
+  forms/            Forms & Automation Engine: builder, submissions inbox, newsletter, automation hooks
+  mail/             per-site Mailbox: inbound email receive + provider send (V1.5 M1)
+  integrations/     scoped API keys + event webhooks + recipes + OpenAPI (V1.5 M2)
+  importer/         WordPress (WXR) import → posts/pages/categories/media/redirects
+  marketing/        public marketing pages (home/privacy/terms/examples)
+  pinterest/        scheduled pin publishing (traffic engine)
+  affiliate/        affiliate links + dead-link cron
+  agency/           agency/multi-client mode: seats, monthly reports, client portal
+  cloning/          site cloning
+  billing/          platform billing + Stripe webhook (was a reserved slot; now live)
 ```
+
+(27 modules total. `seo` is the largest; `mail`/`integrations`/`analytics`
+carry the V1.5 business-platform work. All obey the same DAG + barrel rules —
+`npm run lint:structure` is the source of truth for the actual graph.)
 
 ## Rules (enforced)
 
@@ -59,14 +77,20 @@ src/modules/
    `import { x } from "../b/internal"` ❌ (`check-module-boundaries.mjs`).
    Same-module (`./x`), CMS-core (`../../lib/x`), and `../../shared/x` imports
    are unrestricted.
-3. **Dependency direction** (the graph is a DAG, verified):
-   `shared → vault → customers → auth → connections → provisioning → sites → webhooks → app`.
+3. **Dependency direction** (the graph is a DAG, verified by `madge` in CI):
+   the backbone runs `shared → vault → customers → auth → connections →
+   provisioning → sites → … → app` (feature modules like `seo`, `forms`,
+   `mail`, `integrations`, `analytics` hang off it). The exact edges evolve as
+   modules are added — the lint enforces acyclicity, not a fixed chain.
    `shared` never imports a module; `app` is the top (only the worker imports it).
    CMS core never imports a SaaS module (the shared `Customer` row type lives in
    `src/lib/types.ts` so the Hono context can reference it without inverting).
 4. **Migrate incrementally, tests green each step, existing API byte-identical.**
 
-## Reserved module slots (created when their phase lands)
+## Adding a module
 
-`billing` (Phase 9). Add the directory + `index.ts` when the code arrives; the
-lint picks it up automatically.
+Create `src/modules/<name>/` with a service + routes + tests + a public
+`index.ts` barrel, import siblings via their barrel only, and keep the graph a
+DAG. `npm run lint:structure` (madge + `check-module-boundaries.mjs`) picks it
+up automatically and is the enforced source of truth — this doc is a map, the
+lint is the law.

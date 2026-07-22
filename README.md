@@ -38,7 +38,7 @@ A multi-tenant, Pinterest-style CMS that runs **100 sites on a single Cloudflare
 
 ### Prerequisites
 
-* A Cloudflare account (Workers Paid plan recommended for `cpu_ms = 30000`).
+* A Cloudflare account (Workers **Paid** plan — PBKDF2 auth + provisioning need it; the free plan forbids the `[limits]` block, so `wrangler.toml` ships without one).
 * A Turso account with a database group (e.g. `default`).
 * An R2 bucket and (ideally) a custom domain in front of it for clean image URLs.
 
@@ -59,11 +59,13 @@ TURSO_ORG              = "your-org"
 TURSO_GROUP            = "default"
 NETWORK_ADMIN_HOSTNAME = "admin.yournetwork.com"
 R2_PUBLIC_URL          = "https://media.yournetwork.com"
-SITE_SCHEMA_URL        = "https://yournetwork.com/site.sql"
 SESSION_COOKIE_NAME    = "cms_session"
 ```
 
-`SITE_SCHEMA_URL` must be a **publicly fetchable URL** that returns the contents of `src/schemas/site.sql`. The simplest option: deploy `site.sql` as a static file on the same Worker, or host it on R2 with a public link, or commit it to GitHub and use the raw URL.
+Per-site schema is **not** fetched at runtime. New sites are created from
+`SITE_SCHEMA_STATEMENTS` in `src/lib/provision.ts`, and existing sites are
+upgraded by the forward-only `MIGRATIONS` runner in `src/lib/migrate.ts` (run
+by the 5-minute cron). `src/schemas/site.sql` is documentation only.
 
 ### 3. Create the master DB
 
@@ -271,7 +273,7 @@ Cached responses use `Cache-Control: public, max-age=60, s-maxage=300` for HTML,
 
 ### Limits
 
-* Per-site: ~50 posts/day handled with cpu_ms=30000 and 50ms per post.
+* Per-site: ~50 posts/day handled comfortably within the Workers Paid CPU allowance (~50ms per post).
 * 100 sites = ~5000 posts/day, well within Turso's free tier and R2's free egress.
 * Each Worker request opens at most one site DB connection (HTTP-pooled by libSQL).
 
