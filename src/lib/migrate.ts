@@ -307,6 +307,43 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_form_submissions_status ON form_submissions(status)`,
     ],
   },
+  {
+    version: 16,
+    name: "016_site_mailbox",
+    statements: [
+      // V1.5 M1 — Site Mailbox. Cloudflare Email Routing receives, a connected
+      // provider sends. Additive; empty tables = no mailbox = today's behavior.
+      // Messages (both directions) grouped into conversations by thread_key.
+      `CREATE TABLE IF NOT EXISTS mail_addresses (
+         id TEXT PRIMARY KEY,
+         address TEXT UNIQUE NOT NULL,
+         label TEXT,
+         is_catch_all INTEGER NOT NULL DEFAULT 0,
+         active INTEGER NOT NULL DEFAULT 1,
+         created_at TEXT DEFAULT (datetime('now'))
+       )`,
+      `CREATE TABLE IF NOT EXISTS mail_messages (
+         id TEXT PRIMARY KEY,
+         thread_key TEXT NOT NULL,
+         direction TEXT NOT NULL DEFAULT 'in',
+         from_addr TEXT NOT NULL,
+         to_addr TEXT NOT NULL,
+         subject TEXT,
+         body_text TEXT,
+         body_html TEXT,
+         message_id TEXT,
+         in_reply_to TEXT,
+         refs TEXT,
+         attachments_json TEXT,
+         status TEXT NOT NULL DEFAULT 'new',
+         spam INTEGER NOT NULL DEFAULT 0,
+         created_at TEXT DEFAULT (datetime('now'))
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_mail_thread ON mail_messages(thread_key, created_at)`,
+      `CREATE INDEX IF NOT EXISTS idx_mail_status ON mail_messages(status, spam)`,
+      `CREATE INDEX IF NOT EXISTS idx_mail_msgid ON mail_messages(message_id)`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

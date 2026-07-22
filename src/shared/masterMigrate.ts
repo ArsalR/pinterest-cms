@@ -282,6 +282,23 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `ALTER TABLE customer_sites ADD COLUMN forms_domain_status TEXT`,
     ],
   },
+  {
+    version: 12,
+    name: "012_site_mailbox",
+    statements: [
+      // V1.5 M1 — Site Mailbox per-site config. All additive on customer_sites.
+      // Receiving: Cloudflare Email Routing on the customer's zone (status
+      // tracks provisioning). Sending: a connected provider with a per-site,
+      // vault-encrypted API key. inbound_secret signs the email-worker → platform
+      // callback (same HMAC scheme as webhooks).
+      `ALTER TABLE customer_sites ADD COLUMN mail_routing_status TEXT DEFAULT 'off'`,
+      `ALTER TABLE customer_sites ADD COLUMN mail_inbound_secret TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN mail_provider TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN mail_provider_secret_enc TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN mail_provider_status TEXT`,
+      `ALTER TABLE customer_sites ADD COLUMN mail_from_name TEXT`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO
