@@ -200,6 +200,9 @@ export const SITE_SCHEMA_STATEMENTS: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_mail_thread ON mail_messages(thread_key, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_mail_status ON mail_messages(status, spam)`,
   `CREATE INDEX IF NOT EXISTS idx_mail_msgid ON mail_messages(message_id)`,
+  // Scoped integration keys (V1.5 M2) — mirror of migrate.ts v17.
+  `CREATE TABLE IF NOT EXISTS scoped_api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, key_hash TEXT UNIQUE NOT NULL, key_preview TEXT NOT NULL, scopes TEXT NOT NULL DEFAULT '[]', last_used_at TEXT, usage_count INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT (datetime('now')))`,
+  `CREATE INDEX IF NOT EXISTS idx_scoped_keys_preview ON scoped_api_keys(key_preview, active)`,
   // Ecommerce (amendment 2, kind='ecommerce' sites). Additive — inert for content sites.
   `CREATE TABLE IF NOT EXISTS products (id TEXT PRIMARY KEY, slug TEXT UNIQUE NOT NULL, title TEXT NOT NULL, description TEXT, price_cents INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'usd', images TEXT NOT NULL DEFAULT '[]', sku TEXT, stock_status TEXT NOT NULL DEFAULT 'in_stock', digital INTEGER NOT NULL DEFAULT 0, published INTEGER NOT NULL DEFAULT 0, category_id TEXT, seo_title TEXT, seo_description TEXT, structured_data TEXT, brand TEXT, gtin TEXT, mpn TEXT, condition TEXT, rating_value REAL, rating_count INTEGER, source TEXT DEFAULT 'manual', created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL)`,
   `CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, stripe_session_id TEXT UNIQUE, email TEXT, amount_total_cents INTEGER NOT NULL DEFAULT 0, currency TEXT NOT NULL DEFAULT 'usd', items TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL DEFAULT 'paid', created_at TEXT DEFAULT (datetime('now')))`,

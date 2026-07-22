@@ -344,6 +344,27 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_mail_msgid ON mail_messages(message_id)`,
     ],
   },
+  {
+    version: 17,
+    name: "017_scoped_api_keys",
+    statements: [
+      // V1.5 M2 — scoped integration keys (sk_site_…) for n8n/GoHighLevel/etc.
+      // Separate from the frozen cms_live_ keys (api_keys) so that contract is
+      // untouched. Hashed the same way (PBKDF2), scopes as a JSON array.
+      `CREATE TABLE IF NOT EXISTS scoped_api_keys (
+         id TEXT PRIMARY KEY,
+         name TEXT NOT NULL,
+         key_hash TEXT UNIQUE NOT NULL,
+         key_preview TEXT NOT NULL,
+         scopes TEXT NOT NULL DEFAULT '[]',
+         last_used_at TEXT,
+         usage_count INTEGER NOT NULL DEFAULT 0,
+         active INTEGER NOT NULL DEFAULT 1,
+         created_at TEXT DEFAULT (datetime('now'))
+       )`,
+      `CREATE INDEX IF NOT EXISTS idx_scoped_keys_preview ON scoped_api_keys(key_preview, active)`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

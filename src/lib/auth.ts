@@ -173,3 +173,12 @@ export function generateApiKey(): string {
   return `cms_live_${hex}`
 }
 
+/** Scoped integration key (V1.5 M2) — distinct prefix so it's never confused
+ *  with a frozen cms_live_ key. 24 random bytes. */
+export function generateScopedKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(24))
+  let hex = ""
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, "0")
+  return `sk_site_${hex}`
+}
+
