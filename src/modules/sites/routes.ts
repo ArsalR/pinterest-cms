@@ -16,6 +16,7 @@ import {
   type CustomerSiteRow,
 } from "../provisioning"
 import { dispatchPrompt, promptRuns, genesisPrompt } from "./prompts"
+import { isValidSubdomainLabel, subdomainDomain } from "./subsites"
 import { installationToken, listCommits, rollbackToCommit } from "../connections"
 import { audit } from "../customers"
 import { countNew } from "../forms"
@@ -182,17 +183,60 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
 
   const gate = planGate(customer, nowSqlite())
 
-  const listHtml = sites.rows.length
-    ? (sites.rows as unknown as CustomerSiteRow[])
-        .map(
-          (s) => `<div class="site-row">
-            <span><a href="/app/sites/${escapeAttr(s.id)}" style="color:#fafafa">${escapeHtml(s.domain)}</a>
-              <span class="muted" style="margin-left:8px">${escapeHtml(s.name)}</span></span>
-            ${chip(s.status)}
-          </div>`
-        )
-        .join("")
+  const allSites = sites.rows as unknown as CustomerSiteRow[]
+  // V1.5 M5: group sub-sites under their parents in the list.
+  const childrenOf = new Map<string, CustomerSiteRow[]>()
+  for (const s of allSites) {
+    if (s.parent_site_id) {
+      const arr = childrenOf.get(s.parent_site_id) ?? []
+      arr.push(s)
+      childrenOf.set(s.parent_site_id, arr)
+    }
+  }
+  const siteRow = (s: CustomerSiteRow, child: boolean): string => {
+    const kids = childrenOf.get(s.id) ?? []
+    const childBadge = child ? `<span class="muted" style="font-size:11px;border:1px solid #374151;border-radius:4px;padding:1px 5px;margin-left:6px">subdomain</span>` : ""
+    const parentBadge = !child && kids.length ? `<span class="muted" style="font-size:11px;margin-left:6px">· ${kids.length} subdomain${kids.length === 1 ? "" : "s"}</span>` : ""
+    return `<div class="site-row" style="${child ? "padding-left:20px;border-left:2px solid #262626;margin-left:6px" : ""}">
+        <span>${child ? '<span class="muted" style="margin-right:4px">↳</span>' : ""}<a href="/app/sites/${escapeAttr(s.id)}" style="color:#fafafa">${escapeHtml(s.domain)}</a>
+          <span class="muted" style="margin-left:8px">${escapeHtml(s.name)}</span>${childBadge}${parentBadge}</span>
+        ${chip(s.status)}
+      </div>` + kids.map((k) => siteRow(k, true)).join("")
+  }
+  const topLevel = allSites.filter((s) => !s.parent_site_id || !allSites.some((p) => p.id === s.parent_site_id))
+  const listHtml = allSites.length
+    ? topLevel.map((s) => siteRow(s, !!s.parent_site_id)).join("")
     : `<p class="muted">No sites yet.</p>`
+
+  // Eligible parents for a subdomain: the customer's own top-level sites that
+  // are on a zone. (A subdomain can't hang off another subdomain.)
+  const parentOptions = allSites
+    .filter((s) => !s.parent_site_id && s.zone_id)
+    .map((s) => `<option value="${escapeAttr(s.id)}">${escapeHtml(s.domain)}</option>`)
+    .join("")
+  const subForm = ready && gate !== "read_only" && parentOptions
+    ? `<div class="card"><h2 style="margin:0 0 6px;font-size:16px">Add a subdomain site</h2>
+        <p class="muted" style="font-size:13px;margin:0 0 12px">A full separate site on a subdomain of one of your domains (e.g. <span style="color:#cbd5e1">blog.yourdomain.com</span>) — its own design and content, reusing the parent domain. No new domain needed.</p>
+        <form method="POST" action="/app/sites/subdomain">
+          <label for="parent">On which domain?</label>
+          <select id="parent" name="parent" class="wide" required>${parentOptions}</select>
+          <label for="label">Subdomain</label>
+          <input class="wide" id="label" name="label" required maxlength="63" placeholder="blog" pattern="[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?">
+          <label for="subkind">What kind of site?</label>
+          <select id="subkind" name="kind" class="wide" required>
+            <option value="content">Blog / content site</option>
+            <option value="ecommerce">Online store</option>
+            <option value="local-business">Local business</option>
+            <option value="portfolio">Portfolio / services</option>
+          </select>
+          <label for="subname">Site name</label>
+          <input class="wide" id="subname" name="name" required maxlength="80" placeholder="BrewCraft Blog">
+          <label for="subniche">Niche (one line — guides content and trust pages)</label>
+          <input class="wide" id="subniche" name="niche" required maxlength="200" placeholder="Espresso guides and reviews">
+          <button class="btn" type="submit" style="margin-top:16px">Create subdomain site</button>
+          <p class="muted" style="margin-top:8px;font-size:12px">The design is matched to your niche automatically — you can refine it by prompt after it's live.</p>
+        </form></div>`
+    : ""
 
   const addForm = !ready
     ? `<p class="muted">Connect GitHub and Cloudflare first — <a href="/app/connections" style="color:#93c5fd">Connections</a>.</p>`
@@ -228,7 +272,8 @@ export async function sitesPageHandler(c: Context<AppEnv>): Promise<Response> {
   const body = `${SITES_STYLES}
     ${error ? `<div class="banner" style="border-color:#7f1d1d;color:#fca5a5;background:#1c1212">${escapeHtml(error)}</div>` : ""}
     <div class="card"><h2 style="margin:0 0 12px;font-size:16px">Your sites</h2>${listHtml}</div>
-    <div class="card"><h2 style="margin:0 0 12px;font-size:16px">Add a site</h2>${addForm}</div>`
+    <div class="card"><h2 style="margin:0 0 12px;font-size:16px">Add a site</h2>${addForm}</div>
+    ${subForm}`
 
   return c.html(renderSaasLayout({ title: "Sites", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
 }
@@ -288,6 +333,73 @@ export async function createSitePostHandler(c: Context<AppEnv>): Promise<Respons
   })
   c.executionCtx.waitUntil(
     runProvisioning(db, c.env, siteId).catch((err) => console.error("provisioning crashed:", err))
+  )
+  return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}` } })
+}
+
+// ─────────────────────── add a subdomain site (V1.5 M5) ───────────────────────
+// A full separate site on a subdomain of an existing site's domain, reusing the
+// parent's Cloudflare zone (DNS record + worker route) — no domain purchase, no
+// www variant. Own repo, preset, and content.
+
+export async function createSubdomainSiteHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const fail = (msg: string) =>
+    new Response(null, { status: 302, headers: { Location: `/app/sites?error=${encodeURIComponent(msg)}` } })
+
+  const db = await masterDb(c)
+  if (planGate(customer, nowSqlite()) === "read_only") return fail("Your trial has ended — subscribe to add new sites.")
+
+  let form: FormData
+  try {
+    form = await c.req.formData()
+  } catch {
+    return fail("That form didn't come through — please try again.")
+  }
+  const parentId = String(form.get("parent") || "")
+  const label = String(form.get("label") || "").trim().toLowerCase()
+  const name = String(form.get("name") || "").trim()
+  const niche = String(form.get("niche") || "").trim()
+  const kindRaw = String(form.get("kind") || "content")
+  const kind = isSiteKind(kindRaw) ? kindRaw : "content"
+
+  if (!parentId) return fail("Pick which site's domain to add the subdomain to.")
+  if (!isValidSubdomainLabel(label)) return fail("That subdomain isn't valid — use letters, numbers and hyphens (e.g. blog, shop, help).")
+  if (!name) return fail("Give the site a name.")
+  if (!niche) return fail("Describe the niche in one line — it drives the design and trust pages.")
+
+  // The parent must be the customer's own, active, on a zone, and not itself a
+  // sub-site (one level only — keeps DNS + zone reuse unambiguous).
+  const parentRow = await db.execute({
+    sql: "SELECT id, domain, zone_id, status, parent_site_id FROM customer_sites WHERE id = ? AND customer_id = ? LIMIT 1",
+    args: [parentId, customer.id],
+  })
+  if (!parentRow.rows.length) return fail("We couldn't find that parent site.")
+  const parent = parentRow.rows[0] as unknown as { id: string; domain: string; zone_id: string | null; status: string; parent_site_id: string | null }
+  if (parent.parent_site_id) return fail("You can't add a subdomain to another subdomain — pick a top-level site.")
+  if (!parent.zone_id) return fail("That site isn't on a Cloudflare zone yet, so it can't host a subdomain.")
+
+  const domain = subdomainDomain(label, parent.domain)
+  if (!domain) return fail("That subdomain isn't valid for this domain.")
+
+  const dup = await db.execute({ sql: "SELECT id FROM customer_sites WHERE domain = ?", args: [domain.toLowerCase()] })
+  if (dup.rows.length) return fail("That subdomain already has a site.")
+
+  const rec = recommendDesign(niche, kind)
+  const siteId = await createProvisioningPlan(db, customer, {
+    domain,
+    canonicalHost: "apex", // a subdomain is its own canonical host — never www
+    name,
+    niche,
+    zoneId: parent.zone_id,
+    kind,
+    preset: rec.preset,
+    layout: rec.layout,
+    tone: rec.tone,
+    parentSiteId: parent.id,
+  })
+  c.executionCtx.waitUntil(
+    runProvisioning(db, c.env, siteId).catch((err) => console.error("subdomain provisioning crashed:", err))
   )
   return new Response(null, { status: 302, headers: { Location: `/app/sites/${siteId}` } })
 }

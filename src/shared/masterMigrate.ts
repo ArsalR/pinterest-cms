@@ -311,6 +311,17 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_customer_sites_analytics_key ON customer_sites(analytics_key)`,
     ],
   },
+  {
+    version: 14,
+    name: "014_sub_sites",
+    statements: [
+      // V1.5 M5 — sub-sites. A subdomain (or, later, subdirectory) site is a
+      // full separate site that reuses its parent's Cloudflare zone. NULL =
+      // top-level site (today's behavior). Self-referential FK to customer_sites.
+      `ALTER TABLE customer_sites ADD COLUMN parent_site_id TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_customer_sites_parent ON customer_sites(parent_site_id)`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO
