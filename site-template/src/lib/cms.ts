@@ -105,6 +105,10 @@ export interface SeoSettings {
   indexnowKey: string
   /** V1.3 P4: image license/creator (licensable images). null = none. */
   imageLicense: { licenseUrl?: string; acquireLicenseUrl?: string; creatorName?: string } | null
+  /** V1.5 M3: first-party analytics beacon opt-in (Amendment 4a). false = off. */
+  analyticsEnabled?: boolean
+  /** V1.5 M3: public per-site analytics token the beacon carries. "" = none. */
+  analyticsKey?: string
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
@@ -115,6 +119,8 @@ export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   scripts: [],
   indexnowKey: "",
   imageLicense: null,
+  analyticsEnabled: false,
+  analyticsKey: "",
 }
 
 // ─────────────── Vetted script catalog (V1.3, template copy) ───────────────

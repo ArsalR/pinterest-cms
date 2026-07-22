@@ -39,6 +39,13 @@ const seoSettings = await fetchSeoSettings(config)
 const globalLd = globalSchemaFor(seoSettings, config.name, `https://${host}`)
 // Vetted site scripts (V1.3): "" when none enabled — byte-identical zero-JS.
 const siteScriptTags = scriptTagsFor(seoSettings)
+// V1.5 M3 (Amendment 4a): the ONE allowed first-party beacon — cookieless,
+// deferred, hash-gated. Emitted only when the owner opted in AND a public site
+// token exists. Ingest is the platform's beacon endpoint, derived from the
+// forms relay base. Off = byte-identical zero-JS.
+const beaconIngest = seoSettings.analyticsEnabled && seoSettings.analyticsKey && config.formsEndpoint
+  ? config.formsEndpoint.replace(/\/api\/saas\/forms\/.*$/, "") + "/api/saas/beacon"
+  : ""
 const year = new Date().getFullYear()
 ---
 <!doctype html>
@@ -80,6 +87,7 @@ const year = new Date().getFullYear()
   {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
   {globalLd && <script type="application/ld+json" set:html={JSON.stringify(globalLd)} />}
   {siteScriptTags && <Fragment set:html={siteScriptTags} />}
+  {beaconIngest && <script src="/a.js" data-ingest={beaconIngest} data-site={seoSettings.analyticsKey} defer></script>}
   <style set:html={`
     /* Design system (D1) — CSS variables + a lean content stylesheet. Zero JS
        (P1); system fonts in D1, curated faces in D2 (P4); CSS stays well under

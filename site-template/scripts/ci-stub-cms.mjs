@@ -75,7 +75,7 @@ createServer((req, res) => {
       blockAiBots: false, blockedBots: [], disallowPaths: [], robotsExtra: "",
       rssEnabled: true, archivesEnabled: true, globalSchemaEnabled: PROFILES.length > 0,
       orgName: "Audit Org", orgLogo: "", socialProfiles: [],
-      profiles: PROFILES, scripts: process.env.STUB_SCRIPTS === "overbudget" ? [{ id: "ga4", config: "G-ABC123XYZ" }, { id: "crisp", config: "12345678-abcd-ef01-2345-6789abcdef01" }, { id: "cookieyes", config: "abcdef123456" }] : process.env.STUB_SCRIPTS === "light" ? [{ id: "plausible", config: "example.com" }] : [], indexnowKey: PROFILES.includes("news") ? "a".repeat(32) : "",
+      profiles: PROFILES, scripts: process.env.STUB_SCRIPTS === "overbudget" ? [{ id: "ga4", config: "G-ABC123XYZ" }, { id: "crisp", config: "12345678-abcd-ef01-2345-6789abcdef01" }, { id: "cookieyes", config: "abcdef123456" }] : process.env.STUB_SCRIPTS === "light" ? [{ id: "plausible", config: "example.com" }] : [], indexnowKey: PROFILES.includes("news") ? "a".repeat(32) : "", analyticsEnabled: process.env.STUB_ANALYTICS === "1", analyticsKey: process.env.STUB_ANALYTICS === "1" ? "sitetoken123" : "",
       imageLicense: PROFILES.includes("image") ? { licenseUrl: "https://example.com/license/", acquireLicenseUrl: "https://example.com/contact/", creatorName: "Audit Creator" } : null,
     } }))
   }

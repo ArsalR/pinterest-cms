@@ -365,6 +365,17 @@ export const MIGRATIONS: Migration[] = [
       `CREATE INDEX IF NOT EXISTS idx_scoped_keys_preview ON scoped_api_keys(key_preview, active)`,
     ],
   },
+  {
+    version: 18,
+    name: "018_analytics_flag",
+    statements: [
+      // V1.5 M3 — first-party analytics opt-in (Amendment 4a). OFF by default.
+      // analytics_key is the public per-site token the beacon carries in a
+      // data-attr; it is NOT a secret (no PII is ever collected).
+      `ALTER TABLE seo_settings ADD COLUMN analytics_enabled INTEGER NOT NULL DEFAULT 0`,
+      `ALTER TABLE seo_settings ADD COLUMN analytics_key TEXT`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

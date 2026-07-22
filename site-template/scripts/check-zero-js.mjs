@@ -1,11 +1,34 @@
 // Covenant P1 gate: built pages must ship NO client-side JavaScript.
 // Inline application/ld+json is data, not script, and is allowed.
 // Fails the build (exit 1) on any other <script> in any built HTML page.
-import { readFileSync, readdirSync, statSync } from "node:fs"
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs"
 import { join } from "node:path"
+import { createHash } from "node:crypto"
+import { gzipSync } from "node:zlib"
 
 const dist = new URL("../dist", import.meta.url).pathname
+const scriptsDir = new URL(".", import.meta.url).pathname
 const offenders = []
+
+// V1.5 M3 (Amendment 4a): EXACTLY ONE first-party analytics beacon is allowed —
+// the file /a.js, and ONLY if its content hash matches the pinned value in
+// scripts/beacon.sha256 AND it stays <= 2 KB gzipped. Any edit to the beacon
+// changes its hash and blocks the deploy until beacon.sha256 is regenerated
+// deliberately. Every other script is still blocked.
+const BEACON_SRC = /src\s*=\s*["']\/a\.js["']/i
+const beaconExpected = existsSync(join(scriptsDir, "beacon.sha256")) ? readFileSync(join(scriptsDir, "beacon.sha256"), "utf8").trim() : ""
+let beaconOk = false
+const beaconFile = join(dist, "a.js")
+if (beaconExpected && existsSync(beaconFile)) {
+  const bytes = readFileSync(beaconFile)
+  const hash = createHash("sha256").update(bytes).digest("hex")
+  const gz = gzipSync(bytes).length
+  beaconOk = hash === beaconExpected && gz <= 2048
+  if (!beaconOk) {
+    if (hash !== beaconExpected) offenders.push(`/a.js: beacon hash mismatch (edit the beacon? regenerate scripts/beacon.sha256)`)
+    else offenders.push(`/a.js: beacon is ${gz} bytes gzipped — exceeds the 2 KB budget (Amendment 4a)`)
+  }
+}
 
 // Precisely-scoped script allowlist — everything else = deploy blocked (P1/P7):
 //  - Turnstile widget, ONLY on /contact/ (K1 spam protection)
@@ -54,6 +77,7 @@ function walk(dir) {
           !((isContact || isFormPage) && TURNSTILE.test(tag)) &&
           !(isCartPage && CART_JS.test(tag)) &&
           !(isOrderPage && ORDER_JS.test(tag)) &&
+          !(BEACON_SRC.test(tag) && beaconOk) && // Amendment 4a: only the hash-verified beacon
           !isSanctionedScript(tag)
       )
       if (bad.length) offenders.push(`${rel}: ${bad.join(" ")}`)
