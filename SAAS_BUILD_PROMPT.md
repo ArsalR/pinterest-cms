@@ -167,3 +167,28 @@ code, per-repo README. Every site ships the full SEO file set verified by a
 deploy-blocking CI check: sitemap, robots.txt, RSS, llms.txt, canonical tags,
 OG + Twitter meta, JSON-LD, favicon set + manifest, custom 404, redirects
 file. Missing any = deploy blocked.
+
+## AMENDMENT 4 — Business platform: one analytics beacon + pixels via allowlist (V1.5)
+Two narrow, deliberate exceptions to the zero-JS performance covenant, recorded
+here the way the Turnstile script exception was — the gate learns exactly these
+and nothing else.
+
+- **A4a — First-party analytics beacon.** EXACTLY ONE first-party analytics
+  script is permitted on customer sites: self-hosted, **≤ 2 KB gzipped**,
+  `defer`-loaded, **cookie-less** (no cookies, no localStorage), no
+  fingerprinting, **no raw IP stored** (country derived at the edge then
+  dropped), and it **honors DNT and Sec-GPC** (no-ops when either is set). It is
+  **OFF by default per site** (owner opt-in). The zero-JS deploy gate is taught
+  to allow **this one file by its content hash** — any other script, or a
+  modified beacon whose hash doesn't match, still blocks the deploy. It reports
+  stable `data-*` attributes only (never coordinates/heatmaps).
+- **A4b — Ad & marketing pixels.** Third-party ad/marketing pixels load ONLY
+  through the existing vetted-script allowlist path (V1.3) with its
+  defer/delay-until-interaction rules and **budget accounting** — a pixel that
+  busts the Lighthouse budget blocks the deploy with the plain-language report.
+  **No new script mechanism is introduced.** A CSS-only baseline consent banner
+  may gate "requires-consent" pixels; its tiny inline set-cookie snippet is
+  counted within the allowlist accounting, not exempt.
+
+Both remain subordinate to the covenants: the performance budget and the SEO
+file set stay deploy-blocking, and `saas_mode` still gates every new surface.
