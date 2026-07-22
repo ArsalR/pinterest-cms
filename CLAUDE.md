@@ -41,12 +41,12 @@ Cron (`wrangler.toml [triggers]`): `*/5 * * * *` → scheduler (publish schedule
 ## Databases
 
 - **Master DB** (`TURSO_MASTER_URL`/`TOKEN` secrets): single `sites` table — `id, hostname, name, turso_url, turso_token, active, created_at`. Schema: `src/schemas/master.sql`.
-- **Per-site DB**: `users`, `api_keys`, `api_logs`, `categories`, `posts`, `post_images`, `menu_items`, `media`, `settings` (key/value), `idempotency_cache`, `rate_limit_counters`, `webhook_endpoints`, `webhook_deliveries`, `redirects`, `products`, `orders` (ecommerce, additive/inert for content sites), plus `_migrations` (created lazily by the runner).
+- **Per-site DB**: `users`, `api_keys`, `api_logs`, `categories`, `posts`, `post_images`, `menu_items`, `media`, `settings` (key/value), `idempotency_cache`, `rate_limit_counters`, `webhook_endpoints`, `webhook_deliveries`, `redirects`, `products`, `orders` (ecommerce, additive/inert for content sites), `seo_settings` (SEO Control Center + V1.5 `analytics_enabled`/`analytics_key`, `pixel_consent`, `bing_verify`), `business_locations`, `authors`, `forms`/`form_submissions`, `scoped_api_keys` (V1.5 M2), plus `_migrations` (created lazily by the runner). Per-site migrations are v1–v20 in `src/lib/migrate.ts`.
 - **Schema truth is TRIPLICATED** — the Worker never reads `.sql` files at runtime:
   1. `SITE_SCHEMA_STATEMENTS` in `src/lib/provision.ts` — applied to **new** sites at provisioning.
   2. `MIGRATIONS` array in `src/lib/migrate.ts` — forward-only, idempotent DDL applied to **existing** sites by the 5-minute cron (tracked in per-site `_migrations`).
   3. `src/schemas/site.sql` + `src/migrations/*.sql` — documentation only.
-  A new per-site table/column must be added to **both TS copies** (and ideally the docs). There is **no migration runner for the master DB** — `master.sql` is applied by hand once; new master columns need a new (additive) mechanism.
+  A new per-site table/column must be added to **both TS copies** (and ideally the docs). The **master DB DOES have a forward-only migration runner** now (SaaS layer): `MASTER_MIGRATIONS` in `src/shared/masterMigrate.ts` (versioned, tracked table, `INSERT OR IGNORE`, run via `ensureMasterSchema`) — currently v1–v15. Add new master columns as a new additive migration entry there; `master.sql` remains the initial hand-applied baseline.
 - **Tenant-config caching**: `resolveSite` caches the full `sites` row (incl. plaintext turso_token) in the Cache API — 60s positive / 30s negative TTL, per-colo. After changing a site row call `invalidateSiteConfig(hostname)`; expect up to 60s staleness on other PoPs. `loadSettings` caches per libsql `Client` in a WeakMap — this is per-request **only because `getSiteDb` creates a new client each request**; never memoize the client factories without untangling this.
 
 ## Auth (three separate systems)
@@ -59,7 +59,7 @@ Cron (`wrangler.toml [triggers]`): `*/5 * * * *` → scheduler (publish schedule
 
 ## Public REST API (per site: `/api/public/v1/*`)
 
-`GET /v1/status` · `GET /v1/capabilities` · `POST /v1/upload` (multipart, ≤20 files, ≤10MB, magic-byte validated) · `POST|PUT|DELETE /v1/posts[/:id]` · `POST /v1/posts/batch` · `GET /v1/posts[/:id]` · `GET|POST /v1/categories` · webhook CRUD.
+`GET /v1/status` · `GET /v1/capabilities` · `GET /v1/openapi.json` · `POST /v1/upload` (multipart, ≤20 files, ≤10MB, magic-byte validated) · `POST|PUT|DELETE /v1/posts[/:id]` · `POST /v1/posts/batch` · `GET /v1/posts[/:id]` · `GET|POST /v1/categories` · webhook CRUD · read-only config endpoints the static build consumes (`GET /v1/seo`, `/v1/seo-settings`, `/v1/local`, `/v1/authors`, `/v1/merchant`, `/v1/forms`, `/v1/products`). ~26 endpoints total — the live set is the `endpoints` array in `capabilities.ts` (kept in sync with the notFound `available` list). Bearer `cms_live_…` keys; V1.5 also accepts scoped `sk_site_…` keys (`src/lib/apiAuth.ts`).
 
 Middleware order on the sub-app (deliberate): CORS → rate-limit → idempotency → per-handler auth. Rate limiting runs **before** auth (a 429 skips the PBKDF2 verify) and buckets on the Bearer token's last 4 chars. OPTIONS preflights short-circuit inside CORS and never reach later middleware. Auth is per-handler `validateApiKey(...)` — there is no auth middleware.
 
@@ -99,8 +99,8 @@ The `saas_mode` layer follows a **deploy-blocking structure covenant** — see `
 9. **`NETWORK_ADMIN_HOSTNAME` bypass sets only `hostname`** — `site`, `siteDb`, `settings` are undefined there. Any handler assuming `siteDb` will throw on that hostname. A new platform hostname should mirror this bypass pattern deliberately.
 10. **`/__health` is registered before tenantMiddleware** — the pattern for any route that must answer on unregistered hostnames.
 11. **Admin has no role checks and no CSRF tokens** — every logged-in user is a site superadmin; CSRF defense is solely SameSite=Lax. Never add state-changing GETs under `/admin`.
-12. **CI runs typecheck only** (`deploy.yml`) — vitest is not in CI, and vitest runs in plain Node (no Workers pool): new tests must be pure-logic, no `caches`, R2, or Hono context.
-13. **README drift**: README still documents `SITE_SCHEMA_URL` and `cpu_ms=30000`; both are gone from the runtime. Trust code over README.
+12. **CI runs typecheck + structure lint + vitest** — both `.github/workflows/deploy.yml` (push to main) and `pr-checks.yml` (the "Typecheck + tests" PR gate) run `npm run typecheck` + `npm run lint:structure` + `npm test`. vitest still runs in plain Node (no Workers pool), so new tests must be pure-logic — no `caches`, R2, or Hono context. (The customer *site-template* has its own separate deploy-blocking gates; see `site-template/.github/workflows/`.)
+13. **Trust code over prose**: docs are kept close to the code but can still lag a release. When a doc and the code disagree, the code wins — and fix the doc.
 
 ## Contract stability
 
