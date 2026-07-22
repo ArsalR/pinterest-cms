@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build && node scripts/gen-redirects.mjs && node scripts/gen-og.mjs",
+    "build": "astro build && node scripts/gen-redirects.mjs && node scripts/gen-og.mjs && node scripts/gen-basepath.mjs",
     "preview": "astro preview --port 4321",
     "check:zero-js": "node scripts/check-zero-js.mjs",
+    "check:base-path": "node scripts/check-base-path.mjs",
     "check:headers": "node scripts/check-headers.mjs",
     "check:fonts": "node scripts/check-fonts.mjs",
     "check:contrast": "node scripts/check-contrast.mjs",

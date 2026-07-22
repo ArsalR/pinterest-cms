@@ -152,6 +152,26 @@ export async function attachWorkersDomain(
     : { ok: false, problem: r.errorMessage ?? "Couldn't attach the domain to the Worker." }
 }
 
+/** Create a zone Worker ROUTE (V1.5 M5 subdirectory sites): binds
+ *  `example.com/blog/*` to the child site's Worker on the parent's zone, so the
+ *  subdirectory serves from a separate site while the apex stays the parent's.
+ *  A path route is more specific than the parent's custom domain, so /blog/* wins. */
+export async function createWorkerRoute(
+  token: string,
+  zoneId: string,
+  pattern: string,
+  scriptName: string
+): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/zones/${zoneId}/workers/routes`, {
+    method: "POST",
+    body: JSON.stringify({ pattern, script: scriptName }),
+  })
+  // A duplicate route (idempotent re-run) is a success for our purposes.
+  if (r.ok) return { ok: true, problem: null }
+  if ((r.errorMessage ?? "").toLowerCase().includes("already exists")) return { ok: true, problem: null }
+  return { ok: false, problem: r.errorMessage ?? "Couldn't create the subdirectory route." }
+}
+
 /** Disable the *.workers.dev URL for a script — a live workers.dev duplicate
  *  of the customer's site is an SEO duplicate-content bug (locked in review). */
 export async function disableWorkersDevSubdomain(

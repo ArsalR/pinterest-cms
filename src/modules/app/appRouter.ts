@@ -30,7 +30,7 @@ import {
   disconnectHandler,
 } from "../connections"
 import {
-  sitesPageHandler, createSitePostHandler, createSubdomainSiteHandler, siteDetailHandler, siteRetryHandler,
+  sitesPageHandler, createSitePostHandler, createSubdomainSiteHandler, createSubdirectorySiteHandler, siteDetailHandler, siteRetryHandler,
   sitePromptHandler, siteGenesisHandler, siteRollbackHandler,
   previewPageHandler, previewApproveHandler, previewDiscardHandler,
 } from "../sites"
@@ -146,6 +146,7 @@ saasAppRoutes.post("/resend-verification", prot(resendVerificationHandler))
 saasAppRoutes.get("/sites", prot(sitesPageHandler))
 saasAppRoutes.post("/sites", prot(createSitePostHandler))
 saasAppRoutes.post("/sites/subdomain", prot(createSubdomainSiteHandler))
+saasAppRoutes.post("/sites/subdirectory", prot(createSubdirectorySiteHandler))
 saasAppRoutes.get("/sites/:id", prot(siteDetailHandler))
 saasAppRoutes.post("/sites/:id/retry", prot(siteRetryHandler))
 // Prompt-to-build + rollback (Phase 4).

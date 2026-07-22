@@ -322,6 +322,20 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
       `CREATE INDEX IF NOT EXISTS idx_customer_sites_parent ON customer_sites(parent_site_id)`,
     ],
   },
+  {
+    version: 15,
+    name: "015_subdirectory_sites",
+    statements: [
+      // V1.5 M5 part 2 — subdirectory sites (domain.com/blog) share the parent's
+      // domain, so uniqueness moves from (domain) to (domain, base_path). NULL
+      // base_path = the root site; COALESCE keeps "one root site per domain" AND
+      // "one site per subdirectory path" both enforced (a plain composite index
+      // wouldn't, since NULL != NULL in SQLite).
+      `ALTER TABLE customer_sites ADD COLUMN base_path TEXT`,
+      `DROP INDEX IF EXISTS idx_customer_sites_domain`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_sites_domain_base ON customer_sites(domain, COALESCE(base_path, ''))`,
+    ],
+  },
 ]
 
 // Site kinds (amendment 2). Shared core (both covenants, trust pages, SEO

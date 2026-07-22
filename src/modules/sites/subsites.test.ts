@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest"
-import { isValidSubdomainLabel, subdomainDomain, RESERVED_SUBDOMAIN_LABELS } from "./subsites"
+import {
+  isValidSubdomainLabel, subdomainDomain, RESERVED_SUBDOMAIN_LABELS,
+  isValidPathSegment, basePathFrom, RESERVED_PATH_SEGMENTS,
+} from "./subsites"
 
 describe("isValidSubdomainLabel", () => {
   it("accepts normal DNS labels", () => {
@@ -33,5 +36,31 @@ describe("subdomainDomain", () => {
   })
   it("won't duplicate the label onto a matching parent", () => {
     expect(subdomainDomain("blog", "blog.example.com")).toBe("")
+  })
+})
+
+describe("isValidPathSegment", () => {
+  it("accepts normal path segments", () => {
+    for (const s of ["blog", "guide", "help-center", "b2b"]) expect(isValidPathSegment(s)).toBe(true)
+  })
+  it("tolerates surrounding slashes and case", () => {
+    expect(isValidPathSegment("/Blog/")).toBe(true)
+  })
+  it("rejects invalid or reserved segments", () => {
+    for (const s of ["", "-x", "x-", "a/b", "under_score", "a".repeat(41)]) expect(isValidPathSegment(s)).toBe(false)
+    for (const s of RESERVED_PATH_SEGMENTS) expect(isValidPathSegment(s)).toBe(false)
+    expect(isValidPathSegment("posts")).toBe(false)
+    expect(isValidPathSegment("shop")).toBe(false)
+  })
+})
+
+describe("basePathFrom", () => {
+  it("builds a /segment base path", () => {
+    expect(basePathFrom("blog")).toBe("/blog")
+    expect(basePathFrom("/Guide/")).toBe("/guide")
+  })
+  it("fails closed on invalid/reserved", () => {
+    expect(basePathFrom("posts")).toBe("")
+    expect(basePathFrom("a/b")).toBe("")
   })
 })

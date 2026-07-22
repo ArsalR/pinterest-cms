@@ -25,7 +25,7 @@ import {
 } from "../connections"
 import {
   workerScriptExists, attachWorkersDomain, disableWorkersDevSubdomain, enableZoneProtection, enableWebAnalytics,
-  createTurnstileWidget,
+  createTurnstileWidget, createWorkerRoute,
 } from "../connections"
 
 export const PROVISION_STEPS = [
@@ -78,6 +78,8 @@ export interface CustomerSiteRow {
   status: string
   /** V1.5 M5 — set when this is a sub-site reusing a parent's zone. */
   parent_site_id: string | null
+  /** V1.5 M5 part 2 — "/blog" for a subdirectory site; NULL for root/subdomain. */
+  base_path: string | null
 }
 
 export function siteSlug(domain: string): string {
@@ -95,14 +97,16 @@ function randomHex(bytes: number): string {
 export async function createProvisioningPlan(
   db: Client,
   customer: Customer,
-  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string; kind: string; preset?: string; layout?: string; tone?: string; parentSiteId?: string }
+  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string; kind: string; preset?: string; layout?: string; tone?: string; parentSiteId?: string; basePath?: string }
 ): Promise<string> {
   const id = cuid()
-  const slug = siteSlug(input.domain)
+  // Subdirectory sites share the parent's domain, so include the base path in
+  // the slug to keep the repo/worker names unique.
+  const slug = siteSlug(input.basePath ? `${input.domain}-${input.basePath}` : input.domain)
   await db.execute({
-    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, kind, design_preset, layout_variant, tone, parent_site_id, repo_full_name, worker_name)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, input.kind, input.preset ?? null, input.layout ?? null, input.tone ?? null, input.parentSiteId ?? null, `site-${slug}`],
+    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, kind, design_preset, layout_variant, tone, parent_site_id, base_path, repo_full_name, worker_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, input.kind, input.preset ?? null, input.layout ?? null, input.tone ?? null, input.parentSiteId ?? null, input.basePath ?? null, `site-${slug}`],
   })
   for (let i = 0; i < PROVISION_STEPS.length; i++) {
     await db.execute({
@@ -335,6 +339,8 @@ async function executeStep(
         kind: site.kind ?? "content", // content | ecommerce | local-business | portfolio
         domain: site.domain,
         canonicalHost: site.canonical_host, // 'apex' | 'www'
+        // V1.5 M5 part 2 — subdirectory sites build every URL under this base.
+        ...(site.base_path ? { basePath: site.base_path } : {}),
         cmsApiUrl: `https://${site.cms_hostname}/api/public/v1`,
         ownerName: String(customerRow.rows[0]?.name ?? "") || site.name,
         ownerEmail: String(customerRow.rows[0]?.email ?? ""),
@@ -353,22 +359,66 @@ async function executeStep(
           : {}),
       }
       await putRepoFile(token, repoFullName, "site.config.json", JSON.stringify(config, null, 2) + "\n", "chore: site configuration")
-      await putRepoFile(
-        token,
-        repoFullName,
-        "wrangler.toml",
-        [
-          `name = "${workerName}"`,
-          `compatibility_date = "2025-05-01"`,
-          ``,
-          `[assets]`,
-          `directory = "./dist"`,
-          `html_handling = "auto-trailing-slash"`,
-          `not_found_handling = "404-page"`,
-          ``,
-        ].join("\n"),
-        "chore: worker configuration"
-      )
+      if (site.base_path) {
+        // Subdirectory site: a tiny Worker strips the base prefix before serving
+        // from ./dist, so files stay at the dist root (the build prefixes only
+        // the URLs). Bound to a zone route domain.com/blog/* in attach_domains.
+        const base = site.base_path
+        await putRepoFile(
+          token,
+          repoFullName,
+          "worker.js",
+          [
+            `// Auto-generated (V1.5 M5): serve this subdirectory site under ${base}.`,
+            `const BASE = ${JSON.stringify(base)}`,
+            `export default {`,
+            `  async fetch(request, env) {`,
+            `    const url = new URL(request.url)`,
+            `    if (url.pathname === BASE) return Response.redirect(url.origin + BASE + "/", 301)`,
+            `    if (url.pathname.startsWith(BASE + "/")) url.pathname = url.pathname.slice(BASE.length) || "/"`,
+            `    return env.ASSETS.fetch(new Request(url, request))`,
+            `  },`,
+            `}`,
+            ``,
+          ].join("\n"),
+          "chore: subdirectory serving worker"
+        )
+        await putRepoFile(
+          token,
+          repoFullName,
+          "wrangler.toml",
+          [
+            `name = "${workerName}"`,
+            `main = "worker.js"`,
+            `compatibility_date = "2025-05-01"`,
+            ``,
+            `[assets]`,
+            `directory = "./dist"`,
+            `binding = "ASSETS"`,
+            `html_handling = "auto-trailing-slash"`,
+            `not_found_handling = "404-page"`,
+            ``,
+          ].join("\n"),
+          "chore: worker configuration"
+        )
+      } else {
+        await putRepoFile(
+          token,
+          repoFullName,
+          "wrangler.toml",
+          [
+            `name = "${workerName}"`,
+            `compatibility_date = "2025-05-01"`,
+            ``,
+            `[assets]`,
+            `directory = "./dist"`,
+            `html_handling = "auto-trailing-slash"`,
+            `not_found_handling = "404-page"`,
+            ``,
+          ].join("\n"),
+          "chore: worker configuration"
+        )
+      }
       return {}
     }
 
@@ -418,6 +468,14 @@ async function executeStep(
       const cf = await getConnection(db, site.customer_id, "cloudflare")
       const accountId = String((JSON.parse(cf?.meta || "{}") as { accountId?: string }).accountId ?? "")
       if (!cfToken || !accountId || !site.zone_id) throw new Error("Cloudflare details are missing — reconnect it, then retry.")
+      // V1.5 M5 part 2 — a subdirectory site binds to a PATH route on the parent's
+      // zone (example.com/blog/*), not a custom domain. The route is more specific
+      // than the parent's domain binding, so /blog/* reaches this worker.
+      if (site.base_path) {
+        const route = await createWorkerRoute(cfToken, site.zone_id, `${site.domain}${site.base_path}/*`, workerName)
+        if (!route.ok) throw new Error(route.problem ?? "Couldn't create the subdirectory route.")
+        return {}
+      }
       const apex = await attachWorkersDomain(cfToken, accountId, site.zone_id, site.domain, workerName)
       if (!apex.ok) throw new Error(apex.problem ?? "Couldn't attach your domain.")
       // Sub-sites (V1.5 M5) are a single subdomain host — there is no www variant

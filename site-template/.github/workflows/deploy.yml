@@ -53,6 +53,9 @@ jobs:
       - name: "Gate: WCAG AA contrast (Accessibility — light + dark)"
         run: npm run check:contrast
 
+      - name: "Gate: base-path correctness (V1.5 M5 subdirectory sites — SEO)"
+        run: npm run check:base-path
+
       - name: "Gate: SEO file set + tags (amendment 3 — sitemap, robots, RSS, llms.txt, manifest, favicon, 404, redirects, canonical, OG/Twitter, JSON-LD)"
         run: node scripts/check-seo-files.mjs
 

@@ -10,6 +10,16 @@ const dist = new URL("../dist", import.meta.url).pathname
 const scriptsDir = new URL(".", import.meta.url).pathname
 const offenders = []
 
+// V1.5 M5: on a subdirectory site the base-path rewrite prefixes local script
+// srcs (/a.js → /blog/a.js). Strip the base before matching the path-based
+// allowlists below so the same sanctioned scripts stay allowed. "" = no-op.
+const bpCfg = JSON.parse(readFileSync(new URL("../site.config.json", import.meta.url), "utf8"))
+const BASE = (() => {
+  const b = (bpCfg.basePath ?? "").trim()
+  return !b || b === "/" ? "" : "/" + b.replace(/^\/+|\/+$/g, "").toLowerCase()
+})()
+const unbase = (tag) => (BASE ? tag.split(`"${BASE}/`).join('"/').split(`'${BASE}/`).join("'/") : tag)
+
 // V1.5 M3 (Amendment 4a): EXACTLY ONE first-party analytics beacon is allowed —
 // the file /a.js, and ONLY if its content hash matches the pinned value in
 // scripts/beacon.sha256 AND it stays <= 2 KB gzipped. Any edit to the beacon
@@ -71,15 +81,17 @@ function walk(dir) {
       const isCartPage = /^\/(products\/|shop\/|cart\/)/.test(rel)
       const isOrderPage = /^\/order\//.test(rel)
       const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0])
-      const bad = scripts.filter(
-        (tag) =>
+      const bad = scripts.filter((raw) => {
+        const tag = unbase(raw) // strip the /blog base so path allowlists still match
+        return (
           !/type\s*=\s*["']application\/ld\+json["']/i.test(tag) &&
           !((isContact || isFormPage) && TURNSTILE.test(tag)) &&
           !(isCartPage && CART_JS.test(tag)) &&
           !(isOrderPage && ORDER_JS.test(tag)) &&
           !(BEACON_SRC.test(tag) && beaconOk) && // Amendment 4a: only the hash-verified beacon
           !isSanctionedScript(tag)
-      )
+        )
+      })
       if (bad.length) offenders.push(`${rel}: ${bad.join(" ")}`)
     }
   }

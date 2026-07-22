@@ -13,6 +13,9 @@ export interface SiteConfig {
   layout?: string
   domain: string
   canonicalHost: "apex" | "www"
+  /** V1.5 M5 subdirectory sites: mount path like "/blog" (no trailing slash).
+   *  Absent/"" = top-level site served at the domain root (byte-identical). */
+  basePath?: string
   cmsApiUrl: string
   ownerName: string
   ownerEmail: string
