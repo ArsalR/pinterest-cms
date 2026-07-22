@@ -6,6 +6,8 @@ import {
   normalizeSubject, parseIds, threadKey, sniffAttachmentMime, vetAttachment, isSpam, preview,
 } from "./model"
 import { buildSendRequest } from "./providers"
+import { renderEmailWorker } from "./emailWorker"
+import { mailWorkerName } from "./mailProvision"
 
 const b64 = (bytes: number[]) => {
   let s = ""
@@ -74,6 +76,24 @@ describe("spam + preview helpers", () => {
   it("previews text, falling back to stripped html", () => {
     expect(preview("", "<p>Hello <b>there</b></p>", 100)).toBe("Hello there")
     expect(preview("x".repeat(200), "", 20)).toHaveLength(20)
+  })
+})
+
+describe("email worker source (uploaded to the customer account)", () => {
+  const src = renderEmailWorker({ endpoint: "https://arsal.app/api/saas/mail/inbound/site123", secret: "s3cr3t-abc" })
+  it("bakes in the exact endpoint + signs with the per-site secret", () => {
+    expect(src).toContain('"https://arsal.app/api/saas/mail/inbound/site123"')
+    expect(src).toContain('"s3cr3t-abc"')
+    expect(src).toContain("X-Webhook-Signature")
+    expect(src).toContain("sha256=")
+  })
+  it("is a self-contained email() module (no imports to bundle)", () => {
+    expect(src).toMatch(/export default\s*\{[\s\S]*async email\(/)
+    expect(src).not.toMatch(/^import\s/m) // nothing to bundle
+  })
+  it("derives a valid, deterministic worker name", () => {
+    expect(mailWorkerName("Ab_9-XYZ")).toBe("mail-ab9-xyz")
+    expect(mailWorkerName("site123")).toBe("mail-site123")
   })
 })
 

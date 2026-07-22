@@ -42,7 +42,7 @@ import { marketingHomeHandler, marketingPrivacyHandler, marketingTermsHandler, m
 import { designPageHandler, designApplyHandler } from "../design"
 import { seoHubHandler, seoProfilesToggleHandler, seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, seoSettingsEdgeHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler, indexingHandler, seoAssistHandler, imageAltSuggestHandler, siteScriptsHandler, siteScriptsSaveHandler, localSeoHandler, localSeoSaveHandler, localSeoDeleteHandler, authorsHandler, authorsSaveHandler, authorsDeleteHandler, merchantSeoHandler, merchantConfigSaveHandler, merchantProductsSaveHandler, imageLicenseSaveHandler } from "../seo"
 import { formsListHandler, formsCreateHandler, formEditHandler, formSaveHandler, sendingDomainHandler, sendingDomainCreateHandler, sendingDomainCheckHandler, sendingDomainRemoveHandler, formWebhookHandler, subscribersCsvHandler, inboxHandler, inboxDetailHandler, inboxStatusHandler, inboxNotesHandler, inboxReplyHandler, inboxRetentionHandler, allInboxesHandler, inboxDraftHandler, inboxDigestHandler } from "../forms"
-import { mailboxHandler, mailSetupHandler, mailThreadHandler, mailReplyHandler, mailFolderHandler, mailAddressAddHandler, mailAddressToggleHandler, mailProviderHandler } from "../mail"
+import { mailboxHandler, mailSetupHandler, mailThreadHandler, mailReplyHandler, mailFolderHandler, mailAddressAddHandler, mailAddressToggleHandler, mailProviderHandler, mailEnableReceivingHandler } from "../mail"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -195,6 +195,7 @@ saasAppRoutes.post("/sites/:id/mailbox/thread/:tk/folder", prot(mailFolderHandle
 saasAppRoutes.post("/sites/:id/mailbox/addresses/add", prot(mailAddressAddHandler))
 saasAppRoutes.post("/sites/:id/mailbox/addresses/toggle", prot(mailAddressToggleHandler))
 saasAppRoutes.post("/sites/:id/mailbox/provider", prot(mailProviderHandler))
+saasAppRoutes.post("/sites/:id/mailbox/enable", prot(mailEnableReceivingHandler))
 saasAppRoutes.get("/sites/:id/seo", prot(seoHubHandler))
 saasAppRoutes.post("/sites/:id/seo/profiles", prot(seoProfilesToggleHandler))
 saasAppRoutes.post("/sites/:id/assist", prot(seoAssistHandler))

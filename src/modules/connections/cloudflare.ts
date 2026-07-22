@@ -22,7 +22,14 @@ export const CF_TOKEN_TEMPLATE: ReadonlyArray<{ scope: string; permission: strin
   // V1.3 edge bot protection — lets the platform manage the AI-crawler WAF
   // rule and Bot Fight Mode on the customer's zone.
   { scope: "Zone", permission: "Firewall Services", access: "Edit" },
+  // V1.5 M1 Site Mailbox — enable Email Routing + manage rules on the zone.
+  { scope: "Zone", permission: "Email Routing Rules", access: "Edit" },
 ]
+
+/** The extra permission Email Routing needs — surfaced when a mailbox action
+ *  fails because the customer's existing token predates this scope. */
+export const EMAIL_PERMISSION_HELP =
+  "Your Cloudflare token needs the “Email Routing Rules: Edit” permission. Add it to the token at dash.cloudflare.com/profile/api-tokens, then retry — everything else keeps working."
 
 async function cfFetch<T>(token: string, path: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; result: T | null; errorMessage: string | null }> {
   try {
@@ -363,4 +370,75 @@ export async function setBotFightMode(token: string, zoneId: string, on: boolean
     body: JSON.stringify({ fight_mode: on }),
   })
   return r.ok ? { ok: true, problem: null } : { ok: false, problem: problemFor(r.status, r.errorMessage) }
+}
+
+// ─────────────────────── Email Routing (V1.5 M1 — Site Mailbox) ───────────────────────
+// Cloudflare RECEIVES the mail: enable Email Routing on the customer's zone,
+// deploy a small Email Worker into their account, and point the catch-all at
+// it. All idempotent (safe to re-run) and returning the {ok, problem} shape.
+
+/** Enable Email Routing on a zone (idempotent — already-enabled is treated OK). */
+export async function enableEmailRouting(token: string, zoneId: string): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/zones/${zoneId}/email/routing/enable`, { method: "POST", body: "{}" })
+  if (r.ok) return { ok: true, problem: null }
+  // Already enabled or partially set up — probe status before declaring failure.
+  const s = await cfFetch<{ enabled?: boolean }>(token, `/zones/${zoneId}/email/routing`, { method: "GET" })
+  if (s.ok && s.result?.enabled) return { ok: true, problem: null }
+  return { ok: false, problem: r.errorMessage ?? EMAIL_PERMISSION_HELP }
+}
+
+/** The DNS records Email Routing needs (MX + SPF), for the combined DNS table. */
+export async function emailRoutingDns(token: string, zoneId: string): Promise<{ ok: boolean; records: Array<{ type: string; name: string; value: string; priority?: number }>; problem: string | null }> {
+  const r = await cfFetch<Array<{ type: string; name: string; content: string; priority?: number }>>(token, `/zones/${zoneId}/email/routing/dns`, { method: "GET" })
+  if (!r.ok || !Array.isArray(r.result)) return { ok: false, records: [], problem: r.errorMessage ?? "Couldn't read the Email Routing DNS records." }
+  return { ok: true, records: r.result.map((x) => ({ type: x.type, name: x.name, value: x.content, priority: x.priority })), problem: null }
+}
+
+/** Create a verified destination address (Cloudflare emails a confirmation the
+ *  owner must click — verification is async, surfaced in the UI). */
+export async function createEmailDestination(token: string, accountId: string, email: string): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/accounts/${accountId}/email/routing/addresses`, { method: "POST", body: JSON.stringify({ email }) })
+  // 409 = already added; treat as OK.
+  if (r.ok || r.status === 409) return { ok: true, problem: null }
+  return { ok: false, problem: r.errorMessage ?? "Couldn't add the destination address." }
+}
+
+/** Point the zone's catch-all at the deployed Email Worker (idempotent PUT). */
+export async function setCatchAllToWorker(token: string, zoneId: string, workerName: string): Promise<{ ok: boolean; problem: string | null }> {
+  const r = await cfFetch<unknown>(token, `/zones/${zoneId}/email/routing/rules/catch_all`, {
+    method: "PUT",
+    body: JSON.stringify({ name: "mailbox catch-all", enabled: true, matchers: [{ type: "all" }], actions: [{ type: "worker", value: [workerName] }] }),
+  })
+  return r.ok ? { ok: true, problem: null } : { ok: false, problem: r.errorMessage ?? "Couldn't set the catch-all routing rule." }
+}
+
+/** Whether Email Routing is enabled + the catch-all points at our worker. */
+export async function emailRoutingStatus(token: string, zoneId: string): Promise<{ enabled: boolean; catchAllWorker: string | null }> {
+  const s = await cfFetch<{ enabled?: boolean }>(token, `/zones/${zoneId}/email/routing`, { method: "GET" })
+  const ca = await cfFetch<{ actions?: Array<{ type?: string; value?: string[] }> }>(token, `/zones/${zoneId}/email/routing/rules/catch_all`, { method: "GET" })
+  const worker = ca.result?.actions?.find((a) => a.type === "worker")?.value?.[0] ?? null
+  return { enabled: !!s.result?.enabled, catchAllWorker: worker }
+}
+
+/**
+ * Upload an ES-module Worker script directly into the customer's account
+ * (multipart — the only path that doesn't go through their repo's Action).
+ * Uses a raw fetch because cfFetch forces application/json. Idempotent (PUT).
+ */
+export async function putEmailWorker(token: string, accountId: string, name: string, moduleJs: string): Promise<{ ok: boolean; problem: string | null }> {
+  const form = new FormData()
+  form.append("metadata", new Blob([JSON.stringify({ main_module: "worker.js", compatibility_date: "2024-11-01" })], { type: "application/json" }))
+  form.append("worker.js", new Blob([moduleJs], { type: "application/javascript+module" }), "worker.js")
+  try {
+    const resp = await fetch(`${CF_API}/accounts/${accountId}/workers/scripts/${name}`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}` }, // let fetch set the multipart boundary
+      body: form,
+    })
+    const body = (await resp.json().catch(() => null)) as { success?: boolean; errors?: Array<{ message?: string }> } | null
+    if (resp.ok && body?.success) return { ok: true, problem: null }
+    return { ok: false, problem: body?.errors?.[0]?.message ?? `Cloudflare returned ${resp.status} uploading the email worker.` }
+  } catch {
+    return { ok: false, problem: "Couldn't reach Cloudflare to deploy the email worker." }
+  }
 }
