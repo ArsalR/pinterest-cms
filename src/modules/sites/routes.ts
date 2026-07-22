@@ -419,6 +419,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/forms">Forms</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/inbox">Inbox${newSubs ? ` <span style="background:#b45309;color:#fff;border-radius:999px;padding:0 7px;font-size:11px">${newSubs}</span>` : ""}</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/mailbox">Mailbox${unreadMail ? ` <span style="background:#2563eb;color:#fff;border-radius:999px;padding:0 7px;font-size:11px">${unreadMail}</span>` : ""}</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/integrations">Integrations</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/drafts">Drafts &amp; quality gate</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/insights">Internal linking</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/pseo">Programmatic SEO</a>
