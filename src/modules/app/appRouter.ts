@@ -34,7 +34,7 @@ import {
   sitePromptHandler, siteGenesisHandler, siteRollbackHandler,
   previewPageHandler, previewApproveHandler, previewDiscardHandler,
 } from "../sites"
-import { performancePageHandler } from "../analytics"
+import { performancePageHandler, analyticsDashHandler, analyticsToggleHandler } from "../analytics"
 import { draftsPageHandler, publishDraftHandler, publishAllHandler } from "../publishing"
 import { pseoPageHandler, pseoGenerateHandler } from "../pseo"
 import { insightsPageHandler } from "../linking"
@@ -238,6 +238,9 @@ saasAppRoutes.post("/sites/:id/pseo", prot(pseoGenerateHandler))
 saasAppRoutes.get("/sites/:id/insights", prot(insightsPageHandler))
 // Performance / Core Web Vitals (Phase 6).
 saasAppRoutes.get("/sites/:id/performance", prot(performancePageHandler))
+// First-party analytics — Insights dashboard + on/off toggle (V1.5 M3).
+saasAppRoutes.get("/sites/:id/analytics", prot(analyticsDashHandler))
+saasAppRoutes.post("/sites/:id/analytics/toggle", prot(analyticsToggleHandler))
 // Network brain — GSC + decay radar + AEO (Phase 7).
 saasAppRoutes.get("/network", prot(brainPageHandler))
 saasAppRoutes.get("/sites/:id/search", prot(siteSearchPageHandler))

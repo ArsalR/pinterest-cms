@@ -65,7 +65,7 @@ const pages: Record<string, { title: string; body: string }> = {
         <p><label>Message<br><textarea name="message" required rows="6" maxlength="4000"
           style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px"></textarea></label></p>
         <div class="cf-turnstile" data-sitekey="${config.turnstileSitekey}"></div>
-        <p><button type="submit" style="background:#0a6152;color:#fff;border:none;border-radius:6px;padding:0.6rem 1.2rem;font-size:1rem;cursor:pointer">Send</button></p>
+        <p><button type="submit" data-ev="form:submit" style="background:#0a6152;color:#fff;border:none;border-radius:6px;padding:0.6rem 1.2rem;font-size:1rem;cursor:pointer">Send</button></p>
       </form>
       <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
       <p>Prefer email? <a href="mailto:${config.ownerEmail}">${config.ownerEmail}</a>.</p>`

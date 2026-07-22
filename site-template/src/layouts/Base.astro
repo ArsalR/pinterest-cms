@@ -257,11 +257,11 @@ const year = new Date().getFullYear()
 </head>
 <body>
   <header style="display:flex;justify-content:space-between;align-items:center">
-    <a class="brand" href="/">{config.name}</a>
+    <a class="brand" href="/" data-ev="nav:home">{config.name}</a>
     {config.kind === "ecommerce" && (
       <nav style="font-size:0.95rem;display:flex;gap:1rem">
-        <a href="/shop/" style="text-decoration:none">Shop</a>
-        <a href="/cart/" style="text-decoration:none">Cart</a>
+        <a href="/shop/" data-ev="nav:shop" style="text-decoration:none">Shop</a>
+        <a href="/cart/" data-ev="nav:cart" style="text-decoration:none">Cart</a>
       </nav>
     )}
   </header>
@@ -270,13 +270,13 @@ const year = new Date().getFullYear()
   </main>
   <footer>
     <nav>
-      <a href="/about/">About</a>
-      <a href="/contact/">Contact</a>
-      <a href="/privacy/">Privacy Policy</a>
-      <a href="/terms/">Terms of Service</a>
-      <a href="/disclosure/">Affiliate Disclosure</a>
-      <a href="/cookies/">Cookie Policy</a>
-      <a href="/editorial/">Editorial Policy</a>
+      <a href="/about/" data-ev="nav:about">About</a>
+      <a href="/contact/" data-ev="nav:contact">Contact</a>
+      <a href="/privacy/" data-ev="nav:privacy">Privacy Policy</a>
+      <a href="/terms/" data-ev="nav:terms">Terms of Service</a>
+      <a href="/disclosure/" data-ev="nav:disclosure">Affiliate Disclosure</a>
+      <a href="/cookies/" data-ev="nav:cookies">Cookie Policy</a>
+      <a href="/editorial/" data-ev="nav:editorial">Editorial Policy</a>
     </nav>
     <p>© {year} {config.name}. All rights reserved.</p>
   </footer>

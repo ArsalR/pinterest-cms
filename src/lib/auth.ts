@@ -182,3 +182,13 @@ export function generateScopedKey(): string {
   return `sk_site_${hex}`
 }
 
+/** Public analytics site token (V1.5 M3). Embedded in the static build's beacon
+ *  tag, so it's public by design — it only identifies which site an event
+ *  belongs to and grants no access. 16 random bytes, no prefix. */
+export function generateAnalyticsToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  let hex = ""
+  for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, "0")
+  return hex
+}
+

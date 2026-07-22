@@ -4,3 +4,7 @@ export * from "./cwv"
 export * from "./scriptCost"
 export * from "./uptime"
 export * from "./routes"
+// V1.5 M3 — first-party analytics: beacon ingest, nightly rollup, Insights.
+export * from "./beacon"
+export * from "./analyticsRollup"
+export * from "./analyticsDash"

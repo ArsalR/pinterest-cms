@@ -15,6 +15,7 @@ import { parseProfiles, type ProfileId } from "./profiles"
 import { parseEnabledScripts, checkScriptBudget, type EnabledScript } from "./scripts"
 import { SEO_SAFETY_OVERRIDE_PHRASE } from "./safety"
 import { siteDbFor, dispatchRebuild } from "./service"
+import { generateAnalyticsToken } from "../../lib/auth"
 
 function arr(raw: unknown): string[] {
   if (typeof raw !== "string" || !raw.trim()) return []
@@ -167,5 +168,54 @@ export async function saveScripts(
     args: [JSON.stringify(scripts)],
   })
   await dispatchRebuild(env, master, customerId, repoFullName, "site-scripts")
+  return { ok: true }
+}
+
+/**
+ * Toggle first-party analytics (V1.5 M3). Enabling mints a public site token
+ * (kept stable across re-enables), writes analytics_enabled + analytics_key into
+ * the site's CMS seo_settings so the static build embeds the beacon, AND mirrors
+ * the token into master customer_sites so the ingest endpoint can resolve it
+ * without a hostname. Disabling clears the master token (ingest immediately
+ * rejects) and flips the build flag off. Either way a covenant-gated rebuild
+ * runs so the beacon appears/disappears. Off = byte-identical zero-JS.
+ */
+export async function saveAnalytics(
+  env: CloudflareEnv,
+  customerId: string,
+  cmsSiteId: string,
+  repoFullName: string | null,
+  enabled: boolean,
+  master: Client,
+): Promise<{ ok: boolean; error?: string }> {
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return { ok: false, error: "The content workspace is unavailable." }
+
+  // Reuse an existing token so re-enabling doesn't orphan historical data.
+  let token = ""
+  try {
+    const r = await siteDb.execute({ sql: "SELECT analytics_key FROM seo_settings WHERE id = 'default' LIMIT 1", args: [] })
+    token = String(r.rows[0]?.analytics_key ?? "")
+  } catch { /* table not migrated yet → mint fresh below */ }
+  if (enabled && !token) token = generateAnalyticsToken()
+
+  await siteDb.execute({
+    sql: `INSERT INTO seo_settings (id, analytics_enabled, analytics_key, updated_at)
+          VALUES ('default', ?, ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET
+            analytics_enabled = excluded.analytics_enabled,
+            analytics_key = excluded.analytics_key,
+            updated_at = datetime('now')`,
+    args: [enabled ? 1 : 0, token || null],
+  })
+
+  // Master mirror: only the ACTIVE token is stored (null when off) so the public
+  // ingest resolves a token only while the owner has analytics turned on.
+  await master.execute({
+    sql: "UPDATE customer_sites SET analytics_key = ? WHERE cms_site_id = ? AND customer_id = ?",
+    args: [enabled ? token : null, cmsSiteId, customerId],
+  })
+
+  await dispatchRebuild(env, master, customerId, repoFullName, "analytics")
   return { ok: true }
 }
