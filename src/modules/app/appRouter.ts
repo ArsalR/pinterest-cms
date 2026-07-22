@@ -43,7 +43,7 @@ import { designPageHandler, designApplyHandler } from "../design"
 import { seoHubHandler, seoProfilesToggleHandler, seoPostsHandler, seoCockpitHandler, seoSaveHandler, seoCockpitJsHandler, imageSeoHandler, imageSeoSaveHandler, seoSettingsHandler, seoSettingsSaveHandler, seoSettingsEdgeHandler, redirectsHandler, redirectsAddHandler, redirectsDeleteHandler, redirectsImportHandler, redirectsExportHandler, indexingHandler, seoAssistHandler, imageAltSuggestHandler, siteScriptsHandler, siteScriptsSaveHandler, localSeoHandler, localSeoSaveHandler, localSeoDeleteHandler, authorsHandler, authorsSaveHandler, authorsDeleteHandler, merchantSeoHandler, merchantConfigSaveHandler, merchantProductsSaveHandler, imageLicenseSaveHandler } from "../seo"
 import { formsListHandler, formsCreateHandler, formEditHandler, formSaveHandler, sendingDomainHandler, sendingDomainCreateHandler, sendingDomainCheckHandler, sendingDomainRemoveHandler, formWebhookHandler, subscribersCsvHandler, inboxHandler, inboxDetailHandler, inboxStatusHandler, inboxNotesHandler, inboxReplyHandler, inboxRetentionHandler, allInboxesHandler, inboxDraftHandler, inboxDigestHandler } from "../forms"
 import { mailboxHandler, mailSetupHandler, mailThreadHandler, mailReplyHandler, mailFolderHandler, mailAddressAddHandler, mailAddressToggleHandler, mailProviderHandler, mailEnableReceivingHandler } from "../mail"
-import { integrationsHandler, integrationsCreateKeyHandler, integrationsRevokeKeyHandler } from "../integrations"
+import { integrationsHandler, integrationsCreateKeyHandler, integrationsRevokeKeyHandler, integrationsWebhooksHandler, integrationsCreateSubHandler, integrationsDeleteSubHandler, integrationsTestSubHandler } from "../integrations"
 import {
   brainPageHandler, siteSearchPageHandler, siteDecayPageHandler, siteAeoPageHandler,
   gscStartHandler, gscCallbackHandler, submitSitemapHandler,
@@ -201,6 +201,10 @@ saasAppRoutes.post("/sites/:id/mailbox/enable", prot(mailEnableReceivingHandler)
 saasAppRoutes.get("/sites/:id/integrations", prot(integrationsHandler))
 saasAppRoutes.post("/sites/:id/integrations/keys/create", prot(integrationsCreateKeyHandler))
 saasAppRoutes.post("/sites/:id/integrations/keys/revoke", prot(integrationsRevokeKeyHandler))
+saasAppRoutes.get("/sites/:id/integrations/webhooks", prot(integrationsWebhooksHandler))
+saasAppRoutes.post("/sites/:id/integrations/webhooks/create", prot(integrationsCreateSubHandler))
+saasAppRoutes.post("/sites/:id/integrations/webhooks/delete", prot(integrationsDeleteSubHandler))
+saasAppRoutes.post("/sites/:id/integrations/webhooks/test", prot(integrationsTestSubHandler))
 saasAppRoutes.get("/sites/:id/seo", prot(seoHubHandler))
 saasAppRoutes.post("/sites/:id/seo/profiles", prot(seoProfilesToggleHandler))
 saasAppRoutes.post("/sites/:id/assist", prot(seoAssistHandler))

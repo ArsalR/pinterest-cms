@@ -55,6 +55,7 @@ capabilitiesRoutes.get("/", async (c) => {
       "PUT  /api/public/v1/webhooks/:id",
       "DELETE /api/public/v1/webhooks/:id",
       "GET  /api/public/v1/webhooks/:id/deliveries",
+      "GET  /api/public/v1/openapi.json",
     ],
   })
 })
