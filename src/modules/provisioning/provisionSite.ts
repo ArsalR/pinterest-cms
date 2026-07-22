@@ -76,6 +76,8 @@ export interface CustomerSiteRow {
   layout_variant: string | null
   tone: string | null
   status: string
+  /** V1.5 M5 — set when this is a sub-site reusing a parent's zone. */
+  parent_site_id: string | null
 }
 
 export function siteSlug(domain: string): string {
@@ -93,14 +95,14 @@ function randomHex(bytes: number): string {
 export async function createProvisioningPlan(
   db: Client,
   customer: Customer,
-  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string; kind: string; preset?: string; layout?: string; tone?: string }
+  input: { domain: string; canonicalHost: "apex" | "www"; name: string; niche: string; zoneId: string; kind: string; preset?: string; layout?: string; tone?: string; parentSiteId?: string }
 ): Promise<string> {
   const id = cuid()
   const slug = siteSlug(input.domain)
   await db.execute({
-    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, kind, design_preset, layout_variant, tone, repo_full_name, worker_name)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
-    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, input.kind, input.preset ?? null, input.layout ?? null, input.tone ?? null, `site-${slug}`],
+    sql: `INSERT INTO customer_sites (id, customer_id, domain, canonical_host, zone_id, name, niche, kind, design_preset, layout_variant, tone, parent_site_id, repo_full_name, worker_name)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+    args: [id, customer.id, input.domain, input.canonicalHost, input.zoneId, input.name, input.niche, input.kind, input.preset ?? null, input.layout ?? null, input.tone ?? null, input.parentSiteId ?? null, `site-${slug}`],
   })
   for (let i = 0; i < PROVISION_STEPS.length; i++) {
     await db.execute({
@@ -418,8 +420,13 @@ async function executeStep(
       if (!cfToken || !accountId || !site.zone_id) throw new Error("Cloudflare details are missing — reconnect it, then retry.")
       const apex = await attachWorkersDomain(cfToken, accountId, site.zone_id, site.domain, workerName)
       if (!apex.ok) throw new Error(apex.problem ?? "Couldn't attach your domain.")
-      const www = await attachWorkersDomain(cfToken, accountId, site.zone_id, `www.${site.domain}`, workerName)
-      if (!www.ok) throw new Error(www.problem ?? "Couldn't attach the www variant of your domain.")
+      // Sub-sites (V1.5 M5) are a single subdomain host — there is no www variant
+      // to attach (www.blog.example.com is nonsensical). Top-level sites still
+      // attach both apex and www.
+      if (!site.parent_site_id) {
+        const www = await attachWorkersDomain(cfToken, accountId, site.zone_id, `www.${site.domain}`, workerName)
+        if (!www.ok) throw new Error(www.problem ?? "Couldn't attach the www variant of your domain.")
+      }
       return {}
     }
 
