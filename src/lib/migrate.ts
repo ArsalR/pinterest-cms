@@ -386,6 +386,16 @@ export const MIGRATIONS: Migration[] = [
       `ALTER TABLE seo_settings ADD COLUMN pixel_consent INTEGER`,
     ],
   },
+  {
+    version: 20,
+    name: "020_bing_verify",
+    statements: [
+      // V1.5 M6 — Bing Webmaster Tools verification (meta-tag method). The
+      // template emits <meta name="msvalidate.01"> when set. DuckDuckGo rides
+      // Bing's index, so this covers both. "" / NULL = no tag (byte-identical).
+      `ALTER TABLE seo_settings ADD COLUMN bing_verify TEXT`,
+    ],
+  },
 ]
 
 /** True for the SQLite error a re-run of an already-applied ALTER produces.

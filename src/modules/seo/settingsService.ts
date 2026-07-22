@@ -54,6 +54,7 @@ export async function loadSeoSettings(master: Client, cmsSiteId: string): Promis
     orgLogo: (p.org_logo as string | null) ?? "",
     socialProfiles: arr(p.social_profiles),
     pixelConsent: p.pixel_consent == null ? undefined : Number(p.pixel_consent) === 1,
+    bingVerify: (p.bing_verify as string | null) ?? "",
   }
 }
 
@@ -94,14 +95,15 @@ export async function saveSeoSettings(
   await siteDb.execute({
     sql: `INSERT INTO seo_settings
             (id, block_ai_bots, blocked_bots, disallow_paths, robots_extra,
-             rss_enabled, archives_enabled, global_schema_enabled, org_name, org_logo, social_profiles, updated_at)
-          VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+             rss_enabled, archives_enabled, global_schema_enabled, org_name, org_logo, social_profiles, bing_verify, updated_at)
+          VALUES ('default', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
           ON CONFLICT(id) DO UPDATE SET
             block_ai_bots=excluded.block_ai_bots, blocked_bots=excluded.blocked_bots,
             disallow_paths=excluded.disallow_paths, robots_extra=excluded.robots_extra,
             rss_enabled=excluded.rss_enabled,
             archives_enabled=excluded.archives_enabled, global_schema_enabled=excluded.global_schema_enabled,
             org_name=excluded.org_name, org_logo=excluded.org_logo, social_profiles=excluded.social_profiles,
+            bing_verify=excluded.bing_verify,
             updated_at=datetime('now')`,
     args: [
       next.blockAiBots ? 1 : 0,
@@ -114,6 +116,7 @@ export async function saveSeoSettings(
       next.orgName.trim() || null,
       next.orgLogo.trim() || null,
       JSON.stringify(next.socialProfiles),
+      next.bingVerify.trim() || null,
     ],
   })
 

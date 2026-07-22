@@ -64,6 +64,9 @@ const showConsentBanner = enabledPixels(seoSettings).length > 0 && pixelConsentM
   <title>{title}</title>
   <meta name="description" content={description} />
   {robots && <meta name="robots" content={robots} />}
+  {/* V1.5 M6: Bing Webmaster verification (also covers DuckDuckGo, which uses
+      Bing's index). Emitted only when the owner pastes a code. */}
+  {seoSettings.bingVerify && <meta name="msvalidate.01" content={seoSettings.bingVerify} />}
   <link rel="canonical" href={canonical} />
   {/* Curated typography (D2): preload only the two self-hosted faces this
       preset uses, so the webfont paints without a swap flash. */}

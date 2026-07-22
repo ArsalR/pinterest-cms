@@ -26,6 +26,8 @@ import { listRedirects, upsertRedirect, deleteRedirect, importRedirectsCsv } fro
 import { indexOverview, bulkInspect, BULK_INSPECT_CAP } from "./indexingService"
 import { assistAvailable, runAssist, type AssistTask } from "./assist"
 import { SCRIPT_CATALOG, parseEnabledScripts, checkScriptBudget, hasConsentPixels, type EnabledScript } from "./scripts"
+import { buildOptimizationReport, type OptimizationReport } from "./optimize"
+import { listLocations } from "./localService"
 import { saveScripts, savePixelConsent } from "./settingsService"
 import { SEO_COCKPIT_JS } from "./cockpitJs"
 
@@ -180,6 +182,40 @@ export async function seoPostsHandler(c: Context<AppEnv>): Promise<Response> {
 
 // ─────────────────────── the cockpit ───────────────────────
 
+/** Server-rendered per-page Optimization Report panel (V1.5 M6). Zero JS. */
+function renderOptimizationPanel(report: OptimizationReport): string {
+  const dot = (s: "good" | "warn" | "bad") =>
+    `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${s === "good" ? "#22c55e" : s === "warn" ? "#f59e0b" : "#ef4444"};flex:0 0 auto"></span>`
+  const headColor = report.counts.bad ? "#fca5a5" : report.counts.warn ? "#fcd34d" : "#86efac"
+  const sections = report.sections
+    .map((sec) => {
+      const rows = sec.checks
+        .map(
+          (c) => `<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0">
+            ${dot(c.status)}
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px">${escapeHtml(c.label)}${c.fix ? ` <a href="${escapeAttr(c.fix.href)}" style="color:#93c5fd;font-size:12px;margin-left:4px">${escapeHtml(c.fix.label)} →</a>` : ""}</div>
+              <div class="muted" style="font-size:12px">${escapeHtml(c.detail)}</div>
+            </div>
+          </div>`
+        )
+        .join("")
+      return `<div style="margin:6px 0"><h4 style="margin:8px 0 2px;font-size:12px;letter-spacing:.03em;text-transform:uppercase;color:#94a3b8">${escapeHtml(sec.title)}</h4>${rows}</div>`
+    })
+    .join("")
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:15px">Optimization report</h3>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:22px;font-weight:700;color:${headColor}">${report.score}<span style="font-size:12px;color:#94a3b8">/100</span></span>
+        <span class="muted" style="font-size:12px">${report.counts.good} good · ${report.counts.warn} to improve · ${report.counts.bad} to fix</span>
+      </div>
+    </div>
+    <p class="muted" style="font-size:12px;margin:4px 0 8px">Every optimization check for this page, in one place. Green is done; amber and red link to the tool that fixes them. The quality gate still enforces the essentials at publish.</p>
+    ${sections}
+  </div>`
+}
+
 export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
   const customer = c.get("customer") as Customer
   const siteId = c.req.param("id") ?? ""
@@ -196,6 +232,32 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
   const authors = await listAuthors(master, site.cms_site_id).catch(() => [])
   const cockpitSettings = await loadSeoSettings(master, site.cms_site_id).catch(() => DEFAULT_SEO_SETTINGS)
   const aiProfile = cockpitSettings.profiles.includes("ai")
+
+  // V1.5 M6 — the per-page Optimization Report (server-rendered assurance panel).
+  const budget = checkScriptBudget(cockpitSettings.scripts)
+  const localConfigured = cockpitSettings.profiles.includes("local")
+    ? (await listLocations(master, site.cms_site_id).catch(() => [])).length > 0
+    : undefined
+  const report = buildOptimizationReport({
+    title: post.title,
+    metaDescription: post.metaDescription ?? "",
+    excerpt: post.excerpt ?? "",
+    content: post.content,
+    focusKeyword: post.focusKeyword ?? "",
+    hasAuthor: !!post.authorId,
+    updatedAt: null,
+    nowMs: Date.now(),
+    profiles: cockpitSettings.profiles,
+    site: { speedOk: budget.ok, speedDetail: budget.report, localConfigured, indexStatus: "unknown" },
+    tools: {
+      seo: "#seo-cockpit",
+      aeo: `/app/sites/${siteId}/aeo`,
+      images: `/app/sites/${siteId}/images`,
+      speed: `/app/sites/${siteId}/scripts`,
+      local: `/app/sites/${siteId}/local`,
+      indexing: `/app/sites/${siteId}/search`,
+    },
+  })
   // Seed the client with the current values as JSON (read by seo-cockpit.js).
   const seed = {
     siteName: site.name, url, baseUrl: `https://${site.domain}/posts/`,
@@ -215,6 +277,7 @@ export async function seoCockpitHandler(c: Context<AppEnv>): Promise<Response> {
       <h2 style="margin:0 0 2px;font-size:16px">${escapeHtml(post.title)}</h2>
       <p class="muted" style="font-size:12px">${escapeHtml(url)}</p>
     </div>
+    ${renderOptimizationPanel(report)}
     <div id="seo-cockpit" data-save="/app/sites/${escapeAttr(siteId)}/posts/${escapeAttr(postId)}/seo" data-assist="/app/sites/${escapeAttr(siteId)}/assist"></div>
     <script type="application/json" id="seo-seed">${escapeHtml(JSON.stringify(seed))}</script>
     <script src="/app/assets/seo-cockpit.js" defer></script>
@@ -461,6 +524,13 @@ function renderControlCenter(siteId: string, domain: string, s: SeoSettings, opt
         <label style="display:block;font-size:12px;margin:10px 0 3px" class="muted">Social profile URLs (one per line)</label>
         <textarea name="socialProfiles" rows="2" placeholder="https://twitter.com/…" style="${inputStyle}">${escapeHtml(s.socialProfiles.join("\n"))}</textarea>
       </div>
+      <div class="card">
+        <h3 style="margin:0 0 8px;font-size:14px">Search engine verification</h3>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">Google is verified automatically. To also verify with <strong>Bing Webmaster Tools</strong>, add your site there, choose the <em>meta tag</em> method, and paste just the code from <code>content="…"</code> below. <strong>DuckDuckGo uses Bing's index</strong>, so this covers it too — nothing extra to do.</p>
+        <label style="display:block;font-size:12px;margin:4px 0 3px" class="muted">Bing verification code (msvalidate.01)</label>
+        <input name="bingVerify" value="${escapeAttr(s.bingVerify)}" placeholder="e.g. A1B2C3D4E5F6…" style="${inputStyle}" />
+        <p class="muted" style="font-size:11px;margin:6px 0 0">New pages are auto-submitted to Bing/DuckDuckGo via IndexNow on every publish — no manual sitemap pinging needed.</p>
+      </div>
       <div class="card" style="display:flex;justify-content:flex-end"><button type="submit" style="background:#2563eb;color:#fff;border:0;border-radius:7px;padding:9px 16px;font-size:14px;cursor:pointer">Save settings</button></div>
     </form>
     <div class="card">${edgeBlock(siteId, opts.edge, opts.edgeNotice, s.blockAiBots)}</div>`
@@ -582,6 +652,7 @@ export async function seoSettingsSaveHandler(c: Context<AppEnv>): Promise<Respon
     orgName: first("orgName").slice(0, 200),
     orgLogo: first("orgLogo").slice(0, 500),
     socialProfiles: lines(first("socialProfiles")),
+    bingVerify: first("bingVerify").trim().slice(0, 120),
   }
   const override = first("override")
   const r = await saveSeoSettings(c.env, customer.id, site.cms_site_id, site.repo_full_name, next, master, override)

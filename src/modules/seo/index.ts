@@ -1,5 +1,6 @@
 // seo module (V1.2) — per-post SEO cockpit + shared analysis rules.
 export * from "./analyze"
+export * from "./optimize"
 export * from "./assist"
 export * from "./content"
 export * from "./images"

@@ -93,14 +93,17 @@ export function normalizeProfiles(ids: string[]): ProfileId[] {
  * AI profile is deliberately opt-in everywhere: it changes editorial output.
  */
 export function defaultProfilesForKind(kind: string | null | undefined): ProfileId[] {
+  // V1.5 M6 (always-optimized): EVERY site gets the AEO/AI-SEO baseline ("ai")
+  // so new content is quotable by AI answer engines out of the box, plus the
+  // kind-specific profiles. Zero-touch = already optimized.
   switch (kind) {
     case "ecommerce":
-      return ["ecommerce", "image"]
+      return ["ecommerce", "image", "ai"]
     case "local-business":
-      return ["local"]
+      return ["local", "ai"]
     case "content":
-      return ["image"]
+      return ["image", "ai"]
     default:
-      return [] // portfolio and anything unknown: nothing implied
+      return ["ai"] // portfolio and anything unknown: AEO baseline only
   }
 }
