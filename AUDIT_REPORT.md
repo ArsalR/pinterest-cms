@@ -509,3 +509,101 @@ cold `npm ci` + typecheck + lint:structure + 474 tests · cold template
 3 static gates with forms · 2 deliberate gate breaks (both blocked) ·
 CTA-only-no-Turnstile grep · LHCI live 3 URLs exit 0 · IDOR call-site scan ·
 console-log scan · frozen-contract test run.
+
+---
+
+# V1.5 VERIFICATION — Business Platform (M1–M6)
+
+Six additive milestones shipped as six merged PRs (#91 Mailbox, #91→#96):
+M1 Site Mailbox · M2 Integrations (scoped keys, event webhooks, recipes,
+OpenAPI) · M3 built-in first-party analytics · M4 ad/marketing pixels ·
+M5 sub-sites (subdomain + subdirectory) · M6 always-optimized. Every change
+is additive behind the frozen public-API/webhook/error-code contracts and the
+Performance/Security/Zero-JS covenants (+ Amendment 4: one hash-pinned beacon,
+pixels only via the vetted allowlist).
+
+## V1.5-1. Standing battery — EXECUTED
+
+- `npm run typecheck` (worker) → clean.
+- `npm test` → **565 passed / 71 files** (was 474 at V1.4; +91 across
+  beacon, analyticsRollup, integrations, mail, subsites, scripts-consent,
+  optimize, profiles).
+- `npm run lint:structure` → no circular deps · 27 modules · barrel-only
+  cross-module imports.
+- Template **cold build** (base "", default stub) → all five deploy-blocking
+  gates green: zero-js · security-headers · self-hosted-fonts · WCAG-AA
+  contrast (light+dark) · base-path (n/a for a root site).
+- **Byte-identical flag-off**: every new capability defaults OFF and the
+  built output is byte-identical to pre-V1.5 when off — verified for the
+  analytics beacon (0 tags), pixels (0 banner/loader, baseline CSP), and the
+  subdirectory base-path rewrite (no-op → 0 `/blog` leakage).
+
+## V1.5-2. Milestone-specific checks — EXECUTED
+
+- **M1 email worker (pure E2E chain):** subject/id parse, `threadKey`
+  grouping, magic-byte attachment vetting (rejects MZ/ELF/shebang; blocks a
+  renamed `.exe`), spam-verdict read, and the Resend/Brevo/SendGrid request
+  builders are unit-tested (`mail.test.ts`); the uploaded email() worker source
+  bakes the exact endpoint + per-site HMAC secret. Live receive/reply is
+  runbook-verified (needs a real zone + provider key).
+- **M3 beacon page-weight + hash allowlist:** `check-zero-js` verifies
+  `/a.js` **only** when its SHA-256 matches `scripts/beacon.sha256` AND it is
+  ≤ 2 KB gzipped (measured 1032 B); a tampered or missing beacon **fails the
+  deploy** (both breaks reproduced). Every other script still blocks.
+- **M4 pixel consent-gating:** catalog/budget/consent helpers unit-tested;
+  all-five-pixels build (~170 KB) **blocks** on the budget gate; loader emits
+  `CONSENT=true` in auto mode and the banner ships hidden; off → byte-clean.
+- **M5 subdirectory link/canonical/sitemap suite:** `check-base-path`
+  re-scans the built output and **fails** on any internal URL (link,
+  canonical, `<loc>`, OG, srcset, asset) not under the base — verified green
+  on a `/blog` build (canonical, nav, sitemap, beacon all prefixed) and n/a
+  on a root build. Subdomain label/host + subdirectory segment validators
+  unit-tested and fail-closed.
+- **M6 IndexNow-on-publish:** the News-only gate is removed — every publish
+  pings IndexNow on every site (key auto-provisioned by `ensureIndexNowKey`);
+  `indexNowPayload`/`indexNowKeyFrom` unit-tested. Bing `msvalidate.01` meta
+  emits only when set (verified in a build) and is byte-identical otherwise.
+  Kind→profile defaults now carry the `ai` (AEO) baseline on **every** kind,
+  seeded in the shared `create_cms_site` step so all creation paths inherit it.
+  The per-page Optimization Report (`buildOptimizationReport`) is pure +
+  7-case unit-tested.
+
+## V1.5-3. Cross-tenant isolation — AUDITED (code-level)
+
+Every new dashboard route loads its site/resource with an explicit tenant
+guard `WHERE id = ? AND customer_id = ?` (mailbox `mailRoutes.ts:41`,
+integrations `routes.ts:26`, analytics `analyticsDash.ts:32`, subdomain
+`routes.ts:401`, subdirectory `routes.ts:466`). Scoped API keys live in the
+per-site CMS DB and are only reachable after that tenant-guarded site
+resolution. The public beacon ingest resolves an opaque token → one
+`customer_site` and never leaks token validity (always 204). Handler-level
+tests aren't possible under the pure-Node vitest (covenant gotcha #12), so
+this is a call-site audit, not an automated test.
+
+## V1.5-4. Findings register (V1.5)
+
+- **M-2 (accepted, surfaced — the ONE new owner step beyond per-customer
+  setup):** built-in analytics ingest + nightly rollup are gated on
+  `FEATURE_ANALYTICS = "1"` and the `ANALYTICS` Analytics-Engine dataset
+  binding (both added to `wrangler.toml`, inert until set). Until the owner
+  enables them once, per-site analytics simply stays off (dashboard shows a
+  "collecting" state) — no tenant is broken. Added as a launch-checklist step.
+  Everything else in V1.5 is per-customer and in-app (no new platform secrets).
+- **N-1 (noted, follow-up):** M5 subdirectory **parent sitemap-index /
+  robots merge across children** is deferred — each child's own sitemap is
+  valid and submittable standalone, so this is an enhancement, not a gap.
+- **N-2 (runbook-verified):** live Cloudflare behaviors that this
+  environment can't exercise — Email Routing receive, second-worker deploy,
+  subdirectory Worker path-route precedence, Analytics-Engine SQL — are
+  verified by runbook, consistent with the entire provisioning pipeline
+  (never live-tested in CI). All URL/consent/budget correctness that *can*
+  poison a customer is gated locally.
+
+## Evidence appendix (V1.5 commands)
+
+worker `npm run typecheck` + `npm test` (565) + `npm run lint:structure` ·
+cold template `npm install` + default build + all 5 static gates green ·
+`/blog` build: base-path gate OK + zero-js OK + canonical/sitemap/beacon
+prefixed · all-5-pixels build → budget gate exit 1 · beacon tamper + delete →
+zero-js exit 1 · Bing meta emit check · byte-identical off-path greps
+(beacon/pixels/base-path) · cross-tenant `customer_id` call-site scan.

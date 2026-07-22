@@ -1,4 +1,4 @@
-# LAUNCH_CHECKLIST.md — the one list you execute top to bottom (FINAL, V1.4)
+# LAUNCH_CHECKLIST.md — the one list you execute top to bottom (FINAL, V1.5)
 
 **This is the final go-live checklist. It supersedes every earlier version of
 this file and every scattered launch note.** (OWNER_RUNBOOK.md stays as
@@ -278,6 +278,41 @@ trial granted.
   retries clearing if `FEATURE_WEBHOOKS="1"`); no submission floods (the
   5/hr/IP + 100/hr/site limits + honeypot + Turnstile hold the line).
 - Stuck provisioning: dashboard Retry resumes from the failed step (safe).
+
+---
+
+## 14. V1.5 Business Platform — platform config — 10 min  **[V1.5]**
+
+The Business Platform release (Mailbox · Integrations · Analytics · Pixels ·
+Sub-sites · Always-optimized) is **additive and mostly per-customer, in-app** —
+there are **no new platform secrets**. Only one platform-level toggle exists,
+and everything V1.5 stays inert until it (or the customer) turns a feature on.
+
+**Do:** to enable **built-in first-party analytics** (M3) platform-wide:
+1. Confirm `wrangler.toml` has the Analytics Engine dataset binding (shipped):
+   `[[analytics_engine_datasets]] binding = "ANALYTICS" dataset = "site_beacon"`.
+2. Set `FEATURE_ANALYTICS = "1"` in `wrangler.toml [vars]` and `npm run deploy`.
+**Unblocks:** the `/api/saas/beacon` ingest + the nightly rollup (rides the
+existing `0 4 * * *` cron). Until set, per-site Insights shows a "collecting"
+state — nothing breaks.
+**Verify:** enable analytics on one site (Insights → Turn analytics on),
+visit its published pages, and within 24 h the Insights dashboard shows
+page-views. `npx wrangler deployments list` shows the deploy with the flag.
+**Time:** 10 min.
+
+**No owner action needed for the rest of V1.5** (all per-customer, in-app):
+- **Mailbox (M1):** each customer enables Cloudflare Email Routing on their
+  zone and adds a sending-provider key in the dashboard.
+- **Integrations (M2):** customers mint scoped `sk_site_…` keys + event
+  webhooks themselves; `/v1/openapi.json` is public.
+- **Pixels (M4):** customers paste pixel IDs in Site scripts; the budget +
+  consent gates are automatic.
+- **Sub-sites (M5):** "Add a subdomain/subdirectory site" reuses the
+  customer's existing zone — **the only per-site infra is the DNS/route on
+  their own Cloudflare**, created by provisioning.
+- **Always-optimized (M6):** AEO baseline, IndexNow-on-publish and the
+  per-page Optimization Report are on by default; Bing verification is an
+  optional paste in the SEO hub (DuckDuckGo is covered by Bing).
 
 ---
 
