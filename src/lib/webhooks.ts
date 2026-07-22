@@ -14,6 +14,13 @@ export const WEBHOOK_EVENTS = [
   "post.updated",
   "post.deleted",
   "post.published",
+  // V1.5 M2 — site-wide business events. This is the n8n/GoHighLevel bridge:
+  // subscribe a URL to these and consume them as an inbound webhook trigger.
+  "form.submitted",
+  "mail.received",
+  "order.created",
+  "site.deployed",
+  "analytics.daily",
 ] as const
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number]

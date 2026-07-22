@@ -9,6 +9,7 @@ import type { CloudflareEnv } from "../../lib/types"
 import { siteDbFor } from "../seo"
 import { uploadToR2 } from "../../lib/r2"
 import { cuid } from "../../lib/utils"
+import { fireWebhooks } from "../../lib/webhooks"
 import { threadKey, vetAttachment, isSpam, preview, type InboundMail } from "./model"
 
 export interface StoredAttachment { url: string; filename: string; mime: string; size: number }
@@ -75,6 +76,10 @@ export async function storeInbound(master: Client, env: CloudflareEnv, cmsSiteId
       JSON.stringify(stored), isSpam(mail.spamVerdict) ? "spam" : "new", isSpam(mail.spamVerdict) ? 1 : 0,
     ],
   }).catch(() => {})
+  // M2: site-wide "mail.received" event (envelope only — no body/attachments).
+  if (!isSpam(mail.spamVerdict)) {
+    await fireWebhooks(siteDb, env.FEATURE_WEBHOOKS, host, "mail.received", { from: mail.from, to: mail.to, subject: mail.subject, threadKey: tk, messageId: id }).catch(() => {})
+  }
   return id
 }
 

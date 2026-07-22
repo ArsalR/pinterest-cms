@@ -23,6 +23,7 @@ import { ensureMasterSchema } from "../../shared"
 import { getConnectionSecret } from "../connections"
 import { audit } from "../customers"
 import { cuid } from "../../lib/utils"
+import { fireWebhooks } from "../../lib/webhooks"
 import {
   createCheckoutSession, verifyStripeSignature, type CheckoutLineItem,
 } from "./stripeApi"
@@ -205,6 +206,13 @@ saasStripeWebhookRoutes.post("/:customerId", async (c, next) => {
           JSON.stringify(metadata),
         ],
       })
+      // M2: site-wide "order.created" event to any subscribed integration.
+      const drow = await db.execute({ sql: "SELECT domain FROM customer_sites WHERE id = ? LIMIT 1", args: [String(metadata.siteId ?? "")] }).catch(() => null)
+      const host = String(drow?.rows[0]?.domain ?? metadata.siteId ?? "")
+      await fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, host, "order.created", {
+        sessionId, email: String((s.customer_details as Record<string, unknown>)?.email ?? s.customer_email ?? ""),
+        amountCents: Number(s.amount_total ?? 0), currency: String(s.currency ?? "usd"),
+      }).catch(() => {})
     }
     await audit(db, customerId, "order.recorded", metadata.siteId, { sessionId })
   } catch (err) {

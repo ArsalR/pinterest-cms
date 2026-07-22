@@ -19,6 +19,7 @@ import { localRoutes } from "./v1/local"
 import { authorRoutes } from "./v1/authors"
 import { merchantRoutes } from "./v1/merchant"
 import { formDefRoutes } from "./v1/forms"
+import { openApiRoutes } from "./v1/openapi"
 
 export const publicApiRoutes = new Hono<AppEnv>()
 
@@ -42,7 +43,8 @@ publicApiRoutes.route("/v1/forms", formDefRoutes)
 publicApiRoutes.route("/v1/products", productRoutes)
 publicApiRoutes.route("/v1/categories", categoryRoutes)
 publicApiRoutes.route("/v1/webhooks", webhookRoutes)
+publicApiRoutes.route("/v1/openapi.json", openApiRoutes)
 
 publicApiRoutes.notFound((c) =>
-  c.json({ error: "Not found", available: ["/v1/status", "/v1/posts", "/v1/seo", "/v1/seo-settings", "/v1/local", "/v1/authors", "/v1/merchant", "/v1/forms", "/v1/products", "/v1/upload", "/v1/categories", "/v1/webhooks"] }, 404)
+  c.json({ error: "Not found", available: ["/v1/status", "/v1/posts", "/v1/seo", "/v1/seo-settings", "/v1/local", "/v1/authors", "/v1/merchant", "/v1/forms", "/v1/products", "/v1/upload", "/v1/categories", "/v1/webhooks", "/v1/openapi.json"] }, 404)
 )

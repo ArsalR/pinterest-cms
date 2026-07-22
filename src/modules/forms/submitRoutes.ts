@@ -24,6 +24,7 @@ import {
 } from "./model"
 import { getActiveForm, storeSubmission } from "./service"
 import { fireFormWebhook, subscribePending } from "./hooks"
+import { fireWebhooks } from "../../lib/webhooks"
 import { runFormIntel, saveIntel } from "./intel"
 
 export const formSubmitRoutes = new Hono<AppEnv>()
@@ -153,6 +154,8 @@ formSubmitRoutes.post("/:siteId/:formId", async (c, next) => {
       if (def.webhookUrl) {
         await fireFormWebhook(siteDb, def, { id: submissionId, fields: result.values, page, country: country ? String(country) : null }, site.domain).catch(() => {})
       }
+      // M2: site-wide "form.submitted" event to any subscribed integration.
+      await fireWebhooks(siteDb, c.env.FEATURE_WEBHOOKS, site.domain, "form.submitted", { formId: def.id, formSlug: def.slug, submissionId, fields: result.values }).catch(() => {})
       // F3: newsletter capture — double-opt-in confirmation instead of the
       // generic acknowledgment (legally-safer default).
       if (isNewsletter) {
