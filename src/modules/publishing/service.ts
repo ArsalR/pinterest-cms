@@ -16,14 +16,15 @@ import { installationToken, repositoryDispatch } from "../connections"
 import { audit } from "../customers"
 import { cuid } from "../../lib/utils"
 import { checkGate, DEFAULT_GATE_CONFIG, type GateConfig, type GateItem, type GateResult } from "../quality-gate"
-import { newsProfileOn, pingIndexNow } from "../seo"
+import { pingIndexNow } from "../seo"
 
-/** V1.3 News profile: fire an IndexNow ping for freshly published URLs so the
- *  Bing/Copilot ecosystem indexes them fast. Best-effort — never blocks or
- *  fails a publish. */
+/** V1.5 M6 (always-optimized): fire an IndexNow ping for freshly published URLs
+ *  on EVERY site (not just News), so Bing + DuckDuckGo (which rides Bing) and the
+ *  Copilot ecosystem index new/updated content fast. The per-site key is
+ *  auto-provisioned on first ping (ensureIndexNowKey). Best-effort — never blocks
+ *  or fails a publish. */
 async function indexNowAfterPublish(siteDb: Client, domain: string, slugs: string[]): Promise<void> {
   try {
-    if (!(await newsProfileOn(siteDb))) return
     await pingIndexNow(siteDb, domain, slugs.map((s) => `https://${domain}/posts/${s}/`))
   } catch {
     /* best-effort */

@@ -60,6 +60,9 @@ export interface SeoSettings {
    *  undefined = auto (ON when any consent-requiring pixel is enabled),
    *  true = forced ON, false = forced OFF. */
   pixelConsent?: boolean
+  /** Bing Webmaster verification code (V1.5 M6, msvalidate.01). "" = none.
+   *  DuckDuckGo rides Bing, so this covers both engines. */
+  bingVerify: string
 }
 
 export const DEFAULT_SEO_SETTINGS: SeoSettings = {
@@ -75,6 +78,7 @@ export const DEFAULT_SEO_SETTINGS: SeoSettings = {
   orgName: "",
   orgLogo: "",
   socialProfiles: [],
+  bingVerify: "",
 }
 
 /** True when a settings record adds no crawler directive beyond the baseline.

@@ -115,6 +115,9 @@ export interface SeoSettings {
   /** V1.5 M4: EU consent mode for ad pixels. null/undefined = auto (ON when any
    *  consent-requiring pixel is enabled), true = forced ON, false = forced OFF. */
   pixelConsent?: boolean | null
+  /** V1.5 M6: Bing Webmaster verification code (msvalidate.01). "" = no tag.
+   *  DuckDuckGo rides Bing's index, so this covers both. */
+  bingVerify?: string
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
@@ -128,6 +131,7 @@ export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   analyticsEnabled: false,
   analyticsKey: "",
   pixelConsent: null,
+  bingVerify: "",
 }
 
 // ─────────────── Vetted script catalog (V1.3, template copy) ───────────────

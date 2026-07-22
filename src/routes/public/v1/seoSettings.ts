@@ -40,6 +40,7 @@ seoSettingsRoutes.get("/", async (c) => {
     analyticsEnabled: false,
     analyticsKey: "",
     pixelConsent: null as null | boolean,
+    bingVerify: "",
   }
   // Valid profile/script ids — mirror src/modules/seo/{profiles,scripts}.ts
   // (CMS core stays dependency-clean of the SaaS modules, so the closed sets
@@ -84,6 +85,7 @@ seoSettingsRoutes.get("/", async (c) => {
         analyticsEnabled: Number(p.analytics_enabled) === 1,
         analyticsKey: String(p.analytics_key ?? ""),
         pixelConsent: p.pixel_consent == null ? null : Number(p.pixel_consent) === 1,
+        bingVerify: String(p.bing_verify ?? ""),
         imageLicense: (() => {
           try {
             const o = JSON.parse(String(p.image_license_json ?? "null")) as unknown

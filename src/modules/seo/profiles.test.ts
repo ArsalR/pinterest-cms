@@ -31,16 +31,16 @@ describe("normalizeProfiles", () => {
 })
 
 describe("defaultProfilesForKind (genesis mapping)", () => {
-  it("maps kinds to sensible defaults", () => {
-    expect(defaultProfilesForKind("ecommerce")).toEqual(["ecommerce", "image"])
-    expect(defaultProfilesForKind("local-business")).toEqual(["local"])
-    expect(defaultProfilesForKind("content")).toEqual(["image"])
-    expect(defaultProfilesForKind("portfolio")).toEqual([])
-    expect(defaultProfilesForKind(undefined)).toEqual([])
+  it("maps kinds to sensible defaults, with the AEO baseline on every kind (V1.5 M6)", () => {
+    expect(defaultProfilesForKind("ecommerce")).toEqual(["ecommerce", "image", "ai"])
+    expect(defaultProfilesForKind("local-business")).toEqual(["local", "ai"])
+    expect(defaultProfilesForKind("content")).toEqual(["image", "ai"])
+    expect(defaultProfilesForKind("portfolio")).toEqual(["ai"])
+    expect(defaultProfilesForKind(undefined)).toEqual(["ai"])
   })
-  it("never defaults the AI profile on (editorial opt-in)", () => {
-    for (const kind of ["ecommerce", "local-business", "content", "portfolio"]) {
-      expect(defaultProfilesForKind(kind)).not.toContain("ai")
+  it("always includes the AI/AEO baseline (always-optimized default)", () => {
+    for (const kind of ["ecommerce", "local-business", "content", "portfolio", "anything"]) {
+      expect(defaultProfilesForKind(kind)).toContain("ai")
     }
   })
 })
