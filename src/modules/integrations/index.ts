@@ -2,4 +2,5 @@
 // event-webhook subscriptions, recipes and OpenAPI surfaces (added in M2b/M2c).
 export * from "./keys"
 export * from "./subscriptions"
+export * from "./recipes"
 export * from "./routes"

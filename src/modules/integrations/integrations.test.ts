@@ -61,6 +61,22 @@ describe("event webhook catalog", () => {
   })
 })
 
+describe("recipes + n8n workflow (M2c)", () => {
+  it("emits a valid n8n workflow (nodes + a webhook trigger)", async () => {
+    const { n8nSiteTriggerWorkflow, recipes } = await import("./recipes")
+    const wf = n8nSiteTriggerWorkflow() as { nodes: Array<{ type: string }>; connections: Record<string, unknown> }
+    expect(Array.isArray(wf.nodes)).toBe(true)
+    expect(wf.nodes.some((n) => n.type === "n8n-nodes-base.webhook")).toBe(true)
+    expect(wf.connections).toBeDefined()
+    // serializes cleanly (it's downloaded as a file)
+    expect(() => JSON.stringify(wf)).not.toThrow()
+    const rs = recipes("acme.com", "site1")
+    expect(rs.map((r) => r.id)).toEqual(["site-to-n8n", "site-to-ghl", "n8n-to-site"])
+    expect(rs[2].body).toContain("acme.com/api/public/v1/posts")
+    expect(rs[2].body).toContain("sk_site_")
+  })
+})
+
 describe("OpenAPI spec (M2)", () => {
   const spec = buildOpenApiSpec("acme.cms.arsal.app") as {
     openapi: string; servers: Array<{ url: string }>; paths: Record<string, unknown>

@@ -12,6 +12,7 @@ import { audit, planGate, type Customer } from "../customers"
 import { siteDbFor } from "../seo"
 import { SCOPES, listScopedKeys, createScopedKey, revokeScopedKey, isScope, type ScopedKeyRow } from "./keys"
 import { SITE_EVENTS, EVENT_LABELS, listSubscriptions, createSubscription, deleteSubscription, testFireSubscription, subscriptionLog, type Subscription } from "./subscriptions"
+import { recipes, n8nSiteTriggerWorkflow } from "./recipes"
 
 const NO_STORE = { "Cache-Control": "no-store, private" }
 
@@ -48,6 +49,7 @@ function render(site: IntSite, keys: ScopedKeyRow[], customer: Customer, opts: {
       <p class="muted" style="font-size:13px">Scoped API keys let n8n, GoHighLevel, or any tool read and write this site over HTTPS. Give each integration its own key with only the scopes it needs.</p>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
         <a class="btn ghost" style="font-size:12px" href="/app/sites/${escapeAttr(site.id)}/integrations/webhooks">Event webhooks →</a>
+        <a class="btn ghost" style="font-size:12px" href="/app/sites/${escapeAttr(site.id)}/integrations/recipes">Recipes →</a>
         <a class="btn ghost" style="font-size:12px" href="/api/public/v1/openapi.json" target="_blank">OpenAPI spec ↗</a>
       </div>
     </div>
@@ -191,6 +193,35 @@ export async function integrationsDeleteSubHandler(c: Context<AppEnv>): Promise<
     if (siteDb) { const form = await c.req.parseBody(); await deleteSubscription(siteDb, String(form.id)) }
   }
   return new Response(null, { status: 302, headers: { Location: `/app/sites/${site?.id}/integrations/webhooks?done=${encodeURIComponent("Subscription deleted.")}` } })
+}
+
+// ─────────────────────── recipes + importable workflow ───────────────────────
+
+export async function integrationsRecipesHandler(c: Context<AppEnv>): Promise<Response> {
+  const customer = c.get("customer") as Customer
+  const master = await masterDb(c)
+  const site = await loadSite(c, master, customer.id)
+  if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
+  const host = c.env.SAAS_APP_HOSTNAME || "arsal.app"
+  const cards = recipes(site.domain || host, site.id).map((r) => `<div class="card">
+      <h3 style="margin:0 0 6px;font-size:14px">${escapeHtml(r.title)}</h3>
+      <div style="font-size:13px;color:#cbd5e1;white-space:pre-line;line-height:1.6">${r.body}</div>
+    </div>`).join("")
+  const body = `
+    <div class="card"><p><a href="/app/sites/${escapeAttr(site.id)}/integrations" style="color:#93c5fd">← Integrations</a></p>
+      <h2 style="margin:0 0 4px;font-size:16px">Recipes</h2>
+      <p class="muted" style="font-size:13px">Copy-paste guides to wire this site to n8n, GoHighLevel, or anything that speaks HTTP.</p>
+      <p style="margin-top:8px"><a class="btn ghost" style="font-size:12px" href="/app/assets/n8n-site-trigger.json" download>Download the n8n starter workflow (.json)</a></p>
+    </div>
+    ${cards}`
+  return c.html(renderSaasLayout({ title: "Recipes", active: "sites", customer, bodyHtml: body }), 200, NO_STORE)
+}
+
+/** Importable n8n workflow JSON (generic — no per-site data). */
+export async function n8nWorkflowHandler(_c: Context<AppEnv>): Promise<Response> {
+  return new Response(JSON.stringify(n8nSiteTriggerWorkflow(), null, 2), {
+    headers: { "Content-Type": "application/json", "Content-Disposition": 'attachment; filename="n8n-site-trigger.json"', "Cache-Control": "public, max-age=3600" },
+  })
 }
 
 export async function integrationsTestSubHandler(c: Context<AppEnv>): Promise<Response> {
