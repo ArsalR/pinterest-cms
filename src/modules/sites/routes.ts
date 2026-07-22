@@ -19,6 +19,7 @@ import { dispatchPrompt, promptRuns, genesisPrompt } from "./prompts"
 import { installationToken, listCommits, rollbackToCommit } from "../connections"
 import { audit } from "../customers"
 import { countNew } from "../forms"
+import { mailboxUnread } from "../mail"
 import {
   PRESETS, TONES, LAYOUTS, isPreset, isLayout, isTone, toneDirective,
   DEFAULT_TONE, recommendDesign, type SiteKindId,
@@ -321,6 +322,8 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
   const canonicalHost = site.canonical_host === "www" ? `www.${site.domain}` : site.domain
   // V1.4 F2: new-submission badge on the Inbox button.
   const newSubs = site.cms_site_id ? await countNew(db, site.cms_site_id).catch(() => 0) : 0
+  // V1.5 M1: unread badge on the Mailbox button.
+  const unreadMail = site.cms_site_id ? await mailboxUnread(db, site.cms_site_id).catch(() => 0) : 0
   const url = new URL(c.req.url)
   const error = url.searchParams.get("error")
   const notice = url.searchParams.get("notice")
@@ -415,6 +418,7 @@ export async function siteDetailHandler(c: Context<AppEnv>): Promise<Response> {
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/seo">SEO</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/forms">Forms</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/inbox">Inbox${newSubs ? ` <span style="background:#b45309;color:#fff;border-radius:999px;padding:0 7px;font-size:11px">${newSubs}</span>` : ""}</a>
+        <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/mailbox">Mailbox${unreadMail ? ` <span style="background:#2563eb;color:#fff;border-radius:999px;padding:0 7px;font-size:11px">${unreadMail}</span>` : ""}</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/drafts">Drafts &amp; quality gate</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/insights">Internal linking</a>
         <a class="btn ghost" href="/app/sites/${escapeAttr(siteId)}/pseo">Programmatic SEO</a>
