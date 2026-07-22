@@ -109,6 +109,9 @@ export interface SeoSettings {
   analyticsEnabled?: boolean
   /** V1.5 M3: public per-site analytics token the beacon carries. "" = none. */
   analyticsKey?: string
+  /** V1.5 M4: EU consent mode for ad pixels. null/undefined = auto (ON when any
+   *  consent-requiring pixel is enabled), true = forced ON, false = forced OFF. */
+  pixelConsent?: boolean | null
 }
 
 export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
@@ -121,6 +124,7 @@ export const SEO_SETTINGS_DEFAULTS: SeoSettings = {
   imageLicense: null,
   analyticsEnabled: false,
   analyticsKey: "",
+  pixelConsent: null,
 }
 
 // ─────────────── Vetted script catalog (V1.3, template copy) ───────────────
@@ -139,6 +143,10 @@ export interface TemplateScript {
   configPattern: RegExp
   /** Build the exact tag (mode "tag" only). config is pattern-validated. */
   tag?: (config: string) => string
+  /** V1.5 M4: this is an ad/marketing pixel (delay-until-interaction). */
+  pixel?: boolean
+  /** V1.5 M4: don't fire until consent when EU consent mode is on. */
+  requiresConsent?: boolean
 }
 
 export const TEMPLATE_SCRIPT_CATALOG: readonly TemplateScript[] = [
@@ -173,6 +181,35 @@ export const TEMPLATE_SCRIPT_CATALOG: readonly TemplateScript[] = [
     configPattern: /^[a-z0-9]{10,40}$/i,
     tag: (config) => `<script id="cookieyes" src="https://cdn-cookieyes.com/client_data/${config}/script.js" defer></script>`,
   },
+  // ── Ad & marketing pixels (V1.5 M4) — all loader-mode: injected only after
+  //    first interaction, and only after consent when EU consent mode is on.
+  //    The bootstraps live in /js/site-scripts.js (the sanctioned loader).
+  {
+    id: "meta_pixel", costKb: 30, mode: "loader", pixel: true, requiresConsent: true,
+    scriptHosts: ["https://connect.facebook.net"], connectHosts: ["https://www.facebook.com"],
+    configPattern: /^\d{15,16}$/,
+  },
+  {
+    id: "google_ads", costKb: 55, mode: "loader", pixel: true, requiresConsent: true,
+    scriptHosts: ["https://www.googletagmanager.com"],
+    connectHosts: ["https://www.google-analytics.com", "https://www.googleadservices.com", "https://googleads.g.doubleclick.net"],
+    configPattern: /^AW-[0-9]{9,12}$/i,
+  },
+  {
+    id: "tiktok_pixel", costKb: 45, mode: "loader", pixel: true, requiresConsent: true,
+    scriptHosts: ["https://analytics.tiktok.com"], connectHosts: ["https://analytics.tiktok.com"],
+    configPattern: /^[A-Z0-9]{16,24}$/i,
+  },
+  {
+    id: "linkedin_insight", costKb: 25, mode: "loader", pixel: true, requiresConsent: true,
+    scriptHosts: ["https://snap.licdn.com"], connectHosts: ["https://px.ads.linkedin.com"],
+    configPattern: /^[0-9]{5,9}$/,
+  },
+  {
+    id: "pinterest_tag", costKb: 15, mode: "loader", pixel: true, requiresConsent: true,
+    scriptHosts: ["https://s.pinimg.com"], connectHosts: ["https://ct.pinterest.com"],
+    configPattern: /^\d{13}$/,
+  },
 ]
 
 /** Enabled scripts validated against the template catalog. Pure. */
@@ -203,6 +240,24 @@ export function scriptTagsFor(s: SeoSettings): string {
 /** Is a V1.3 SEO profile enabled for this site? Absent settings ⇒ false. */
 export function profileOn(s: SeoSettings, id: string): boolean {
   return s.profiles.includes(id)
+}
+
+/** Enabled ad pixels (V1.5 M4), validated against the closed catalog. Pure. */
+export function enabledPixels(s: SeoSettings): Array<{ id: string; config: string }> {
+  return validScripts(s)
+    .filter(({ entry }) => entry.pixel)
+    .map(({ entry, config }) => ({ id: entry.id, config }))
+}
+
+/**
+ * Effective EU consent mode. Tri-state pref mirrors the worker
+ * (undefined/null = auto → ON when any consent-requiring pixel is enabled).
+ * When ON, a consent banner shows and consent-gated pixels wait for accept. Pure.
+ */
+export function pixelConsentMode(s: SeoSettings): boolean {
+  if (s.pixelConsent === true) return true
+  if (s.pixelConsent === false) return false
+  return validScripts(s).some(({ entry }) => entry.pixel && entry.requiresConsent)
 }
 
 // ─────────────── Forms Engine (V1.4 F1) ───────────────

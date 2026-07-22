@@ -53,6 +53,7 @@ export async function loadSeoSettings(master: Client, cmsSiteId: string): Promis
     orgName: (p.org_name as string | null) ?? "",
     orgLogo: (p.org_logo as string | null) ?? "",
     socialProfiles: arr(p.social_profiles),
+    pixelConsent: p.pixel_consent == null ? undefined : Number(p.pixel_consent) === 1,
   }
 }
 
@@ -168,6 +169,32 @@ export async function saveScripts(
     args: [JSON.stringify(scripts)],
   })
   await dispatchRebuild(env, master, customerId, repoFullName, "site-scripts")
+  return { ok: true }
+}
+
+/**
+ * Persist the EU consent-mode preference for ad pixels (V1.5 M4). Tri-state:
+ *   undefined → auto (NULL: ON when a consent-requiring pixel is enabled),
+ *   true → forced ON, false → forced OFF. Touches only the pixel_consent column,
+ *   then triggers a covenant-gated rebuild so the banner/gating reflects it.
+ */
+export async function savePixelConsent(
+  env: CloudflareEnv,
+  customerId: string,
+  cmsSiteId: string,
+  repoFullName: string | null,
+  pref: boolean | undefined,
+  master: Client
+): Promise<{ ok: boolean; error?: string }> {
+  const siteDb = await siteDbFor(master, cmsSiteId)
+  if (!siteDb) return { ok: false, error: "The content workspace is unavailable." }
+  const value = pref === undefined ? null : pref ? 1 : 0
+  await siteDb.execute({
+    sql: `INSERT INTO seo_settings (id, pixel_consent, updated_at) VALUES ('default', ?, datetime('now'))
+          ON CONFLICT(id) DO UPDATE SET pixel_consent = excluded.pixel_consent, updated_at = datetime('now')`,
+    args: [value],
+  })
+  await dispatchRebuild(env, master, customerId, repoFullName, "pixel-consent")
   return { ok: true }
 }
 
