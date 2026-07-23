@@ -65,18 +65,19 @@ describe("planGate (decision B: trial expiry = read-only, sites stay live)", () 
 })
 
 describe("customerIterations (config-driven work factor, decision #6)", () => {
-  it("defaults to the paid-tier target (600k, OWASP-2023) when unset or garbage", () => {
-    expect(customerIterations(undefined)).toBe(600_000)
-    expect(customerIterations("")).toBe(600_000)
-    expect(customerIterations("not-a-number")).toBe(600_000)
+  it("defaults to the Workers ceiling (100k) when unset or garbage", () => {
+    expect(customerIterations(undefined)).toBe(100_000)
+    expect(customerIterations("")).toBe(100_000)
+    expect(customerIterations("not-a-number")).toBe(100_000)
   })
-  it("rejects dangerously low values (falls back to the default target)", () => {
-    expect(customerIterations("500")).toBe(600_000)
-    expect(customerIterations("9999")).toBe(600_000)
+  it("rejects dangerously low values (falls back to the default)", () => {
+    expect(customerIterations("500")).toBe(100_000)
+    expect(customerIterations("9999")).toBe(100_000)
   })
-  it("accepts explicit overrides in both directions", () => {
-    expect(customerIterations("50000")).toBe(50_000)   // free-tier tuning down
-    expect(customerIterations("300000")).toBe(300_000) // paid-plan strengthening
+  it("clamps to the Cloudflare Workers PBKDF2 limit (100k) — higher would throw at runtime", () => {
+    expect(customerIterations("50000")).toBe(50_000)    // valid, under the cap
+    expect(customerIterations("300000")).toBe(100_000)  // clamped down to the Workers max
+    expect(customerIterations("600000")).toBe(100_000)  // OWASP-2023 target — not runnable on Workers
   })
 })
 

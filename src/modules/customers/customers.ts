@@ -33,11 +33,18 @@ const RESET_TTL_HOURS = 1
 // 600k). The pbkdf2$<iters>$… envelope + rehash-on-login (verifyCustomerPassword)
 // upgrades existing customers on their next sign-in — no data migration.
 // SAAS_PBKDF2_ITERATIONS still overrides if ever needed.
-const DEFAULT_CUSTOMER_ITERATIONS = 600_000
+// Cloudflare Workers' Web Crypto REJECTS PBKDF2 iteration counts above 100_000
+// at runtime ("iteration counts above 100000 are not supported"), so 100k is
+// both the default and the hard ceiling here — a higher value (e.g. OWASP's
+// 600k) simply can't run on Workers and would break sign-up.
+const MAX_WORKERS_PBKDF2_ITERATIONS = 100_000
+const DEFAULT_CUSTOMER_ITERATIONS = MAX_WORKERS_PBKDF2_ITERATIONS
 
 export function customerIterations(envValue: string | undefined): number {
   const n = parseInt(envValue ?? "", 10)
-  return Number.isFinite(n) && n >= 10_000 ? n : DEFAULT_CUSTOMER_ITERATIONS
+  const requested = Number.isFinite(n) && n >= 10_000 ? n : DEFAULT_CUSTOMER_ITERATIONS
+  // Clamp to the Workers limit so a too-high override can never break hashing.
+  return Math.min(requested, MAX_WORKERS_PBKDF2_ITERATIONS)
 }
 
 // Valid-format hash of a random throwaway password. verifyCustomerPassword
