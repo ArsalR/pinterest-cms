@@ -8,6 +8,8 @@
 
 import type { CloudflareEnv } from "../../lib/types"
 
+// Platform "from" address. Override per-deployment with SAAS_EMAIL_FROM (e.g.
+// "Acme <login@yourdomain.com>"); the sending domain must be verified in Resend.
 const FROM_AUTH = "SiteNetwork <login@arsal.app>"
 
 export interface SendEmailInput {
@@ -33,7 +35,7 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: input.from ?? FROM_AUTH,
+        from: input.from ?? env.SAAS_EMAIL_FROM ?? FROM_AUTH,
         to: [input.to],
         subject: input.subject,
         html: input.html,
