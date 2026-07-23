@@ -33,12 +33,12 @@ RATE_LIMIT_RPM         = "60"
 # SaaS layer (saas_mode) — set SAAS_MODE = "1" + hostname to enable.
 # Secrets (wrangler secret put): SAAS_JWT_SECRET, RESEND_API_KEY,
 # VAULT_MASTER_KEY, GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY.
-SAAS_MODE              = ""
-SAAS_APP_HOSTNAME      = ""
+SAAS_MODE              = "1"
+SAAS_APP_HOSTNAME      = "app.freecoinslink.de"
 SAAS_PBKDF2_ITERATIONS = ""
 GITHUB_APP_SLUG        = ""
 SAAS_TEMPLATE_REPO     = "ArsalR/site-template"
-SAAS_CMS_HOST_SUFFIX   = "cms.arsal.app"
+SAAS_CMS_HOST_SUFFIX   = "cms.freecoinslink.de"
 
 [triggers]
 crons = ["*/5 * * * *", "0 4 * * *"]
