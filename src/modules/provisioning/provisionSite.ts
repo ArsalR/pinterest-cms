@@ -239,7 +239,7 @@ async function executeStep(
   switch (step) {
     case "cms_site": {
       if (site.cms_site_id) return { skipped: true, note: "Already created." }
-      const suffix = env.SAAS_CMS_HOST_SUFFIX || "cms.arsal.app"
+      const suffix = env.SAAS_CMS_HOST_SUFFIX || "cms.freecoinslink.de"
       const cmsHostname = `${slug}.${suffix}`
       const customerRow = await db.execute({
         sql: "SELECT email FROM customers WHERE id = ? LIMIT 1",
@@ -351,11 +351,11 @@ async function executeStep(
         ...(sitekey
           ? {
               turnstileSitekey: sitekey,
-              formsEndpoint: `https://${env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/forms/${siteId}`,
+              formsEndpoint: `https://${env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/api/saas/forms/${siteId}`,
             }
           : {}),
         ...(site.kind === "ecommerce"
-          ? { checkoutEndpoint: `https://${env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/checkout/${siteId}` }
+          ? { checkoutEndpoint: `https://${env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/api/saas/checkout/${siteId}` }
           : {}),
       }
       await putRepoFile(token, repoFullName, "site.config.json", JSON.stringify(config, null, 2) + "\n", "chore: site configuration")
@@ -521,7 +521,7 @@ async function executeStep(
       })
       if (!master.rows.length) throw new Error("The content workspace registration is missing.")
       const siteDb = getSiteDb(master.rows[0].turso_url as string, master.rows[0].turso_token as string)
-      const hookUrl = `https://${env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/hooks/cms/${siteId}`
+      const hookUrl = `https://${env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/api/saas/hooks/cms/${siteId}`
       const existing = await siteDb.execute({
         sql: "SELECT id FROM webhook_endpoints WHERE url = ? LIMIT 1",
         args: [hookUrl],

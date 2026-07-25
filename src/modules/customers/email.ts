@@ -1,5 +1,5 @@
 // src/modules/customers/email.ts
-// Transactional email via Resend (decision A), sending from arsal.app.
+// Transactional email via Resend (decision A), sending from freecoinslink.de.
 // One provider platform-wide: verification, password reset, alerts, forms.
 //
 // When RESEND_API_KEY is unset (local dev / flag rehearsal), sends are logged
@@ -10,7 +10,7 @@ import type { CloudflareEnv } from "../../lib/types"
 
 // Platform "from" address. Override per-deployment with SAAS_EMAIL_FROM (e.g.
 // "Acme <login@yourdomain.com>"); the sending domain must be verified in Resend.
-const FROM_AUTH = "SiteNetwork <login@arsal.app>"
+const FROM_AUTH = "SiteNetwork <login@freecoinslink.de>"
 
 export interface SendEmailInput {
   to: string

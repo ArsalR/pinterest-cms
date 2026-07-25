@@ -2,7 +2,7 @@
 // The visual preview window (K12): iframe the throwaway `<worker>-preview`
 // worker beside the live site with before/after tabs + device widths, and
 // Approve (merge the preview PR → covenant-gated deploy) / Discard (close PR +
-// delete branch). The preview worker relaxes frame-ancestors for arsal.app
+// delete branch). The preview worker relaxes frame-ancestors for freecoinslink.de
 // (claude.yml preview step); production stays unframeable (check-headers gate).
 
 import type { Context } from "hono"

@@ -165,7 +165,7 @@ export async function runInboxDigest(env: CloudflareEnv, _now: number): Promise<
     args: [],
   }).catch(() => null)
   if (!sitesR) return
-  const appHost = env.SAAS_APP_HOSTNAME || "arsal.app"
+  const appHost = env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"
   for (const row of sitesR.rows as unknown as Array<{
     id: string; domain: string; name: string; customer_id: string; cms_site_id: string
     forms_domain: string | null; forms_domain_status: string | null; owner_email: string

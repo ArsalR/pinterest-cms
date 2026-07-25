@@ -32,7 +32,7 @@ export function googleConfigured(env: CloudflareEnv): boolean {
 
 /** Dashboard callback URL (absolute — Google requires an exact registered match). */
 export function gscRedirectUri(env: CloudflareEnv): string {
-  const host = env.SAAS_APP_HOSTNAME || "arsal.app"
+  const host = env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"
   return `https://${host}/app/connections/gsc/callback`
 }
 

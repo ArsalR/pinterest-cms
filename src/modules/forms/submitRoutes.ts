@@ -163,15 +163,15 @@ formSubmitRoutes.post("/:siteId/:formId", async (c, next) => {
         if (to) {
           await subscribePending(c.env, siteDb, to, {
             id: site.id, name: site.name, formsDomain: site.forms_domain, formsDomainStatus: site.forms_domain_status,
-          }, c.env.SAAS_APP_HOSTNAME || "arsal.app").catch(() => {})
+          }, c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de").catch(() => {})
         }
       }
       await sendEmail(c.env, {
         to: site.owner_email,
-        from: "SiteNetwork Forms <forms@arsal.app>",
+        from: "SiteNetwork Forms <forms@freecoinslink.de>",
         subject: `${def.title}: new submission — ${site.domain}`,
         html: `${fieldsHtml}<hr><p>Form: ${escapeHtml(def.title)} · Page: ${escapeHtml(page)} · ${escapeHtml(String(country ?? ""))}</p>
-               <p><a href="https://${c.env.SAAS_APP_HOSTNAME || "arsal.app"}/app/sites/${site.id}/inbox">Open in your inbox</a></p>`,
+               <p><a href="https://${c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/app/sites/${site.id}/inbox">Open in your inbox</a></p>`,
       }).catch(() => {})
       if (def.ackEnabled && !isNewsletter) {
         const to = submitterEmail(def.fields, result.values)

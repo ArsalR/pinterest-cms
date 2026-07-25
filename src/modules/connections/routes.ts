@@ -465,7 +465,7 @@ export async function stripeConnectHandler(c: Context<AppEnv>): Promise<Response
   // Register a webhook on the customer's Stripe account so paid orders get
   // recorded (checkout.session.completed → /api/saas/stripe-webhook/:customerId).
   // Store the key + webhook signing secret together as the encrypted payload.
-  const hookUrl = `https://${c.env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/stripe-webhook/${customer.id}`
+  const hookUrl = `https://${c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/api/saas/stripe-webhook/${customer.id}`
   const wh = await createWebhookEndpoint(key, hookUrl)
   if (!wh.endpoint) {
     await audit(db, customer.id, "connection.verify_failed", "stripe")

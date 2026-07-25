@@ -23,7 +23,7 @@ export function pinterestConfigured(env: CloudflareEnv): boolean {
 }
 
 export function pinterestRedirectUri(env: CloudflareEnv): string {
-  const host = env.SAAS_APP_HOSTNAME || "arsal.app"
+  const host = env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"
   return `https://${host}/app/connections/pinterest/callback`
 }
 

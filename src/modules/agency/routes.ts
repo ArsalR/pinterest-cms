@@ -62,7 +62,7 @@ export async function agencyPanelHandler(c: Context<AppEnv>): Promise<Response> 
   const settings = await loadAgencySettings(master, customer.id)
   const seats = await listSeats(master, customer.id)
   const sites = await customerSites(master, customer.id)
-  const saasHost = c.env.SAAS_APP_HOSTNAME || "arsal.app"
+  const saasHost = c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"
 
   const siteCheckboxes = (selected: string[]) =>
     sites.length

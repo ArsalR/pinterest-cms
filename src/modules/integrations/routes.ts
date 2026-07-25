@@ -202,7 +202,7 @@ export async function integrationsRecipesHandler(c: Context<AppEnv>): Promise<Re
   const master = await masterDb(c)
   const site = await loadSite(c, master, customer.id)
   if (!site) return new Response(null, { status: 302, headers: { Location: "/app/sites" } })
-  const host = c.env.SAAS_APP_HOSTNAME || "arsal.app"
+  const host = c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"
   const cards = recipes(site.domain || host, site.id).map((r) => `<div class="card">
       <h3 style="margin:0 0 6px;font-size:14px">${escapeHtml(r.title)}</h3>
       <div style="font-size:13px;color:#cbd5e1;white-space:pre-line;line-height:1.6">${r.body}</div>

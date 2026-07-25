@@ -82,7 +82,7 @@ export async function sendingDomainHandler(c: Context<AppEnv>): Promise<Response
     ${notice}
     <div class="card"><p><a href="/app/sites/${escapeAttr(siteId)}/forms" style="color:#93c5fd">← Forms</a></p>
       <h2 style="margin:0 0 4px;font-size:16px">Sending domain</h2>
-      <p class="muted" style="font-size:13px">By default, form auto-replies send from the platform (forms@arsal.app) with replies going to you. Verify your own domain here and they'll send from <strong>forms@${escapeHtml(site.domain)}</strong> instead — better deliverability and branding. Optional.</p>
+      <p class="muted" style="font-size:13px">By default, form auto-replies send from the platform (forms@freecoinslink.de) with replies going to you. Verify your own domain here and they'll send from <strong>forms@${escapeHtml(site.domain)}</strong> instead — better deliverability and branding. Optional.</p>
     </div>
     ${d?.forms_domain
       ? `<div class="card">

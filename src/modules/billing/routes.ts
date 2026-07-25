@@ -107,7 +107,7 @@ export async function billingCheckoutHandler(c: Context<AppEnv>): Promise<Respon
   const plan = planCatalog(c.env).find((p) => p.id === planRaw && isPlanId(planRaw))
   if (!plan) return back({ error: "Pick a plan." })
 
-  const base = `https://${c.env.SAAS_APP_HOSTNAME || "arsal.app"}/app/billing`
+  const base = `https://${c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/app/billing`
   const r = await createSubscriptionCheckout(c.env, {
     plan,
     customerId: customer.id,
@@ -128,7 +128,7 @@ export async function billingPortalHandler(c: Context<AppEnv>): Promise<Response
   const row = await master.execute({ sql: "SELECT stripe_customer_id FROM customers WHERE id = ? LIMIT 1", args: [customer.id] })
   const stripeCustomerId = (row.rows[0]?.stripe_customer_id as string | null) ?? null
   if (!stripeCustomerId) return back({ error: "No billing account yet — choose a plan first." })
-  const r = await createPortalSession(c.env, stripeCustomerId, `https://${c.env.SAAS_APP_HOSTNAME || "arsal.app"}/app/billing`)
+  const r = await createPortalSession(c.env, stripeCustomerId, `https://${c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/app/billing`)
   if (!r.url) return back({ error: r.error ?? "Couldn't open the billing portal — please try again." })
   return new Response(null, { status: 302, headers: { Location: r.url } })
 }

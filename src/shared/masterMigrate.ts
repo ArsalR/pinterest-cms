@@ -276,7 +276,7 @@ export const MASTER_MIGRATIONS: MasterMigration[] = [
     name: "011_forms_sending_domain",
     statements: [
       // V1.4 F1 — optional per-site custom sending domain (Resend-verified).
-      // NULL = platform default (forms@arsal.app).
+      // NULL = platform default (forms@freecoinslink.de).
       `ALTER TABLE customer_sites ADD COLUMN forms_domain TEXT`,
       `ALTER TABLE customer_sites ADD COLUMN forms_domain_id TEXT`,
       `ALTER TABLE customer_sites ADD COLUMN forms_domain_status TEXT`,

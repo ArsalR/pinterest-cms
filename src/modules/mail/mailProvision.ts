@@ -55,7 +55,7 @@ export async function provisionMailbox(env: CloudflareEnv, master: Client, site:
 
   // 3. Deploy the Email Worker into the customer's account.
   const name = mailWorkerName(site.id)
-  const endpoint = `https://${env.SAAS_APP_HOSTNAME || "arsal.app"}/api/saas/mail/inbound/${site.id}`
+  const endpoint = `https://${env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"}/api/saas/mail/inbound/${site.id}`
   const upload = await putEmailWorker(token, accountId, name, renderEmailWorker({ endpoint, secret }))
   if (!upload.ok) return { ok: false, problem: upload.problem, dns: [] }
 

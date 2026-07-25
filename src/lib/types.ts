@@ -46,7 +46,7 @@ export interface CloudflareEnv {
 
   // SaaS layer (saas_mode) — inert unless SAAS_MODE = "1".
   SAAS_MODE?: string           // "1" to enable the SaaS dashboard + API
-  SAAS_APP_HOSTNAME?: string   // dashboard hostname (arsal.app); www.<host> 301s to apex
+  SAAS_APP_HOSTNAME?: string   // dashboard hostname (freecoinslink.de); www.<host> 301s to apex
   SAAS_JWT_SECRET?: string     // secret — customer session JWTs (separate from tenant JWT_SECRET)
   RESEND_API_KEY?: string      // secret — transactional email; unset = dev logging mode
   SAAS_EMAIL_FROM?: string     // var — platform "from" (e.g. "Acme <login@yourdomain.com>"); domain must be Resend-verified
@@ -59,7 +59,7 @@ export interface CloudflareEnv {
   GITHUB_APP_SLUG?: string        // var — app slug for the install URL
   // Phase 3 — provisioning.
   SAAS_TEMPLATE_REPO?: string     // var — template repo (default ArsalR/site-template)
-  SAAS_CMS_HOST_SUFFIX?: string   // var — per-site CMS hostname suffix (default cms.arsal.app)
+  SAAS_CMS_HOST_SUFFIX?: string   // var — per-site CMS hostname suffix (default cms.freecoinslink.de)
   // Phase 7 — network brain (GSC). Platform-owned OAuth app (OAUTH_SETUP.md);
   // the GSC connect flow self-gates on these being present, so it stays
   // "available soon" until the (weeks-long) Google verification clears.
