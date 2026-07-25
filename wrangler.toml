@@ -37,7 +37,7 @@ SAAS_EMAIL_FROM        = ""
 SAAS_MODE              = "1"
 SAAS_APP_HOSTNAME      = "app.freecoinslink.de"
 SAAS_PBKDF2_ITERATIONS = ""
-GITHUB_APP_SLUG        = ""
+GITHUB_APP_SLUG        = "sitenetwork-os"
 SAAS_TEMPLATE_REPO     = "ArsalR/site-template"
 SAAS_CMS_HOST_SUFFIX   = "cms.freecoinslink.de"
 
