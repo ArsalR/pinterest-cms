@@ -243,5 +243,5 @@ export function formSlug(title: string): string {
 /** The From address for a site's form emails (custom domain when verified). Pure. */
 export function formsFromAddress(siteName: string, formsDomain: string | null, formsDomainStatus: string | null): string {
   if (formsDomain && formsDomainStatus === "verified") return `${siteName} <forms@${formsDomain}>`
-  return `${siteName} <forms@arsal.app>`
+  return `${siteName} <forms@freecoinslink.de>`
 }

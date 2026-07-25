@@ -1,5 +1,5 @@
 // src/shared/ui.ts
-// SaaS dashboard shell (arsal.app). Server-rendered template strings, same
+// SaaS dashboard shell (freecoinslink.de). Server-rendered template strings, same
 // conventions as views/admin/Layout.ts: no framework, inline CSS, escapeHtml
 // on all interpolated text.
 //

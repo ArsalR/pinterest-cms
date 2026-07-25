@@ -97,7 +97,24 @@ function designOptionsHtml(): string {
     <label style="margin-top:12px">Content tone</label>
     <div style="display:flex;gap:10px;flex-wrap:wrap">${tones}</div>
     <script>
-      function dsel(){}
+      // Highlight the selected design-preset card (radios are visually hidden).
+      function dsel(el){
+        try {
+          var group = el.form.querySelectorAll('input[name="' + el.name + '"]');
+          for (var i = 0; i < group.length; i++) {
+            var card = group[i].nextElementSibling;
+            if (card && card.className && card.className.indexOf('dcard') > -1) {
+              card.style.borderColor = group[i].checked ? '#e60023' : '#404040';
+            }
+          }
+        } catch (e) {}
+      }
+      // Also select on click anywhere on the card + set the initial highlight.
+      document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('input[name="preset"]').forEach(function (r) {
+          if (r.checked) dsel(r);
+        });
+      });
       (function(){
         var kind=document.getElementById('kind');
         if(!kind)return;

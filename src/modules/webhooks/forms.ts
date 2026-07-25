@@ -74,7 +74,7 @@ saasFormsRoutes.post("/:siteId", async (c, next) => {
   c.executionCtx.waitUntil(
     sendEmail(c.env, {
       to: site.owner_email,
-      from: "SiteNetwork Forms <forms@arsal.app>",
+      from: "SiteNetwork Forms <forms@freecoinslink.de>",
       subject: `Contact form: ${site.domain}`,
       html: `<p><strong>From:</strong> ${escapeHtml(email)}</p>
              <p><strong>Site:</strong> ${escapeHtml(site.domain)}</p>

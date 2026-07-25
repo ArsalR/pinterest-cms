@@ -153,7 +153,7 @@ export async function affiliateApplyHandler(c: Context<AppEnv>): Promise<Respons
   if (planGate(customer, nowSqlite()) === "read_only") return back({ error: "Your trial has ended — subscribe to edit content." })
   if (!site.cms_site_id) return back({ error: "This site has no content workspace yet." })
 
-  const saasHost = c.env.SAAS_APP_HOSTNAME || "arsal.app"
+  const saasHost = c.env.SAAS_APP_HOSTNAME || "app.freecoinslink.de"
   const config = await loadConfig(master, site.cms_site_id, { siteId: site.id, saasHost })
   if (!config.affiliateDomains.length) return back({ error: "Add at least one affiliate domain first." })
 

@@ -1,5 +1,5 @@
 // src/modules/marketing/pages.ts
-// Public marketing + legal pages for the SaaS apex (arsal.app): homepage,
+// Public marketing + legal pages for the SaaS apex (freecoinslink.de): homepage,
 // privacy policy, terms of service. These are the PUBLIC face of the platform
 // (indexable, no auth, no dashboard chrome) — distinct from the /app dashboard
 // shell (which is noindex + session-gated).
@@ -20,15 +20,15 @@ import { PRESETS, LAYOUTS, type SiteKindId } from "../design"
 // preset. They double as our permanent end-to-end smoke sites (see PLAN.md).
 // Owner-provisioned; the gallery links kind cards to the matching demo.
 const DEMOS: Record<SiteKindId, { url: string; label: string; preset: string }> = {
-  content: { url: "https://demo-blog.arsal.app", label: "Blog", preset: "editorial" },
-  ecommerce: { url: "https://demo-shop.arsal.app", label: "Store", preset: "modern" },
-  "local-business": { url: "https://demo-local.arsal.app", label: "Local business", preset: "warm" },
-  portfolio: { url: "https://demo-folio.arsal.app", label: "Portfolio", preset: "bold" },
+  content: { url: "https://demo-blog.freecoinslink.de", label: "Blog", preset: "editorial" },
+  ecommerce: { url: "https://demo-shop.freecoinslink.de", label: "Store", preset: "modern" },
+  "local-business": { url: "https://demo-local.freecoinslink.de", label: "Local business", preset: "warm" },
+  portfolio: { url: "https://demo-folio.freecoinslink.de", label: "Portfolio", preset: "bold" },
 }
 const KIND_LABELS: Record<SiteKindId, string> = { content: "Blog / content", ecommerce: "Online store", "local-business": "Local business", portfolio: "Portfolio" }
 
 const PRODUCT = "SiteNetwork OS"
-const CONTACT_EMAIL = "support@arsal.app"
+const CONTACT_EMAIL = "support@freecoinslink.de"
 const LAST_UPDATED = "2026-07-15"
 
 const STORE = { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=300" }

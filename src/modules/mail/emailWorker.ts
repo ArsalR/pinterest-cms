@@ -13,7 +13,7 @@
 // via the platform's stubbed-inbound tests + the runbook.
 
 export interface EmailWorkerOpts {
-  /** Absolute platform endpoint, e.g. https://arsal.app/api/saas/mail/inbound/<siteId> */
+  /** Absolute platform endpoint, e.g. https://freecoinslink.de/api/saas/mail/inbound/<siteId> */
   endpoint: string
   /** Per-site inbound secret (HMAC). Baked in — the script is unique per site. */
   secret: string
