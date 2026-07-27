@@ -258,6 +258,17 @@ async function executeStep(
         )
       })
       await updateSite(db, siteId, { cms_site_id: result.siteId, cms_hostname: cmsHostname })
+      // Make the per-site CMS hostname reachable by attaching it as a Custom
+      // Domain on the platform Worker. A Custom Domain works on every Cloudflare
+      // plan and auto-creates the proxied DNS record + certificate — unlike a
+      // proxied `*.cms` wildcard, which is Enterprise-only. Without this the
+      // site build can't fetch content (DNS ENOTFOUND on the CMS host). Best-
+      // effort: if the platform token lacks the permission the owner can add the
+      // domain by hand, and this same call succeeds idempotently on retry.
+      if (env.CF_API_TOKEN && env.CF_ACCOUNT_ID && env.CF_ZONE_ID) {
+        const platformWorker = env.SAAS_WORKER_NAME || "pinterest-cms"
+        await attachWorkersDomain(env.CF_API_TOKEN, env.CF_ACCOUNT_ID, env.CF_ZONE_ID, cmsHostname, platformWorker).catch(() => {})
+      }
       // Seed default SEO profiles for the site kind (V1.3 genesis mapping).
       // Best-effort: a NEW site with no content builds identically either way,
       // and the customer can toggle profiles in the SEO hub at any time.
