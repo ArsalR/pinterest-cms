@@ -20,7 +20,7 @@ import { getConnection, getConnectionSecret } from "../connections"
 import { vaultEncrypt, vaultDecrypt } from "../vault"
 import { defaultProfilesForKind } from "../seo"
 import {
-  installationToken, repoExists, createRepoFromTemplate,
+  installationToken, repoExists, createRepoFromTemplate, waitForRepoReady,
   setRepoSecret, putRepoFile, dispatchWorkflow,
 } from "../connections"
 import {
@@ -324,6 +324,13 @@ async function executeStep(
 
     case "site_config": {
       const token = await installationToken(env, installationId)
+      // GitHub populates a template-generated repo asynchronously; writing to
+      // /contents/* before the first commit lands returns 409. Wait for the
+      // repo to actually have content before the first file write.
+      const ready = await waitForRepoReady(token, repoFullName)
+      if (!ready) {
+        throw new Error("GitHub is still preparing the new repository. Wait a few seconds and retry from this step.")
+      }
       const customerRow = await db.execute({
         sql: "SELECT email, name FROM customers WHERE id = ? LIMIT 1",
         args: [site.customer_id],
