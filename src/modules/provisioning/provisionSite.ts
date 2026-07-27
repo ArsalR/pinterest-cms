@@ -21,7 +21,7 @@ import { vaultEncrypt, vaultDecrypt } from "../vault"
 import { defaultProfilesForKind } from "../seo"
 import {
   installationToken, repoExists, createRepoFromTemplate, waitForRepoReady,
-  setRepoSecret, putRepoFile, dispatchWorkflow,
+  setRepoSecret, putRepoFile, dispatchWorkflow, listWorkflowRuns,
 } from "../connections"
 import {
   workerScriptExists, attachWorkersDomain, disableWorkersDevSubdomain, enableZoneProtection, enableWebAnalytics,
@@ -465,6 +465,21 @@ async function executeStep(
       const accountId = String((JSON.parse(cf?.meta || "{}") as { accountId?: string }).accountId ?? "")
       if (!cfToken || !accountId) throw new Error("Cloudflare isn't connected — reconnect it, then retry.")
       if (!(await workerScriptExists(cfToken, accountId, workerName))) {
+        // The Worker isn't in Cloudflare yet. Distinguish "still building" from
+        // "the build failed" by reading the latest deploy run — a failed build
+        // will never produce a Worker, so retrying forever is pointless.
+        if (installationId) {
+          const runToken = await installationToken(env, installationId).catch(() => null)
+          const runs = runToken
+            ? await listWorkflowRuns(runToken, repoFullName, "deploy.yml", 1).catch(() => [])
+            : []
+          const latest = runs[0]
+          if (latest && latest.status === "completed" && latest.conclusion && latest.conclusion !== "success") {
+            throw new Error(
+              `The first build failed (${latest.conclusion}) before it could deploy — this is usually the Cloudflare deploy step (token needs "Workers Scripts: Edit") or a speed/security/SEO gate. Open the log to see which step: ${latest.htmlUrl}`
+            )
+          }
+        }
         throw new Error("The site is still building (the first build takes a few minutes, and it must pass the speed and security checks). Retry shortly.")
       }
       return {}
