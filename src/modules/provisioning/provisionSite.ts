@@ -475,8 +475,12 @@ async function executeStep(
             : []
           const latest = runs[0]
           if (latest && latest.status === "completed" && latest.conclusion && latest.conclusion !== "success") {
+            // The last build failed. The owner has usually just fixed the cause
+            // (e.g. added the *.cms DNS record), so kick a FRESH build here —
+            // otherwise "Retry" only re-checks the dead run and never rebuilds.
+            if (runToken) await dispatchWorkflow(runToken, repoFullName, "deploy.yml").catch(() => {})
             throw new Error(
-              `The first build failed (${latest.conclusion}) before it could deploy — this is usually the Cloudflare deploy step (token needs "Workers Scripts: Edit") or a speed/security/SEO gate. Open the log to see which step: ${latest.htmlUrl}`
+              `The previous build failed (${latest.conclusion}), so I've started a new one. Wait ~3 minutes, then Retry. If it fails again, open the log to see which step: ${latest.htmlUrl}`
             )
           }
         }
