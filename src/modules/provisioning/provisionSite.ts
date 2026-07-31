@@ -20,8 +20,8 @@ import { getConnection, getConnectionSecret } from "../connections"
 import { vaultEncrypt, vaultDecrypt } from "../vault"
 import { defaultProfilesForKind } from "../seo"
 import {
-  installationToken, repoExists, createRepoFromTemplate,
-  setRepoSecret, putRepoFile, dispatchWorkflow,
+  installationToken, repoExists, createRepoFromTemplate, waitForRepoReady,
+  setRepoSecret, putRepoFile, dispatchWorkflow, listWorkflowRuns,
 } from "../connections"
 import {
   workerScriptExists, attachWorkersDomain, disableWorkersDevSubdomain, enableZoneProtection, enableWebAnalytics,
@@ -258,6 +258,17 @@ async function executeStep(
         )
       })
       await updateSite(db, siteId, { cms_site_id: result.siteId, cms_hostname: cmsHostname })
+      // Make the per-site CMS hostname reachable by attaching it as a Custom
+      // Domain on the platform Worker. A Custom Domain works on every Cloudflare
+      // plan and auto-creates the proxied DNS record + certificate — unlike a
+      // proxied `*.cms` wildcard, which is Enterprise-only. Without this the
+      // site build can't fetch content (DNS ENOTFOUND on the CMS host). Best-
+      // effort: if the platform token lacks the permission the owner can add the
+      // domain by hand, and this same call succeeds idempotently on retry.
+      if (env.CF_API_TOKEN && env.CF_ACCOUNT_ID && env.CF_ZONE_ID) {
+        const platformWorker = env.SAAS_WORKER_NAME || "pinterest-cms"
+        await attachWorkersDomain(env.CF_API_TOKEN, env.CF_ACCOUNT_ID, env.CF_ZONE_ID, cmsHostname, platformWorker).catch(() => {})
+      }
       // Seed default SEO profiles for the site kind (V1.3 genesis mapping).
       // Best-effort: a NEW site with no content builds identically either way,
       // and the customer can toggle profiles in the SEO hub at any time.
@@ -324,6 +335,13 @@ async function executeStep(
 
     case "site_config": {
       const token = await installationToken(env, installationId)
+      // GitHub populates a template-generated repo asynchronously; writing to
+      // /contents/* before the first commit lands returns 409. Wait for the
+      // repo to actually have content before the first file write.
+      const ready = await waitForRepoReady(token, repoFullName)
+      if (!ready) {
+        throw new Error("GitHub is still preparing the new repository. Wait a few seconds and retry from this step.")
+      }
       const customerRow = await db.execute({
         sql: "SELECT email, name FROM customers WHERE id = ? LIMIT 1",
         args: [site.customer_id],
@@ -458,6 +476,25 @@ async function executeStep(
       const accountId = String((JSON.parse(cf?.meta || "{}") as { accountId?: string }).accountId ?? "")
       if (!cfToken || !accountId) throw new Error("Cloudflare isn't connected — reconnect it, then retry.")
       if (!(await workerScriptExists(cfToken, accountId, workerName))) {
+        // The Worker isn't in Cloudflare yet. Distinguish "still building" from
+        // "the build failed" by reading the latest deploy run — a failed build
+        // will never produce a Worker, so retrying forever is pointless.
+        if (installationId) {
+          const runToken = await installationToken(env, installationId).catch(() => null)
+          const runs = runToken
+            ? await listWorkflowRuns(runToken, repoFullName, "deploy.yml", 1).catch(() => [])
+            : []
+          const latest = runs[0]
+          if (latest && latest.status === "completed" && latest.conclusion && latest.conclusion !== "success") {
+            // The last build failed. The owner has usually just fixed the cause
+            // (e.g. added the *.cms DNS record), so kick a FRESH build here —
+            // otherwise "Retry" only re-checks the dead run and never rebuilds.
+            if (runToken) await dispatchWorkflow(runToken, repoFullName, "deploy.yml").catch(() => {})
+            throw new Error(
+              `The previous build failed (${latest.conclusion}), so I've started a new one. Wait ~3 minutes, then Retry. If it fails again, open the log to see which step: ${latest.htmlUrl}`
+            )
+          }
+        }
         throw new Error("The site is still building (the first build takes a few minutes, and it must pass the speed and security checks). Retry shortly.")
       }
       return {}

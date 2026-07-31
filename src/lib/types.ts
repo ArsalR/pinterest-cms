@@ -60,6 +60,8 @@ export interface CloudflareEnv {
   // Phase 3 — provisioning.
   SAAS_TEMPLATE_REPO?: string     // var — template repo (default ArsalR/site-template)
   SAAS_CMS_HOST_SUFFIX?: string   // var — per-site CMS hostname suffix (default cms.freecoinslink.de)
+  SAAS_WORKER_NAME?: string       // var — this platform Worker's script name; used to attach each
+                                  // per-site CMS hostname as a Custom Domain (default "pinterest-cms")
   // Phase 7 — network brain (GSC). Platform-owned OAuth app (OAUTH_SETUP.md);
   // the GSC connect flow self-gates on these being present, so it stays
   // "available soon" until the (weeks-long) Google verification clears.

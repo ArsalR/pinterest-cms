@@ -176,6 +176,29 @@ export async function createRepoFromTemplate(
   })
 }
 
+/**
+ * Wait until a freshly-generated repo actually has content. GitHub's
+ * `/generate` is asynchronous: the repo row exists a beat before its files
+ * (and default branch) land, and writing to `/contents/*` in that window
+ * returns 409 ("Git Repository is empty."). We poll the commits endpoint —
+ * 409/404 while still empty, 200 once the first commit is in — so the next
+ * provisioning step never races the copy. Bounded so a stuck generate can't
+ * hang the pipeline; returns false if it never became ready.
+ */
+export async function waitForRepoReady(
+  token: string,
+  fullName: string,
+  tries = 12,
+  delayMs = 1500
+): Promise<boolean> {
+  for (let i = 0; i < tries; i++) {
+    const r = await ghInst(token, `/repos/${fullName}/commits?per_page=1`, {}, [409, 404, 403])
+    if (r.status === 200 && Array.isArray(r.body) && r.body.length > 0) return true
+    if (i < tries - 1) await new Promise((res) => setTimeout(res, delayMs))
+  }
+  return false
+}
+
 /** Set a repo Actions secret (sealed to the repo's public key, as GitHub requires). */
 export async function setRepoSecret(
   token: string,
